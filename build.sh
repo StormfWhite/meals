@@ -16,4 +16,5 @@ sed -e 's|href="/|href="|g; s|src="/|src="|g' \
     -e 's|<link rel="stylesheet" href="style.css">|<link rel="stylesheet" href="style.css">\n<link rel="stylesheet" href="mobile.css">\n<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">\n<meta name="apple-mobile-web-app-capable" content="yes">\n<meta name="mobile-web-app-capable" content="yes">\n<meta name="apple-mobile-web-app-title" content="Meals">\n<link rel="manifest" href="manifest.webmanifest">\n<link rel="apple-touch-icon" href="icon-180.png">\n<link rel="icon" href="icon-192.png">|' \
     -e 's|<script src="app.js"></script>|<script src="https://cdn.jsdelivr.net/pyodide/v0.27.7/full/pyodide.js"></script>\n<script src="bridge.js"></script>\n<script src="app.js"></script>|' \
     "$SRC/app/web/index.html" > "$OUT/index.html"
+touch "$OUT/.nojekyll"   # GitHub Pages would drop __init__.py
 echo "built from $SRC ($(wc -l < "$OUT/py/files.txt") python files)"
