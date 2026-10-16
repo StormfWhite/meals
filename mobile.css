@@ -1,0 +1,53 @@
+/* Phone layer on top of the laptop app's style.css (nothing here applies above 760px wide). */
+#boot { position: fixed; inset: 0; z-index: 100; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 10px; padding: 24px; text-align: center; background: var(--bg, #fff); color: var(--text, #111); transition: opacity .35s; }
+#boot.gone { opacity: 0; pointer-events: none; }
+#boot img { width: 84px; height: 84px; border-radius: 20px; box-shadow: 0 4px 18px rgba(0,0,0,.15); }
+#boot .boot-t { font-size: 22px; font-weight: 700; margin-top: 6px; }
+#boot .boot-s { color: var(--text-dim, #888); font-size: 14px; min-height: 1.2em; }
+#boot p { color: var(--text-dim, #888); font-size: 15px; max-width: 320px; }
+#boot input { width: 100%; max-width: 320px; height: 46px; border-radius: 12px; font-size: 16px; text-align: center; margin: 4px 0 10px; }
+.boot-btn { height: 46px; padding: 0 24px; border-radius: 23px; border: 0; background: var(--accent, #2f7d32); color: var(--accent-text, #fff);
+  font-weight: 650; font-size: 16px; }
+.boot-err { color: #d33 !important; }
+body.offline #topbar::after { content: "offline · saved on this phone"; font-size: 11px; color: var(--text-dim); margin-left: 6px; white-space: nowrap; }
+
+@media (max-width: 760px) {
+  html, body { height: 100%; }
+  body { padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); -webkit-text-size-adjust: 100%; }
+  /* iOS zooms into any field under 16px — the whole page would lurch on every tap */
+  input, select, textarea { font-size: 16px !important; }
+  [hidden] { display: none !important; }
+  /* two rows: the date nav across the top, the screen icons under it */
+  #topbar { padding: 4px 8px 2px; gap: 2px; flex-wrap: wrap; }
+  #nav { order: -1; flex: 1 0 100%; padding: 2px 0 4px; overflow-x: auto; scrollbar-width: none; }
+  #nav::-webkit-scrollbar { display: none; }
+  .icon-btn { width: 40px; height: 38px; flex: none; }
+  svg.icon { width: 18px; height: 18px; }
+  .brandline { display: none; }
+  #back-btn { order: 0; }
+  #nav > * { flex: none; }
+  .plan-date { min-width: 0; font-size: 14px; }
+  .btn-mini { padding: 7px 10px; font-size: 13px; }
+  .seg-mini button { padding: 7px 9px; font-size: 12.5px; }
+  .vsep { display: none; }
+
+  /* the day: full width, roomy rows */
+  .plan-cols.one-day { padding: 8px 10px 90px; justify-content: stretch; }
+  .is-day .mb-name, .is-day .mb-ing { flex: 1 1 auto; min-width: 0; }
+  .is-day .mb-amt { flex: 0 0 76px; }
+  .is-day .mb-row { flex-wrap: wrap; row-gap: 4px; }
+  .is-day .mb-stat { flex: 1 0 100%; font-size: 12px; }
+  .is-day .mb-stat:empty { display: none; }
+  .is-week .plan-cols { -webkit-overflow-scrolling: touch; }
+
+  /* the grocery list: a full-screen sheet behind the cart button */
+  .plan.list-open .list-panel, .plan.is-week.list-open .list-panel {
+    position: fixed; z-index: 40; left: 0; right: 0; bottom: 0; top: calc(var(--topbar-h, 96px) + env(safe-area-inset-top));
+    width: auto; border-left: 0; border-top: 1px solid var(--border); box-shadow: 0 -8px 30px rgba(0,0,0,.18);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .modal-panel { width: calc(100vw - 20px) !important; max-width: none !important; max-height: 85vh; overflow: auto; }
+  #bangers-dock { max-width: 100vw; }
+  .ing-suggest, .ingsuggest, [class*="suggest-pop"] { max-width: calc(100vw - 16px); }
+}

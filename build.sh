@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# Rebuild the phone/web Meal Planner from the laptop app's source (~/Documents/mealplanner):
+# the same Python package + FastAPI routes run in the browser (Pyodide, see bridge.js) and the
+# same front end is served with a phone stylesheet on top. Run after any change to the laptop app,
+# then commit + push to publish (stormfwhite.github.io/meals).
+set -e
+SRC="$HOME/Documents/mealplanner"
+OUT="$(cd "$(dirname "$0")" && pwd)"
+rm -rf "$OUT/py" && mkdir -p "$OUT/py/app/web"
+rsync -a --exclude __pycache__ "$SRC/mealplanner" "$OUT/py/"
+cp "$SRC/app/server.py" "$OUT/py/app/" && touch "$OUT/py/app/__init__.py"
+(cd "$OUT/py" && find . -name "*.py" | sed 's|^\./||' | sort) > "$OUT/py/files.txt"
+for f in "$SRC"/app/web/*.js "$SRC"/app/web/style.css; do cp "$f" "$OUT/"; done
+# index.html: relative paths (the site lives under /meals/), then the phone bits
+sed -e 's|href="/|href="|g; s|src="/|src="|g' \
+    -e 's|<link rel="stylesheet" href="style.css">|<link rel="stylesheet" href="style.css">\n<link rel="stylesheet" href="mobile.css">\n<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">\n<meta name="apple-mobile-web-app-capable" content="yes">\n<meta name="mobile-web-app-capable" content="yes">\n<meta name="apple-mobile-web-app-title" content="Meals">\n<link rel="manifest" href="manifest.webmanifest">\n<link rel="apple-touch-icon" href="icon-180.png">\n<link rel="icon" href="icon-192.png">|' \
+    -e 's|<script src="app.js"></script>|<script src="https://cdn.jsdelivr.net/pyodide/v0.27.7/full/pyodide.js"></script>\n<script src="bridge.js"></script>\n<script src="app.js"></script>|' \
+    "$SRC/app/web/index.html" > "$OUT/index.html"
+echo "built from $SRC ($(wc -l < "$OUT/py/files.txt") python files)"
