@@ -267,7 +267,7 @@ App.groceriesPanel = {
     const row = App.el(`<div class="gp-row ${item.checked ? "done" : ""}" data-ing="${App.esc(item.ingredient_id)}">
       <label class="check"><input type="checkbox" class="gp-chk" ${item.checked ? "checked" : ""}><span class="box">${App.icon('<path d="M20 6 9 17l-5-5"/>')}</span></label>
       <span class="gp-row-name" title="${App.esc(item.price_label || item.name)}">${App.esc(item.name)}</span>
-      <span class="gp-row-need dim num">${App.esc(item.unit_label)}</span>
+      <input class="gp-row-qty num" placeholder="qty" value="${App.esc(item.unit_label)}" spellcheck="false" enterkeyhint="done" title="Amount — type it however you like">
       <input class="gp-row-price num${stale}" placeholder="$—" value="${price}"
              title="${item.price ? `${App.esc(item.price_label || "")}${item.price_age_days ? ` · ${item.price_age_days}d ago` : ""}${item.packages > 1 ? ` · ×${item.packages}` : ""}` : "What does one cost? Type it once."}">
       <button class="icon-btn gp-move" title="Move to the ${other === "market" ? "farmer's market" : "grocery"} list">${App.icon(GP_SWAP)}</button>
@@ -277,6 +277,16 @@ App.groceriesPanel = {
     row.querySelector(".gp-chk").addEventListener("change", async (e) => {
       row.classList.toggle("done", e.target.checked);
       await App.api(`/api/groceries/${this._weekStart}/items/${item.ingredient_id}`, { method: "PUT", body: { checked: e.target.checked } });
+      this._reload();
+    });
+
+    // The amount is typed straight onto the row, kept as typed.
+    const qtyBox = row.querySelector(".gp-row-qty");
+    qtyBox.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.keyCode === 13) qtyBox.blur(); });
+    qtyBox.addEventListener("change", async () => {
+      await App.api(`/api/groceries/${this._weekStart}/items/${item.ingredient_id}/amount`, {
+        method: "PUT", body: { qty: qtyBox.value },
+      });
       this._reload();
     });
 
@@ -334,12 +344,14 @@ App.groceriesPanel = {
         let match = ingredients.find(i => i.name.toLowerCase() === name.toLowerCase());
         // Something not in the catalog yet is created (and matched to USDA)
         // rather than refused -- the list is allowed to teach the catalog.
+        // Made at once, matched to USDA afterwards: the item is on the list the moment Enter is hit.
         if (!match) {
-          const created = await App.api("/api/ingredients", { method: "POST", body: { name, default_unit: "g" } });
+          const created = await App.api("/api/ingredients", { method: "POST", body: { name, default_unit: "g", resolve: false } });
           match = created.ingredient;
           ingredients.push(match);
+          App.resolveLater(match.id, () => this.refresh());
         }
-        await App.api(`/api/groceries/${this._weekStart}/extra`, { method: "POST", body: { ingredient_id: match.id, qty: qty || null } });
+        await App.api(`/api/groceries/${this._weekStart}/extra`, { method: "POST", body: { ingredient_id: match.id, qty: qty || null, shop_list: "grocery" } });
       }).catch(() => App.toast(`Couldn't add ${name}`))
         .then(() => { this._pending = this._pending.filter(p => p !== pend); return this._reload(); })
         .catch(() => {});   // a failed redraw must never stall the adds queued behind it
@@ -357,8 +369,8 @@ App.groceriesPanel = {
         const rows = Array.from(container.querySelectorAll(`.gp-section[data-list="${kind}"] .gp-row:not(.gp-sug)`));
         const text = rows.map(r => {
           const name = r.querySelector(".gp-row-name").textContent;
-          const need = r.querySelector(".gp-row-need");
-          return `- ${need ? need.textContent + " " : ""}${name}`;
+          const need = r.querySelector(".gp-row-qty");
+          return `- ${need && need.value ? need.value + " " : ""}${name}`;
         }).join("\n") || "(nothing needed)";
         navigator.clipboard.writeText(text).then(() => App.toast("Copied"));
       });

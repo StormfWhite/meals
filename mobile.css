@@ -73,3 +73,4 @@ body.offline #topbar::after { content: "offline · saved on this phone"; font-si
   .modal-actions { position: sticky; bottom: -1px; background: var(--panel); padding: 10px 0 4px; z-index: 1; }
 }
 @media (max-width: 760px) { .plan.list-open .list-panel { padding-bottom: calc(64px + env(safe-area-inset-bottom)); } }   /* room to scroll past the Bangers button */
+@media (max-width: 760px) { .gp-row-qty { width: 72px; } }   /* stays 16px: smaller makes iOS zoom on tap */

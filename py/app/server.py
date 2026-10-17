@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi.responses import JSONResponse, FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -198,6 +198,7 @@ class IngredientBody(BaseModel):
     unit_conversions: dict = {}
     store_section: Optional[str] = None
     manual_nutrients: Optional[dict] = None
+    resolve: bool = True     # False: just make it, the USDA match follows in the background
 
 
 class IngredientUpdateBody(BaseModel):
@@ -235,10 +236,11 @@ def create_ingredient(body: IngredientBody):
         raise HTTPException(400, "an ingredient needs a name")
     ing = ingredients.add(body.name, body.category, body.default_unit,
                           body.unit_conversions, body.store_section, body.manual_nutrients)
-    try:
-        ing = ingredients.resolve_usda(ing["id"]) or ing
-    except Exception:
-        pass
+    if body.resolve:
+        try:
+            ing = ingredients.resolve_usda(ing["id"]) or ing
+        except Exception:
+            pass
     return {"ingredient": ing}
 
 
@@ -270,15 +272,22 @@ def set_shop_list(ingredient_id: str, body: ShopListBody):
 
 
 @app.post("/api/ingredients/{ingredient_id}/resolve")
-def resolve_ingredient(ingredient_id: str, force: bool = False):
+def resolve_ingredient(ingredient_id: str, force: bool = False, js_fetch: bool = False):
     """Bind one ingredient to its USDA food (and take the portions and
-    category with it)."""
+    category with it). `js_fetch` (the phone, see fdc.JS_RESPONSES): a
+    USDA answer not fetched yet comes back as 202 {"need": url}."""
     if not fdc.available():
         raise HTTPException(400, "no USDA FoodData Central API key set — add one in Settings")
+    if js_fetch:
+        fdc.JS_RESPONSES = fdc.JS_STORE
     try:
         ing = ingredients.resolve_usda(ingredient_id, force=force)
+    except fdc.NeedFetch as need:
+        return JSONResponse({"need": need.url}, status_code=202)
     except KeyError:
         raise HTTPException(404, "no such ingredient")
+    finally:
+        fdc.JS_RESPONSES = None
     if ing is None:
         raise HTTPException(404, "no confident USDA match for that name")
     return {"ingredient": ing}
@@ -721,18 +730,29 @@ class ExtraItemBody(BaseModel):
     ingredient_id: str
     qty_g: Optional[float] = None   # a bare name is a whole entry
     qty: Optional[str] = None       # the amount as typed ("2 lb"), never converted
+    shop_list: Optional[str] = None # the box it was typed into: it goes on THAT list
 
 
 @app.post("/api/groceries/{week}/extra")
 def add_extra_grocery_item(week: str, body: ExtraItemBody):
     if ingredients.get(body.ingredient_id) is None:
         raise HTTPException(404, "no such ingredient")
-    return {"items": groceries.add_extra_item(week, body.ingredient_id, body.qty_g, body.qty)}
+    return {"items": groceries.add_extra_item(week, body.ingredient_id, body.qty_g, body.qty, body.shop_list)}
 
 
 @app.delete("/api/groceries/{week}/extra/{ingredient_id}")
 def remove_extra_grocery_item(week: str, ingredient_id: str):
     return {"items": groceries.remove_extra_item(week, ingredient_id)}
+
+
+class AmountBody(BaseModel):
+    qty: str = ""
+
+
+@app.put("/api/groceries/{week}/items/{ingredient_id}/amount")
+def put_grocery_amount(week: str, ingredient_id: str, body: AmountBody):
+    """The amount typed on a list row, as typed."""
+    return {"items": groceries.set_amount(week, ingredient_id, body.qty)}
 
 
 @app.delete("/api/groceries/{week}/items/{ingredient_id}")

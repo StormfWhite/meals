@@ -70,7 +70,7 @@ App.recipes = {
   },
 
   async _resolveIngredientId(name, unit) {
-    return App.resolveIngredientId(name, unit, this._ingredients);
+    return App.resolveIngredientId(name, unit, this._ingredients, true);   // USDA match follows in the background
   },
 
   // `item` is a saved line ({ingredient_id, qty, unit}) or an imported one

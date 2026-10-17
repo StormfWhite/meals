@@ -63,11 +63,35 @@ def _connect() -> sqlite3.Connection:
     return conn
 
 
+# On the phone, Python runs in the page and its HTTP is BLOCKING (pyodide_http = sync XHR): a
+# "background" USDA lookup would still freeze the screen ~3 s per item. So a background resolve
+# there runs with JS_RESPONSES switched on: an answer the page has already fetched is used, and a
+# missing one raises NeedFetch(url) -- the page fetches it asynchronously, stores it here and runs
+# the resolve again (bridge.js). BaseException on purpose: the broad `except Exception`s that make
+# lookups best-effort must not swallow "go and fetch this".
+JS_RESPONSES: Optional[dict] = None   # on only during such a resolve
+JS_STORE: dict = {}                     # url -> (status, text), filled by the page
+
+
+class NeedFetch(BaseException):
+    def __init__(self, url: str):
+        super().__init__(url)
+        self.url = url
+
+
 def _get(path: str, params: dict) -> Optional[dict]:
     key = config.get("usda_fdc_api_key")
     if not key:
         return None
     params = {**params, "api_key": key}
+    if JS_RESPONSES is not None:
+        url = requests.Request("GET", f"{BASE}{path}", params=params).prepare().url
+        if url not in JS_RESPONSES:
+            raise NeedFetch(url)
+        status, text = JS_RESPONSES[url]
+        if status >= 400:
+            raise requests.HTTPError(f"{status} for {path}")
+        return json.loads(text)
     resp = requests.get(f"{BASE}{path}", params=params, timeout=15)
     resp.raise_for_status()
     return resp.json()

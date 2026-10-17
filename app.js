@@ -51,12 +51,26 @@ App.closeModal = function () {
 // exist yet -- shared by recipes.js and mealblock.js so a recipe/meal
 // never blocks on ingredient bookkeeping. Mutates `ingredientsList` in
 // place so the caller's cache stays in sync with what's now on the server.
-App.resolveIngredientId = async function (name, unit, ingredientsList) {
+App.resolveIngredientId = async function (name, unit, ingredientsList, later) {
   const existing = ingredientsList.find(i => i.name.toLowerCase() === name.toLowerCase());
   if (existing) return existing.id;
-  const res = await App.api("/api/ingredients", { method: "POST", body: { name, category: "other", default_unit: unit || "g" } });
+  const res = await App.api("/api/ingredients", { method: "POST",
+    body: { name, category: "other", default_unit: unit || "g", resolve: !later } });
   ingredientsList.push(res.ingredient);
+  if (later) App.resolveLater(res.ingredient.id);
   return res.ingredient.id;
+};
+
+/* The USDA match (nutrition, portions, which list it belongs on) for a just-made ingredient,
+ * found AFTER it's already on the screen -- one lookup at a time, never in the way of typing.
+ * `onDone` runs once it's in (e.g. the list redraws: an item can move to the market). */
+App._resolveQueue = Promise.resolve();
+App.resolveLater = function (ingredientId, onDone) {
+  App._resolveQueue = App._resolveQueue
+    .then(() => App.api(`/api/ingredients/${ingredientId}/resolve`, { method: "POST" }))
+    .catch(() => {})            // no confident match / no key: it still plans and shops fine
+    .then(() => { if (onDone) onDone(); });
+  return App._resolveQueue;
 };
 
 App.icon = function (path) {

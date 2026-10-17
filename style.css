@@ -346,6 +346,11 @@ button.mb-tag:hover { color: var(--good); border-color: var(--good); }
 .gp-row.done .gp-row-name { text-decoration: line-through; color: var(--text-dim); }
 .gp-row-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gp-row-need { font-size: 10.5px; white-space: nowrap; }
+.gp-row-qty { width: 54px; min-width: 0; font-size: 10.5px; padding: 2px 5px; text-align: right; color: var(--text-dim);
+  border-color: transparent; background: transparent; }
+.gp-row:hover .gp-row-qty, .gp-row-qty:focus { background: var(--panel); border-color: var(--border); color: var(--text); }
+.gp-row-qty::placeholder { color: transparent; }          /* no amount = nothing shown, until tapped */
+.gp-row-qty:focus::placeholder, .gp-row:hover .gp-row-qty::placeholder { color: var(--text-dim); }
 .gp-row-bought { width: 46px; min-width: 0; font-size: 11px; padding: 2px 5px; border-color: transparent; background: transparent; text-align: right; }
 .gp-row:hover .gp-row-bought { background: var(--panel); border-color: var(--border); }
 .gp-row-bought:focus { background: var(--panel); border-color: var(--border); }

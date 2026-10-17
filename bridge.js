@@ -40,7 +40,7 @@
         <input id="boot-in" placeholder="Paste code" autocomplete="off" autocapitalize="off" spellcheck="false"><button class="boot-btn" id="boot-done">Done</button></div>
       <p class="boot-err" id="boot-err"></p>
     </div>`;
-  const say = (t) => { const e = document.getElementById("boot-s"); if (e) e.textContent = t; };
+  const say = (t) => { const e = splash.querySelector("#boot-s"); if (e) e.textContent = t; };
   document.addEventListener("DOMContentLoaded", () => {
     document.body.appendChild(splash);
     if (narrow() && window.App && App.plan) {   // a phone: one day at a time, the list behind the cart button
@@ -90,20 +90,21 @@
 
   // ---- connect (PKCE, code pasted back) ----------------------------------------------------------
   const b64url = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  // (looked up inside the splash: on a first visit this runs before the page has finished loading)
   function connect() {
     return new Promise((resolve) => {
-      document.getElementById("boot-connect").hidden = false;
+      splash.querySelector("#boot-connect").hidden = false;
       say("");
-      document.getElementById("boot-go").onclick = async () => {
+      splash.querySelector("#boot-go").onclick = async () => {
         const v = b64url(crypto.getRandomValues(new Uint8Array(48)));
         localStorage.setItem(LS + ".pkce", v);
         const ch = b64url(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(v)));
         window.open("https://www.dropbox.com/oauth2/authorize?" + new URLSearchParams({ client_id: APP_KEY, response_type: "code",
           token_access_type: "offline", code_challenge_method: "S256", code_challenge: ch }), "_blank");
-        document.getElementById("boot-code").hidden = false;
+        splash.querySelector("#boot-code").hidden = false;
       };
-      document.getElementById("boot-done").onclick = async () => {
-        const code = document.getElementById("boot-in").value.trim();
+      splash.querySelector("#boot-done").onclick = async () => {
+        const code = splash.querySelector("#boot-in").value.trim();
         if (!code) return;
         try {
           const r = await fetch("https://api.dropboxapi.com/oauth2/token", { method: "POST",
@@ -112,9 +113,9 @@
           const o = await r.json();
           if (!r.ok) throw new Error(o.error_description || o.error || r.status);
           S.refresh = o.refresh_token; S.access = o.access_token; S.exp = Date.now() + (o.expires_in - 120) * 1000; save();
-          document.getElementById("boot-connect").hidden = true;
+          splash.querySelector("#boot-connect").hidden = true;
           resolve();
-        } catch (e) { document.getElementById("boot-err").textContent = "That didn't work (" + e.message + "). Tap Connect Dropbox for a fresh code."; }
+        } catch (e) { splash.querySelector("#boot-err").textContent = "That didn't work (" + e.message + "). Tap Connect Dropbox for a fresh code."; }
       };
     });
   }
@@ -327,6 +328,27 @@ async def _call(method, path, body):
     serial(() => pull()).then((ch) => { if (ch) redraw(); longpoll(); }).catch(() => setOnline(false));
   })().catch((e) => { console.error(e); say("Couldn't start: " + e.message); });
 
+  // A USDA match found behind the screen (see fdc.JS_RESPONSES): Python asks for one URL at a time
+  // (202 {need}), the page fetches it WITHOUT blocking -- typing, other requests and the screen carry
+  // on -- hands the answer to Python, and asks again until the match is made.
+  async function resolveInBackground(path, body) {
+    const fdc = py.pyimport("mealplanner.fdc");
+    const url = path + (path.includes("?") ? "&" : "?") + "js_fetch=true";
+    for (let round = 0; round < 8; round++) {
+      const res = await serial(async () => (await call("POST", url, body)).toJs());
+      if (res[0] !== 202) {
+        if (res[0] < 300) { pending.push({ method: "POST", path, body }); schedulePush(); }
+        return new Response(res[1], { status: res[0], headers: { "Content-Type": "application/json" } });
+      }
+      const need = JSON.parse(res[1]).need;
+      let status = 599, text = "";
+      try { const r = await realFetch(need); status = r.status; text = await r.text(); } catch (e) {}
+      if (status === 599) return new Response('{"detail":"offline"}', { status: 503 });
+      fdc.JS_STORE.set(need, py.toPy([status, text]));
+    }
+    return new Response('{"detail":"too many lookups"}', { status: 504 });
+  }
+
   // Recipes from the Notes app: its notes sit beside the meal data in this same Dropbox app folder
   // (/notes). The picker asks for them, so they come down then -- one zip (~1.5 MB), at most every
   // 2 minutes -- into /notes.zip, where recipe_import.py reads them. Offline: the last zip, if any.
@@ -373,6 +395,7 @@ async def _call(method, path, body):
     await booted;
     if (path.startsWith("/api/notes")) await notesZip();
     const body = typeof opts.body === "string" ? opts.body : "";
+    if (method === "POST" && /^\/api\/ingredients\/[^/]+\/resolve/.test(path)) return resolveInBackground(path, body);
     const res = await serial(async () => {
       const t = performance.now();
       const r = (await call(method, path, body)).toJs();

@@ -100,9 +100,12 @@ def get_week_groceries(week_start_iso: str, with_prices: bool = True,
         # Swiped off: stays off until the plan needs MORE of it than it did then.
         if s.get("removed_g") is not None and grams <= s["removed_g"] + 0.5:
             continue
-        shop_list = aisles.list_for(ing)
+        # typed into one list's box = on that list (this week), whatever aisles.py would say
+        shop_list = s.get("shop_list") or aisles.list_for(ing)
         typed = extra.get(ing_id, {}).get("qty_text", "")
         label = ingredients.humanize_grams(ing, grams) if grams else ""
+        if s.get("qty_text") is not None:     # the amount typed on the list row itself wins
+            label, typed = "", s["qty_text"]
         item = {
             "ingredient_id": ing_id,
             "name": ing["name"],
@@ -161,7 +164,7 @@ def list_totals(items: list[dict]) -> dict:
 
 
 def add_extra_item(week_start_iso: str, ingredient_id: str, qty_g: Optional[float] = None,
-                   qty_text: Optional[str] = None) -> list[dict]:
+                   qty_text: Optional[str] = None, shop_list: Optional[str] = None) -> list[dict]:
     """A catalog item added straight to the grocery list, not derived from
     any planned recipe -- repeated adds accumulate rather than overwrite.
     The amount is optional and is whatever was typed ("2 lb", "a dozen"):
@@ -175,7 +178,10 @@ def add_extra_item(week_start_iso: str, ingredient_id: str, qty_g: Optional[floa
     entry["qty_g"] = entry.get("qty_g", 0.0) + (qty_g or 0.0)
     if qty_text and qty_text.strip():
         entry["qty_text"] = " + ".join(t for t in (entry.get("qty_text"), qty_text.strip()) if t)
-    week.setdefault("items", {}).get(ingredient_id, {}).pop("removed_g", None)
+    item = week.setdefault("items", {}).setdefault(ingredient_id, {})
+    item.pop("removed_g", None)
+    if shop_list in (aisles.GROCERY, aisles.MARKET):
+        item["shop_list"] = shop_list
     _save(data)
     return get_week_groceries(week_start_iso)
 
@@ -240,7 +246,8 @@ def suggestions(week_start_iso: str) -> list[dict]:
         for ing_id in wk.get("extra_items", {}):
             if ing_id in ing_by_id and wk.get("items", {}).get(ing_id, {}).get("removed_g") is None:
                 got.add("i:" + ing_id)
-                tally("i:" + ing_id, age, 1, ingredient_id=ing_id)
+                tally("i:" + ing_id, age, 1, ingredient_id=ing_id,
+                      box=wk.get("items", {}).get(ing_id, {}).get("shop_list"))
         for line in wk.get("free_list", []):
             name = _line_name(line["text"])
             key = "t:" + name.lower()
@@ -263,7 +270,7 @@ def suggestions(week_start_iso: str) -> list[dict]:
             continue
         if key.startswith("i:"):
             ing = ing_by_id[st["ingredient_id"]]
-            name, shop_list = ing["name"], aisles.list_for(ing)
+            name, shop_list = ing["name"], st.get("box") or aisles.list_for(ing)
         else:
             name, shop_list = st["text"], aisles.MARKET   # lines live on the market list
         out.append({"key": key, "name": name, "shop_list": shop_list,
@@ -274,7 +281,8 @@ def suggestions(week_start_iso: str) -> list[dict]:
 
 def accept_suggestion(week_start_iso: str, key: str) -> None:
     if key.startswith("i:"):
-        add_extra_item(week_start_iso, key[2:])
+        hit = next((s for s in suggestions(week_start_iso) if s["key"] == key), None)
+        add_extra_item(week_start_iso, key[2:], shop_list=hit["shop_list"] if hit else None)
     elif key.startswith("t:"):
         hit = next((s for s in suggestions(week_start_iso) if s["key"] == key), None)
         add_free_item(week_start_iso, hit["name"] if hit else key[2:])
@@ -289,6 +297,27 @@ def dismiss_suggestion(week_start_iso: str, key: str) -> None:
     if key not in dismissed:
         dismissed.append(key)
     _save(data)
+
+
+def set_amount(week_start_iso: str, ingredient_id: str, text: str) -> list[dict]:
+    """The amount typed on a list row, kept as typed ("2 lb", "1"). A hand-added
+    item's amount simply becomes this; a meal-derived one shows it instead of
+    the computed amount, for this week. Blank = no amount (a hand-add) or back
+    to what the meals need (a meal-derived row)."""
+    text = (text or "").strip()
+    data = _load()
+    week = data["weeks"].setdefault(week_start_iso, {"items": {}, "extra_items": {}, "free_list": []})
+    extra = week.setdefault("extra_items", {}).get(ingredient_id)
+    item = week.setdefault("items", {}).setdefault(ingredient_id, {})
+    if extra is not None and ingredient_id not in week_ingredient_needs(week_start_iso):
+        extra.update({"qty_g": 0.0, "qty_text": text})
+        item.pop("qty_text", None)
+    elif text:
+        item["qty_text"] = text
+    else:
+        item.pop("qty_text", None)
+    _save(data)
+    return get_week_groceries(week_start_iso)
 
 
 def remove_extra_item(week_start_iso: str, ingredient_id: str) -> list[dict]:
