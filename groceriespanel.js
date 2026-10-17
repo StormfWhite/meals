@@ -266,7 +266,7 @@ App.groceriesPanel = {
     const stale = item.price_age_days > 60 ? " stale" : "";
     const row = App.el(`<div class="gp-row ${item.checked ? "done" : ""}" data-ing="${App.esc(item.ingredient_id)}">
       <label class="check"><input type="checkbox" class="gp-chk" ${item.checked ? "checked" : ""}><span class="box">${App.icon('<path d="M20 6 9 17l-5-5"/>')}</span></label>
-      <span class="gp-row-name" title="${App.esc(item.price_label || item.name)}">${App.esc(item.name)}</span>
+      <input class="gp-row-name" value="${App.esc(item.name)}" title="${App.esc(item.price_label || item.name)}" spellcheck="false" enterkeyhint="done">
       <input class="gp-row-qty num" placeholder="qty" value="${App.esc(item.unit_label)}" spellcheck="false" enterkeyhint="done" title="Amount — type it however you like">
       <input class="gp-row-price num${stale}" placeholder="$—" value="${price}"
              title="${item.price ? `${App.esc(item.price_label || "")}${item.price_age_days ? ` · ${item.price_age_days}d ago` : ""}${item.packages > 1 ? ` · ×${item.packages}` : ""}` : "What does one cost? Type it once."}">
@@ -277,6 +277,32 @@ App.groceriesPanel = {
     row.querySelector(".gp-chk").addEventListener("change", async (e) => {
       row.classList.toggle("done", e.target.checked);
       await App.api(`/api/groceries/${this._weekStart}/items/${item.ingredient_id}`, { method: "PUT", body: { checked: e.target.checked } });
+      this._reload();
+    });
+
+    // Tap the name to change it. A hand-added row becomes the new item (amount, tick, list kept);
+    // a row the meals put there renames that ingredient everywhere -- the way to fix "chiken".
+    const nameBox = row.querySelector(".gp-row-name");
+    nameBox.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.keyCode === 13) nameBox.blur();
+      if (e.key === "Escape") { nameBox.value = item.name; nameBox.blur(); }
+    });
+    nameBox.addEventListener("change", async () => {
+      const name = nameBox.value.trim();
+      if (!name || name === item.name) { nameBox.value = item.name; return; }
+      const taken = this._ingredients.find(i => i.name.toLowerCase() === name.toLowerCase() && i.id !== item.ingredient_id);
+      try {
+        if (item.source === "extra") {
+          const to = await App.resolveIngredientId(name, "g", this._ingredients, true);
+          await App.api(`/api/groceries/${this._weekStart}/items/${item.ingredient_id}/swap`, { method: "POST", body: { to } });
+        } else if (taken) {
+          App.toast(`${taken.name} is another item — change it in the meal`);
+          nameBox.value = item.name;
+          return;
+        } else {
+          await App.api(`/api/ingredients/${item.ingredient_id}`, { method: "PUT", body: { name } });
+        }
+      } catch (e) { App.toast(`Couldn't rename: ${e.message}`); }
       this._reload();
     });
 
@@ -368,7 +394,8 @@ App.groceriesPanel = {
         const kind = btn.dataset.list;
         const rows = Array.from(container.querySelectorAll(`.gp-section[data-list="${kind}"] .gp-row:not(.gp-sug)`));
         const text = rows.map(r => {
-          const name = r.querySelector(".gp-row-name").textContent;
+          const n = r.querySelector(".gp-row-name");
+          const name = n.value !== undefined ? n.value : n.textContent;
           const need = r.querySelector(".gp-row-qty");
           return `- ${need && need.value ? need.value + " " : ""}${name}`;
         }).join("\n") || "(nothing needed)";
@@ -382,10 +409,10 @@ App.groceriesPanel = {
     freeAdd.addEventListener("keydown", async (e) => {
       if (e.key !== "Enter" && e.keyCode !== 13) return;
       e.preventDefault();
-      const text = freeAdd.value.trim();
-      if (!text) return;
+      if (!freeAdd.value.trim()) return;
+      const [text, qty] = _gpSplitAmount(freeAdd.value.trim());   // "6 peaches" → peaches · 6, like the grocery box
       freeAdd.value = "";
-      await App.api(`/api/groceries/${this._weekStart}/free-list`, { method: "POST", body: { text } });
+      await App.api(`/api/groceries/${this._weekStart}/free-list`, { method: "POST", body: { text, qty } });
       this._reload();
     });
   },
@@ -393,9 +420,28 @@ App.groceriesPanel = {
   _freeRow(item) {
     const row = App.el(`<div class="gp-row ${item.checked ? "done" : ""}">
       <label class="check"><input type="checkbox" class="gp-free-chk" ${item.checked ? "checked" : ""}><span class="box">${App.icon('<path d="M20 6 9 17l-5-5"/>')}</span></label>
-      <span class="gp-row-name">${App.esc(item.text)}</span>
+      <input class="gp-row-name" value="${App.esc(item.text)}" spellcheck="false" enterkeyhint="done">
+      <input class="gp-row-qty num" placeholder="qty" value="${App.esc(item.qty || "")}" spellcheck="false" enterkeyhint="done">
       <button class="icon-btn gp-free-remove" title="Remove">${App.icon(GP_X)}</button>
     </div>`);
+    row.dataset.free = item.id;
+    const textBox = row.querySelector(".gp-row-name");
+    textBox.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.keyCode === 13) textBox.blur();
+      if (e.key === "Escape") { textBox.value = item.text; textBox.blur(); }
+    });
+    textBox.addEventListener("change", async () => {
+      const text = textBox.value.trim();
+      if (!text) { textBox.value = item.text; return; }   // emptying isn't deleting: swipe or ✕ does that
+      await App.api(`/api/groceries/${this._weekStart}/free-list/${item.id}`, { method: "PUT", body: { text } });
+      this._reload();
+    });
+    const qtyBox = row.querySelector(".gp-row-qty");
+    qtyBox.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.keyCode === 13) qtyBox.blur(); });
+    qtyBox.addEventListener("change", async () => {
+      await App.api(`/api/groceries/${this._weekStart}/free-list/${item.id}`, { method: "PUT", body: { qty: qtyBox.value } });
+      this._reload();
+    });
     row.querySelector(".gp-free-chk").addEventListener("change", async (e) => {
       row.classList.toggle("done", e.target.checked);
       await App.api(`/api/groceries/${this._weekStart}/free-list/${item.id}`, { method: "PUT", body: { checked: e.target.checked } });
@@ -431,7 +477,9 @@ function _gpSwipe(row, onRemove) {
   wrap.appendChild(row);
   let x0 = 0, y0 = 0, dx = 0, mode = null;
   row.addEventListener("touchstart", (e) => {
-    if (e.touches.length !== 1 || e.target.closest("input:not([type=checkbox])")) { mode = "no"; return; }
+    // a field being typed in keeps its touches (caret, selection); an idle name/amount still swipes
+    const field = e.target.closest("input:not([type=checkbox])");
+    if (e.touches.length !== 1 || (field && field === document.activeElement)) { mode = "no"; return; }
     x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; dx = 0; mode = null;
   }, { passive: true });
   row.addEventListener("touchmove", (e) => {
@@ -476,12 +524,13 @@ function _gpCaptureFocus(container) {
   if (!el || !container.contains(el) || el.tagName !== "INPUT") return null;
   const row = el.closest(".gp-row");
   return { cls: el.className, value: el.value, start: el.selectionStart,
-           ing: row ? row.dataset.ing : null };
+           ing: row ? row.dataset.ing : null, free: row ? row.dataset.free : null };
 }
 function _gpRestoreFocus(container, focus) {
   if (!focus) return;
   const selector = "." + focus.cls.trim().split(/\s+/).join(".");
-  const scope = focus.ing ? container.querySelector(`.gp-row[data-ing="${focus.ing}"]`) : container;
+  const scope = focus.ing ? container.querySelector(`.gp-row[data-ing="${focus.ing}"]`)
+    : focus.free ? container.querySelector(`.gp-row[data-free="${focus.free}"]`) : container;
   const el = (scope || container).querySelector(selector);
   if (!el) return;
   if (focus.value) el.value = focus.value;

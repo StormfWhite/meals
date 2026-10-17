@@ -320,6 +320,25 @@ def set_amount(week_start_iso: str, ingredient_id: str, text: str) -> list[dict]
     return get_week_groceries(week_start_iso)
 
 
+def swap_item(week_start_iso: str, old_id: str, new_id: str) -> list[dict]:
+    """A hand-added row renamed to something else: the row becomes the new
+    ingredient, keeping its amount, tick and list."""
+    data = _load()
+    week = data["weeks"].setdefault(week_start_iso, {"items": {}, "extra_items": {}, "free_list": []})
+    extras, items = week.setdefault("extra_items", {}), week.setdefault("items", {})
+    if old_id in extras and old_id != new_id:
+        old = extras.pop(old_id)
+        new = extras.setdefault(new_id, {"qty_g": 0.0})
+        new["qty_g"] = new.get("qty_g", 0.0) + old.get("qty_g", 0.0)
+        texts = [t for t in (new.get("qty_text"), old.get("qty_text")) if t]
+        if texts:
+            new["qty_text"] = " + ".join(texts)
+        state = {k: v for k, v in items.pop(old_id, {}).items() if k != "removed_g"}
+        items.setdefault(new_id, {}).update(state)
+        _save(data)
+    return get_week_groceries(week_start_iso)
+
+
 def remove_extra_item(week_start_iso: str, ingredient_id: str) -> list[dict]:
     data = _load()
     week = data["weeks"].get(week_start_iso, {})
@@ -339,11 +358,12 @@ def list_free_items(week_start_iso: str) -> list[dict]:
     return _load()["weeks"].get(week_start_iso, {}).get("free_list", [])
 
 
-def add_free_item(week_start_iso: str, text: str) -> list[dict]:
+def add_free_item(week_start_iso: str, text: str, qty: str = "") -> list[dict]:
     data = _load()
     week = data["weeks"].setdefault(week_start_iso, {"items": {}, "extra_items": {}, "free_list": []})
     week.setdefault("free_list", []).append({
         "id": "f_" + uuid.uuid4().hex[:8], "text": text.strip(), "checked": False,
+        **({"qty": qty.strip()} if qty and qty.strip() else {}),
     })
     _save(data)
     return week["free_list"]
@@ -355,9 +375,9 @@ def update_free_item(week_start_iso: str, item_id: str, fields: dict) -> list[di
     item = next((i for i in week.get("free_list", []) if i["id"] == item_id), None)
     if item is None:
         raise KeyError(item_id)
-    for key in ("text", "checked"):
+    for key in ("text", "checked", "qty"):
         if key in fields and fields[key] is not None:
-            item[key] = fields[key].strip() if key == "text" else fields[key]
+            item[key] = fields[key].strip() if key in ("text", "qty") else fields[key]
     _save(data)
     return week["free_list"]
 
@@ -377,7 +397,7 @@ def free_list_export_text(week_start_iso: str) -> str:
     items = list_free_items(week_start_iso)
     if not items:
         return "(nothing on the free list)"
-    return "\n".join(f"- {i['text']}" for i in items)
+    return "\n".join(f"- {i['qty'] + ' ' if i.get('qty') else ''}{i['text']}" for i in items)
 
 
 def update_item(week_start_iso: str, ingredient_id: str, fields: dict) -> dict:

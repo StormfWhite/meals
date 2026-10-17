@@ -745,6 +745,18 @@ def remove_extra_grocery_item(week: str, ingredient_id: str):
     return {"items": groceries.remove_extra_item(week, ingredient_id)}
 
 
+class SwapBody(BaseModel):
+    to: str
+
+
+@app.post("/api/groceries/{week}/items/{ingredient_id}/swap")
+def swap_grocery_item(week: str, ingredient_id: str, body: SwapBody):
+    """A hand-added row renamed: it becomes that ingredient (amount, tick, list kept)."""
+    if ingredients.get(body.to) is None:
+        raise HTTPException(404, "no such ingredient")
+    return {"items": groceries.swap_item(week, ingredient_id, body.to)}
+
+
 class AmountBody(BaseModel):
     qty: str = ""
 
@@ -787,11 +799,13 @@ def dismiss_grocery_suggestion(week: str, key: str):
 
 class FreeItemBody(BaseModel):
     text: str
+    qty: str = ""
 
 
 class FreeItemUpdateBody(BaseModel):
     text: Optional[str] = None
     checked: Optional[bool] = None
+    qty: Optional[str] = None       # the amount, as typed ("6", "2 baskets")
 
 
 @app.get("/api/groceries/{week}/free-list")
@@ -803,7 +817,7 @@ def get_free_list(week: str):
 def add_free_list_item(week: str, body: FreeItemBody):
     if not body.text.strip():
         raise HTTPException(400, "a free list line needs some text")
-    return {"items": groceries.add_free_item(week, body.text)}
+    return {"items": groceries.add_free_item(week, body.text, body.qty)}
 
 
 @app.put("/api/groceries/{week}/free-list/{item_id}")

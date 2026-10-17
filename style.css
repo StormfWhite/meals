@@ -345,6 +345,10 @@ button.mb-tag:hover { color: var(--good); border-color: var(--good); }
 .gp-row:hover { background: var(--panel-2); }
 .gp-row.done .gp-row-name { text-decoration: line-through; color: var(--text-dim); }
 .gp-row-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* tap a name to edit it: looks like plain text until it has the caret */
+input.gp-row-name { font: inherit; color: inherit; padding: 1px 4px; margin-left: -4px; border: 1px solid transparent;
+  background: transparent; border-radius: 5px; }
+input.gp-row-name:focus { background: var(--panel); border-color: var(--border); }
 .gp-row-need { font-size: 10.5px; white-space: nowrap; }
 .gp-row-qty { width: 54px; min-width: 0; font-size: 10.5px; padding: 2px 5px; text-align: right; color: var(--text-dim);
   border-color: transparent; background: transparent; }
@@ -373,6 +377,7 @@ button.mb-tag:hover { color: var(--good); border-color: var(--good); }
 .gp-sug-icon svg { width: 11px; height: 11px; }
 .gp-sugs { gap: 3px; }
 .gp-pending { opacity: .45; padding-left: 30px; }   /* typed, still being looked up */
+.gp-free .gp-row-qty { width: 84px; }
 .gp-sugs:empty { display: none; }
 /* swipe-to-remove (phones): the row slides over a red bin */
 .gp-swipe { position: relative; border-radius: 7px; overflow: hidden; transition: height .2s, opacity .2s; }
