@@ -144,25 +144,18 @@
   const eq = (a, b) => { if (!a || !b || a.length !== b.length) return false; for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false; return true; };
   const isData = (n) => /^[\w.-]+\.(json|sqlite)$/.test(n);
 
+  const T0 = performance.now(), marks = [];
+  const mark = (m) => marks.push([m, Math.round(performance.now() - T0)]);
   async function bootPython() {
     say("Loading planner…");
-    py = await loadPyodide();
-    await py.loadPackage(["micropip", "pydantic", "sqlite3", "requests", "anyio", "sniffio", "typing-extensions", "ssl"]);
-    say("Loading planner…  (first time takes a moment)");
-    await py.runPythonAsync(`
-import micropip
-await micropip.install([${["fastapi-0.115.6-py3-none-any.whl", "starlette-0.41.3-py3-none-any.whl", "pyodide_http-0.2.1-py3-none-any.whl"]
-      .map((w) => JSON.stringify(new URL("wheels/" + w, location.href).href)).join(",")}], deps=False)
-`);
-    const files = (await (await fetch(PY_FILES + "files.txt", { cache: "no-cache" })).text()).trim().split("\n");
-    await Promise.all(files.map(async (f) => {
-      const src = await (await fetch(PY_FILES + f, { cache: "no-cache" })).text();
-      const p = "/src/" + f;
-      py.FS.mkdirTree(p.slice(0, p.lastIndexOf("/")));
-      py.FS.writeFile(p, src);
-    }));
+    // the code bundle downloads while Pyodide starts; packages load as part of Pyodide's own startup
+    const bundle = fetch(PY_FILES.replace(/py\/$/, "") + "py.zip", { cache: "no-cache" }).then((r) => r.arrayBuffer());
+    py = await loadPyodide({ packages: ["pydantic", "sqlite3", "requests", "anyio", "sniffio", "typing-extensions", "ssl"] });
+    mark("pyodide");
+    py.unpackArchive(await bundle, "zip", { extractDir: "/src" });   // see build.sh: our code + fastapi/starlette, precompiled
     py.FS.mkdirTree("/src/app/web");
     py.FS.mkdirTree(DATA);
+    mark("sources");
   }
 
   async function startApp() {
@@ -325,10 +318,12 @@ async def _call(method, path, body):
     if (!S.refresh) await connect();
     await pyLoad;
     await firstLoad();
+    mark("data");
     await startApp();
+    mark("app");
     ready = true;
-    splash.classList.add("gone");
-    setTimeout(() => splash.remove(), 400);
+    if (splash.isConnected) { splash.classList.add("gone"); setTimeout(() => splash.remove(), 400); }
+    if (servedStale) redraw();      // the saved copy was on screen: swap in the live plan
     serial(() => pull()).then((ch) => { if (ch) redraw(); longpoll(); }).catch(() => setOnline(false));
   })().catch((e) => { console.error(e); say("Couldn't start: " + e.message); });
 
@@ -345,26 +340,52 @@ async def _call(method, path, body):
     } catch (e) { console.warn("notes zip", e); }
   }
 
+  // ---- instant paint ---------------------------------------------------------------------------------
+  // Python takes seconds to wake; the plan on screen shouldn't wait for it. Every answer to a GET is
+  // kept (IndexedDB, "get:" + path) and, until Python is up, the same request is answered from that
+  // copy -- the last plan seen on this phone, at once. When Python is ready the screen redraws from
+  // the live data. Anything that CHANGES data still waits for Python.
+  const shown = {};
+  let servedStale = false;
+  const stale = idbAll().then((all) => {
+    for (const [k, v] of Object.entries(all)) if (k.startsWith("get:")) shown[k.slice(4)] = v;
+    if (Object.keys(shown).length && !ready && S.refresh) {   // a phone that's opened the plan before: no splash
+      splash.classList.add("gone");
+      setTimeout(() => splash.remove(), 400);
+    }
+  }).catch(() => {});
+  const keepShown = (path, text) => { if (shown[path] !== text) { shown[path] = text; idbPut("get:" + path, text).catch(() => {}); } };
+
   const realFetch = window.fetch.bind(window);
   window.fetch = async (input, opts = {}) => {
     const url = new URL(typeof input === "string" ? input : input.url, location.href);
     const at = url.pathname.indexOf("/api/");
     if (url.origin !== location.origin || at < 0) return realFetch(input, opts);
-    await booted;
     const method = (opts.method || "GET").toUpperCase();
     const path = url.pathname.slice(at) + url.search;
+    if (!ready && method === "GET") {
+      await stale;
+      if (!ready && shown[path] !== undefined) {
+        servedStale = true;
+        return new Response(shown[path], { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+    }
+    await booted;
     if (path.startsWith("/api/notes")) await notesZip();
     const body = typeof opts.body === "string" ? opts.body : "";
     const res = await serial(async () => {
+      const t = performance.now();
       const r = (await call(method, path, body)).toJs();
+      if (marks.length < 60) marks.push([method + " " + path.slice(0, 60), Math.round(performance.now() - t)]);
       if (method !== "GET") pending.push({ method, path, body });
       return r;
     });
     schedulePush();   // GETs can write too (the USDA cache, store lookups); push() skips unchanged files
+    if (method === "GET" && res[0] === 200 && !path.startsWith("/api/notes")) keepShown(path, res[1]);
     return new Response(res[0] === 204 ? null : res[1], { status: res[0], headers: { "Content-Type": "application/json" } });
   };
 
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
   window.__meals_py = () => py;
-  window.__meals = { S, pull, push, get pending() { return pending; }, get ready() { return ready; }, booted };
+  window.__meals = { S, pull, push, marks, get pending() { return pending; }, get ready() { return ready; }, booted };
 })();
