@@ -6,6 +6,9 @@
  * the same ingredient records without touching this flow. */
 window.App = window.App || {};
 
+const RC_NOTE = '<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9Z"/><path d="M14 3v6h6"/><path d="M8 13h8M8 17h5"/>';
+const RC_LIST = '<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>';
+
 App.recipes = {
   _recipes: [],
   _ingredients: [],
@@ -25,6 +28,7 @@ App.recipes = {
     body.innerHTML = `
       <div class="board-toolbar">
         <div class="field-label" style="flex:1;">Recipes</div>
+        <button class="icon-btn" id="import-recipe-btn" title="From a note">${App.icon(RC_NOTE)}</button>
         <button class="btn-primary" id="new-recipe-btn">+ New recipe</button>
       </div>
       <div class="pad" id="recipe-list" style="display:flex;flex-direction:column;gap:8px;"></div>
@@ -36,6 +40,7 @@ App.recipes = {
       this._recipes.forEach(r => list.appendChild(this._recipeRow(r)));
     }
     body.querySelector("#new-recipe-btn").addEventListener("click", () => this._openEditor(null));
+    body.querySelector("#import-recipe-btn").addEventListener("click", () => this._openImport());
   },
 
   _recipeRow(r) {
@@ -68,18 +73,82 @@ App.recipes = {
     return App.resolveIngredientId(name, unit, this._ingredients);
   },
 
+  // `item` is a saved line ({ingredient_id, qty, unit}) or an imported one
+  // ({name, qty, unit, note}) -- an import's missing amount/unit stays blank.
   _ingredientRow(item) {
-    const row = App.el(`<div style="display:flex;gap:6px;align-items:center;">
-      <input class="ing-name" list="ingredient-options" placeholder="ingredient" value="${item ? _esc(_ingName(this._ingredients, item.ingredient_id)) : ""}" style="flex:2;">
-      <input class="ing-qty" type="number" step="any" placeholder="qty" value="${item ? item.qty : ""}" style="width:70px;">
-      <input class="ing-unit" placeholder="unit (g, medium, cup...)" value="${item ? _esc(item.unit) : "g"}" style="width:120px;">
+    const name = item ? (item.name || _ingName(this._ingredients, item.ingredient_id)) : "";
+    const qty = item && item.qty ? item.qty : "";
+    const unit = item ? (item.unit || "") : "g";
+    const row = App.el(`<div class="rf-ing-row" style="display:flex;gap:6px;align-items:center;">
+      <input class="ing-name" list="ingredient-options" placeholder="ingredient" value="${_esc(name)}" style="flex:2;min-width:0;">
+      <input class="ing-qty" type="number" step="any" placeholder="qty" value="${qty}" style="width:70px;min-width:0;">
+      <input class="ing-unit" placeholder="unit" value="${_esc(unit)}" style="width:90px;min-width:0;">
       <button class="icon-btn ing-remove" title="Remove">${App.icon('<path d="M18 6 6 18M6 6l12 12"/>')}</button>
     </div>`);
     row.querySelector(".ing-remove").addEventListener("click", () => row.remove());
+    row.dataset.note = (item && item.note) || "";
     return row;
   },
 
-  _openEditor(recipe) {
+  /* A recipe from the Notes app: pick a note (recipe-looking ones first, or
+   * search), or paste the text. recipe_import.py reads it -- top line = the
+   * name, a line each = the ingredients, a leading amount = the quantity --
+   * and the editor opens filled in, to check and save. */
+  _openImport() {
+    App.openModal(`
+      <h2>From a note
+        <button class="icon-btn" onclick="App.closeModal()">${App.icon('<path d="M18 6 6 18M6 6l12 12"/>')}</button>
+      </h2>
+      <div class="modal-section" style="border-top:none;padding-top:0;">
+        <input id="ri-q" placeholder="Search notes…" spellcheck="false" autocomplete="off">
+        <div id="ri-list" class="ri-list"><div class="loading-state"><div class="spin"></div>Reading notes…</div></div>
+      </div>
+      <div class="modal-section">
+        <textarea id="ri-paste" rows="4" placeholder="…or paste a recipe: name on top, one ingredient a line"></textarea>
+        <button class="btn-primary" id="ri-paste-go" style="align-self:flex-end;">Read it</button>
+      </div>
+    `);
+    const list = document.getElementById("ri-list");
+    const open = (parsed) => {
+      if (!parsed.ingredients.length && !parsed.name) { App.toast("Nothing to read in that"); return; }
+      App.closeModal();
+      this._openEditor(null, parsed);
+    };
+    let seq = 0;
+    const load = async (q) => {
+      const mine = ++seq;
+      let res;
+      try { res = await App.api(`/api/notes?q=${encodeURIComponent(q)}`); }
+      catch (e) { if (mine === seq) list.innerHTML = `<div class="gp-empty">Couldn't reach the notes</div>`; return; }
+      if (mine !== seq) return;
+      if (!res.available) { list.innerHTML = `<div class="gp-empty">No notes on this device — paste instead</div>`; return; }
+      list.innerHTML = res.notes.length ? "" : `<div class="gp-empty">${q ? "No note matches" : "No recipe-looking notes — search for one"}</div>`;
+      res.notes.forEach(n => {
+        const row = App.el(`<button class="ri-note">
+          <span class="ri-note-t">${_esc(n.title)}</span>
+          <span class="dim num">${n.lines ? `${n.lines} ${App.icon(RC_LIST)}` : ""}</span>
+        </button>`);
+        row.addEventListener("click", async () => {
+          row.disabled = true;
+          open(await App.api(`/api/notes/${encodeURIComponent(n.id)}/recipe`));
+        });
+        list.appendChild(row);
+      });
+    };
+    let timer = null;
+    document.getElementById("ri-q").addEventListener("input", (e) => {
+      clearTimeout(timer);
+      timer = setTimeout(() => load(e.target.value.trim()), 250);
+    });
+    document.getElementById("ri-paste-go").addEventListener("click", async () => {
+      const text = document.getElementById("ri-paste").value;
+      if (!text.trim()) return;
+      open(await App.api("/api/recipes/parse", { method: "POST", body: { text } }));
+    });
+    load("");
+  },
+
+  _openEditor(recipe, imported) {
     App.openModal(`
       <h2>${recipe ? "Edit recipe" : "New recipe"}
         <button class="icon-btn" onclick="App.closeModal()">${App.icon('<path d="M18 6 6 18M6 6l12 12"/>')}</button>
@@ -89,7 +158,7 @@ App.recipes = {
       </datalist>
       <div class="modal-section" style="border-top:none;padding-top:0;">
         <label class="field-label">Name</label>
-        <input id="rf-name" value="${recipe ? _esc(recipe.name) : ""}" placeholder="e.g. Eggplant Parm">
+        <input id="rf-name" value="${recipe ? _esc(recipe.name) : imported ? _esc(imported.name) : ""}" placeholder="e.g. Eggplant Parm">
         <label class="field-label" style="margin-top:6px;">Servings</label>
         <input id="rf-servings" type="number" min="1" value="${recipe ? recipe.servings : 4}" style="width:80px;">
       </div>
@@ -102,7 +171,7 @@ App.recipes = {
         <label class="field-label">Tags (comma separated)</label>
         <input id="rf-tags" value="${recipe ? _esc((recipe.tags || []).join(", ")) : ""}">
         <label class="field-label" style="margin-top:6px;">Notes</label>
-        <textarea id="rf-notes" rows="2">${recipe ? _esc(recipe.notes || "") : ""}</textarea>
+        <textarea id="rf-notes" rows="2">${recipe ? _esc(recipe.notes || "") : imported ? _esc(imported.notes || "") : ""}</textarea>
       </div>
       <div class="modal-actions">
         <button class="btn-ghost" onclick="App.closeModal()">Cancel</button>
@@ -111,9 +180,8 @@ App.recipes = {
     `);
 
     const ingWrap = document.getElementById("rf-ingredients");
-    const rows = recipe && recipe.ingredients.length
-      ? recipe.ingredients.map(it => this._ingredientRow(it))
-      : [this._ingredientRow(null)];
+    const lines = recipe ? recipe.ingredients : imported ? imported.ingredients : [];
+    const rows = lines.length ? lines.map(it => this._ingredientRow(it)) : [this._ingredientRow(null)];
     rows.forEach(r => ingWrap.appendChild(r));
 
     document.getElementById("rf-add-ing").addEventListener("click", () => {
@@ -131,11 +199,13 @@ App.recipes = {
       const ingredients = [];
       for (const row of ingredientRows) {
         const iname = row.querySelector(".ing-name").value.trim();
-        const qty = Number(row.querySelector(".ing-qty").value);
-        const unit = row.querySelector(".ing-unit").value.trim() || "g";
-        if (!iname || !qty) continue;
+        const qty = Number(row.querySelector(".ing-qty").value) || 0;
+        // no unit written: a count ("2 eggs" = 2 of them, weighed by USDA's
+        // per-piece portion), never a silent 2 g. No amount at all is fine too.
+        const unit = row.querySelector(".ing-unit").value.trim() || "each";
+        if (!iname) continue;
         const ingredient_id = await this._resolveIngredientId(iname, unit);
-        ingredients.push({ ingredient_id, qty, unit });
+        ingredients.push({ ingredient_id, qty, unit, note: row.dataset.note || "" });
       }
 
       const body = { name, servings, ingredients, tags, notes };

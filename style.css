@@ -355,9 +355,30 @@ button.mb-tag:hover { color: var(--good); border-color: var(--good); }
 .gp-empty { font-size: 11.5px; color: var(--text-dim); padding: 2px 6px; }
 .gp-add-row { display: flex; align-items: center; gap: 5px; }
 .gp-add-name { flex: 1; min-width: 0; font-size: 12px; padding: 5px 8px; }
-.gp-add-qty { width: 48px; min-width: 0; font-size: 12px; padding: 5px 6px; text-align: right; }
-.gp-add-unit { font-size: 10.5px; min-width: 18px; }
-.gp-free-add { font-size: 12px; padding: 6px 8px; }
+.gp-add-qty { width: 58px; min-width: 0; font-size: 12px; padding: 5px 6px; }
+.gp-free-add { flex: 1; min-width: 0; font-size: 12px; padding: 6px 8px; }
+/* the usuals: dimmed rows, tap = on the list. The ▾ that hides them is phone-only */
+.gp-sug-toggle { display: none; position: relative; }
+.gp-sug-n { position: absolute; top: 1px; right: 1px; font-size: 9px; font-weight: 700; color: var(--accent); }
+.gp-section.sug-open .gp-sug-toggle svg { transform: rotate(180deg); }
+.gp-sug { color: var(--text-dim); cursor: pointer; border: 1px dashed var(--border); }
+.gp-sug:hover { color: var(--text); }
+.gp-sug.taken { opacity: .35; pointer-events: none; }
+.gp-sug-icon { display: inline-flex; width: 16px; justify-content: center; }
+.gp-sug-icon svg { width: 11px; height: 11px; }
+.gp-sugs { gap: 3px; }
+.gp-sugs:empty { display: none; }
+/* swipe-to-remove (phones): the row slides over a red bin */
+.gp-swipe { position: relative; border-radius: 7px; overflow: hidden; transition: height .2s, opacity .2s; }
+.gp-swipe > .gp-row { position: relative; transition: transform .2s; touch-action: pan-y; }
+.gp-swipe.swiping > .gp-row { background: var(--panel); }
+.gp-swipe-bin { position: absolute; inset: 0; display: none; align-items: center; justify-content: flex-end; padding: 0 14px;
+  background: #c9453a; color: #fff; }
+.gp-swipe-bin svg { width: 16px; height: 16px; opacity: .6; }
+.gp-swipe.swiping .gp-swipe-bin { display: flex; }
+.gp-swipe.from-left .gp-swipe-bin { justify-content: flex-start; }
+.gp-swipe.armed .gp-swipe-bin svg { opacity: 1; }
+.gp-swipe.gone { height: 0 !important; opacity: 0; }
 
 /* trend badges (history.js Meals sub-tab) */
 .chip.trend-up { color: var(--warn); border-color: var(--warn); }
@@ -556,3 +577,11 @@ button.mb-tag:hover { color: var(--good); border-color: var(--good); }
 .mb-banger.on svg { fill: currentColor; }
 .is-week .mb-banger { position: absolute; right: 38px; background: var(--panel); }
 .is-week .mb-banger.on { background: transparent; }
+/* recipe from a note */
+.ri-list { display: flex; flex-direction: column; gap: 2px; max-height: 46vh; overflow-y: auto; margin-top: 6px; }
+.ri-note { display: flex; align-items: center; gap: 8px; text-align: left; padding: 8px 10px; border: 0; border-radius: 8px;
+  background: transparent; color: var(--text); font: inherit; font-size: 13px; cursor: pointer; }
+.ri-note:hover { background: var(--panel-2); }
+.ri-note-t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ri-note .dim { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; }
+.ri-note .dim svg { width: 11px; height: 11px; }

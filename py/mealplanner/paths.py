@@ -19,8 +19,9 @@ CONFIG_DIR = Path.home() / ".config" / "meal-planner"
 CONFIG_FILE = CONFIG_DIR / "config.json"
 
 # The plan is shared with the phones (stormfwhite.github.io/meals runs this same package in the
-# browser): when this machine has the Dropbox app folder, the data AND the config live there, so
-# Joanna's iPhone, Storm's Pixel and this laptop all read and write the same files. MEALPLANNER_DATA
+# browser): when this machine has the Dropbox app folder (Joanna's Dropbox -- the one account the
+# laptop and both phones sign in to), the data AND the config live there, so Joanna's iPhone,
+# Storm's Pixel and this laptop all read and write the same files. MEALPLANNER_DATA
 # overrides (the browser sets it); without either it's the old local folder (tests, other machines).
 SHARED_DIR = Path.home() / "Dropbox" / "Apps" / "SfwhiteNotes" / "mealplanner"
 if os.environ.get("MEALPLANNER_DATA"):

@@ -37,10 +37,17 @@ def nutrients_per_100g(ingredient: dict) -> Optional[dict]:
     return _fdc_nutrients(ingredient.get("fdc_id")) or ingredient.get("manual_nutrients")
 
 
+COUNT_UNITS = ("medium", "piece", "egg", "fruit", "large", "small", "clove", "slice")
+
+
 def qty_to_grams(ingredient: dict, qty: float, unit: str) -> Optional[float]:
     if unit == "g":
         return qty
-    grams_per_unit = (ingredient.get("unit_conversions") or {}).get(unit)
+    conversions = ingredient.get("unit_conversions") or {}
+    grams_per_unit = conversions.get(unit)
+    if grams_per_unit is None and unit == "each":
+        # "2 eggs", "3 onions": a count weighs whatever USDA says one of them weighs
+        grams_per_unit = next((conversions[u] for u in COUNT_UNITS if u in conversions), None)
     if grams_per_unit is None:
         return None
     return qty * grams_per_unit

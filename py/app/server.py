@@ -18,7 +18,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from mealplanner import (bangers, aisles, board, config, fdc, groceries, household, ingredients,
-                         learning, nutrition, places, prices, recipes, routines, stats, suggest)
+                         learning, nutrition, places, prices, recipe_import, recipes, routines, stats, suggest)
 from mealplanner.paths import ensure_dirs
 
 WEB_DIR = Path(__file__).parent / "web"
@@ -354,6 +354,32 @@ def create_recipe(body: RecipeBody):
     recipe = recipes.add(body.name, body.servings,
                          [i.model_dump() for i in body.ingredients], body.tags, body.notes)
     return {"recipe": _recipe_summary(recipe, ingredients.by_id())}
+
+
+# ── recipes from the Notes app ─────────────────────────────────────────────
+
+class RecipeTextBody(BaseModel):
+    text: str
+
+
+@app.get("/api/notes")
+def find_notes(q: str = ""):
+    """Notes to import a recipe from: recipe-looking ones first."""
+    return {"available": recipe_import.available(), "notes": recipe_import.search(q)}
+
+
+@app.get("/api/notes/{note_id}/recipe")
+def note_as_recipe(note_id: str):
+    parsed = recipe_import.note_recipe(note_id)
+    if parsed is None:
+        raise HTTPException(404, "no such note")
+    return parsed
+
+
+@app.post("/api/recipes/parse")
+def parse_recipe_text(body: RecipeTextBody):
+    """Pasted text, read the same way a note is: top line = name, one ingredient a line."""
+    return recipe_import.parse_note(body.text)
 
 
 @app.put("/api/recipes/{recipe_id}")
@@ -693,19 +719,48 @@ def export_groceries(week: str, section: str, format: str = "text"):
 
 class ExtraItemBody(BaseModel):
     ingredient_id: str
-    qty_g: float
+    qty_g: Optional[float] = None   # a bare name is a whole entry
+    qty: Optional[str] = None       # the amount as typed ("2 lb"), never converted
 
 
 @app.post("/api/groceries/{week}/extra")
 def add_extra_grocery_item(week: str, body: ExtraItemBody):
     if ingredients.get(body.ingredient_id) is None:
         raise HTTPException(404, "no such ingredient")
-    return {"items": groceries.add_extra_item(week, body.ingredient_id, body.qty_g)}
+    return {"items": groceries.add_extra_item(week, body.ingredient_id, body.qty_g, body.qty)}
 
 
 @app.delete("/api/groceries/{week}/extra/{ingredient_id}")
 def remove_extra_grocery_item(week: str, ingredient_id: str):
     return {"items": groceries.remove_extra_item(week, ingredient_id)}
+
+
+@app.delete("/api/groceries/{week}/items/{ingredient_id}")
+def remove_grocery_item(week: str, ingredient_id: str):
+    """The swipe: off this week's list, whether a meal or a hand-add put it there."""
+    return {"items": groceries.remove_item(week, ingredient_id)}
+
+
+# ── the usuals (learned from what's hand-added week after week) ────────────
+
+@app.get("/api/groceries/{week}/suggestions")
+def get_grocery_suggestions(week: str):
+    return {"items": groceries.suggestions(week)}
+
+
+@app.post("/api/groceries/{week}/suggestions/{key:path}/accept")
+def accept_grocery_suggestion(week: str, key: str):
+    try:
+        groceries.accept_suggestion(week, key)
+    except KeyError:
+        raise HTTPException(404, "no such suggestion")
+    return {"ok": True}
+
+
+@app.post("/api/groceries/{week}/suggestions/{key:path}/dismiss")
+def dismiss_grocery_suggestion(week: str, key: str):
+    groceries.dismiss_suggestion(week, key)
+    return {"ok": True}
 
 
 # ── free list (unstructured, e.g. farmer's market) ─────────────────────────

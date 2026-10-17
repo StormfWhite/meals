@@ -18,6 +18,15 @@
  * The farmer's-market section also keeps the freeform lines ("3 eggplant")
  * — typed straight in, never parsed, still the fastest way to note
  * something you'll just grab.
+ *
+ * A name is a whole entry; the amount beside it is optional and kept
+ * exactly as typed ("2 lb", "a dozen") — never turned into grams.
+ *
+ * The usuals: what's been added by hand week after week comes back as a
+ * dimmed row under each section (groceries.suggestions). Tap it and it's on
+ * the list; ✕ it and it's gone for the week, and counts against coming
+ * back. On a phone they wait behind the ▾ at the end of the add bar, so
+ * tapping the bar to type is just typing. Rows swipe away on a phone.
  */
 window.App = window.App || {};
 
@@ -26,6 +35,10 @@ const GP_BASKET = '<path d="M3 9h18l-1.5 11H4.5Z"/><path d="M8 9V6a4 4 0 0 1 8 0
 const GP_SWAP = '<path d="M7 4 3 8l4 4"/><path d="M3 8h14"/><path d="m17 20 4-4-4-4"/><path d="M21 16H7"/>';
 const GP_COPY = '<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>';
 const GP_X = '<path d="M18 6 6 18M6 6l12 12"/>';
+const GP_DOWN = '<path d="m6 9 6 6 6-6"/>';
+const GP_USUAL = '<path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"/><path d="M3 21v-5h5"/>';
+const GP_TRASH = '<path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/>';
+const gpPhone = () => window.matchMedia("(max-width: 760px)").matches;
 
 App.groceriesPanel = {
   _container: null,
@@ -35,6 +48,8 @@ App.groceriesPanel = {
   _title: "",
   _range: "",
   _shops: { grocery: null, market: null },
+  _sugOpen: { grocery: false, market: false },   // phone only: the ▾ in the add bar
+  _addQueue: Promise.resolve(),
 
   mount(container, weekStart, onCount, title, range) {
     this._container = container;
@@ -56,45 +71,60 @@ App.groceriesPanel = {
 
   async _reload() {
     if (!this._container || !this._container.isConnected) return;
-    const [itemsRes, ingredientsRes, freeRes] = await Promise.all([
+    const [itemsRes, ingredientsRes, freeRes, sugRes] = await Promise.all([
       App.api(`/api/groceries/${this._weekStart}`),
       App.api("/api/ingredients"),
       App.api(`/api/groceries/${this._weekStart}/free-list`),
+      App.api(`/api/groceries/${this._weekStart}/suggestions`).catch(() => ({ items: [] })),
     ]);
     this._shops = { grocery: itemsRes.store, market: itemsRes.market };
     const focus = _gpCaptureFocus(this._container);
-    this._draw(itemsRes.items, ingredientsRes.ingredients, freeRes.items, itemsRes.totals);
+    this._draw(itemsRes.items, ingredientsRes.ingredients, freeRes.items, itemsRes.totals, sugRes.items);
     _gpRestoreFocus(this._container, focus);
     if (this._onCount) {
       this._onCount(itemsRes.items.filter(i => !i.checked).length + freeRes.items.filter(i => !i.checked).length);
     }
   },
 
-  _draw(items, ingredients, freeItems, totals) {
+  _draw(items, ingredients, freeItems, totals, sugs) {
     const container = this._container;
     const grocery = items.filter(i => i.shop_list !== "market");
     const market = items.filter(i => i.shop_list === "market");
+    sugs = sugs || [];
+    const sugFor = (kind) => sugs.filter(s => (s.shop_list === "market" ? "market" : "grocery") === kind);
+    // a phone's datalist pops the whole catalog the moment the bar is tapped
+    const listAttr = gpPhone() ? "" : 'list="gp-ingredient-catalog"';
+    const sugToggle = (kind) => {
+      const n = sugFor(kind).length;
+      return n ? `<button class="icon-btn gp-sug-toggle" data-list="${kind}" title="${n} usual${n > 1 ? "s" : ""}">${App.icon(GP_DOWN)}<span class="gp-sug-n num">${n}</span></button>` : "";
+    };
+    const open = (kind) => this._sugOpen[kind] ? " sug-open" : "";
 
     container.innerHTML = `
       <div class="gp-head">
         <span class="gp-head-title">${App.esc(this._title)}</span>
         <span class="gp-head-range dim num">${App.esc(this._range)}</span>
       </div>
-      <div class="gp-section" data-list="grocery">
+      <div class="gp-section${open("grocery")}" data-list="grocery">
         ${this._sectionHead("grocery", GP_CART, "Groceries", grocery, totals)}
         <div class="gp-rows" id="gp-grocery-rows"></div>
         <div class="gp-add-row">
-          <input class="gp-add-name" list="gp-ingredient-catalog" placeholder="Add an item…" spellcheck="false">
-          <input class="gp-add-qty num" placeholder="qty">
-          <span class="gp-add-unit dim"></span>
+          <input class="gp-add-name" ${listAttr} placeholder="Add an item…" spellcheck="false" enterkeyhint="done">
+          <input class="gp-add-qty" placeholder="qty" spellcheck="false" enterkeyhint="done">
+          ${sugToggle("grocery")}
         </div>
-        <datalist id="gp-ingredient-catalog">${ingredients.map(i => `<option value="${App.esc(i.name)}">`).join("")}</datalist>
+        <div class="gp-rows gp-sugs" id="gp-grocery-sugs"></div>
+        ${listAttr ? `<datalist id="gp-ingredient-catalog">${ingredients.map(i => `<option value="${App.esc(i.name)}">`).join("")}</datalist>` : ""}
       </div>
-      <div class="gp-section gp-market" data-list="market">
+      <div class="gp-section gp-market${open("market")}" data-list="market">
         ${this._sectionHead("market", GP_BASKET, "Farmer's market", market, totals)}
         <div class="gp-rows" id="gp-market-rows"></div>
         <div class="gp-rows gp-free" id="gp-free-rows"></div>
-        <input class="gp-free-add" placeholder="Add a line, press Enter…" spellcheck="false">
+        <div class="gp-add-row">
+          <input class="gp-free-add" placeholder="Add a line, press Enter…" spellcheck="false" enterkeyhint="done">
+          ${sugToggle("market")}
+        </div>
+        <div class="gp-rows gp-sugs" id="gp-market-sugs"></div>
       </div>
     `;
 
@@ -104,7 +134,21 @@ App.groceriesPanel = {
                "Nothing fresh needed yet.");
 
     const freeRows = container.querySelector("#gp-free-rows");
-    freeItems.forEach(item => freeRows.appendChild(this._freeRow(item)));
+    freeItems.forEach(item => freeRows.appendChild(_gpSwipe(this._freeRow(item), async () => {
+      await App.api(`/api/groceries/${this._weekStart}/free-list/${item.id}`, { method: "DELETE" });
+      this._reload();
+    })));
+    ["grocery", "market"].forEach(kind => {
+      const wrap = container.querySelector(`#gp-${kind}-sugs`);
+      sugFor(kind).forEach(s => wrap.appendChild(this._sugRow(s)));
+    });
+    container.querySelectorAll(".gp-sug-toggle").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const kind = btn.dataset.list;
+        this._sugOpen[kind] = !this._sugOpen[kind];
+        btn.closest(".gp-section").classList.toggle("sug-open", this._sugOpen[kind]);
+      });
+    });
 
     this._wireStoreHeads();
     this._wireAdd(ingredients);
@@ -136,7 +180,38 @@ App.groceriesPanel = {
       wrap.appendChild(App.el(`<div class="gp-empty">${App.esc(emptyText)}</div>`));
       return;
     }
-    rows.forEach(item => wrap.appendChild(this._structuredRow(item)));
+    rows.forEach(item => wrap.appendChild(_gpSwipe(this._structuredRow(item), async () => {
+      await App.api(`/api/groceries/${this._weekStart}/items/${item.ingredient_id}`, { method: "DELETE" });
+      App.toast(`${item.name} off the list`);
+      this._reload();
+    })));
+  },
+
+  // A usual: tap it to put it on the list, ✕ (or swipe) for not this week.
+  _sugRow(sug) {
+    const url = `/api/groceries/${this._weekStart}/suggestions/${encodeURIComponent(sug.key)}`;
+    const row = App.el(`<div class="gp-row gp-sug" title="On the list ${sug.weeks} of the last ${sug.of} weeks — tap to add">
+      <span class="gp-sug-icon">${App.icon(GP_USUAL)}</span>
+      <span class="gp-row-name">${App.esc(sug.name)}</span>
+      <span class="gp-row-need dim num">${sug.weeks}/${sug.of}</span>
+      <button class="icon-btn gp-sug-x" title="Not this week">${App.icon(GP_X)}</button>
+    </div>`);
+    const dismiss = async () => {
+      await App.api(`${url}/dismiss`, { method: "POST" });
+      this._reload();
+    };
+    row.addEventListener("click", async (e) => {
+      if (e.target.closest(".gp-sug-x")) return;
+      row.classList.add("taken");
+      await App.api(`${url}/accept`, { method: "POST" });
+      this._reload();
+    });
+    row.querySelector(".gp-sug-x").addEventListener("click", (e) => {
+      e.stopPropagation();
+      row.classList.add("taken");
+      dismiss();
+    });
+    return _gpSwipe(row, dismiss);
   },
 
   _wireStoreHeads() {
@@ -217,29 +292,25 @@ App.groceriesPanel = {
     const container = this._container;
     const nameInput = container.querySelector(".gp-add-name");
     const qtyInput = container.querySelector(".gp-add-qty");
-    const unitLabel = container.querySelector(".gp-add-unit");
-    nameInput.addEventListener("input", () => {
-      const match = ingredients.find(i => i.name.toLowerCase() === nameInput.value.trim().toLowerCase());
-      unitLabel.textContent = match ? match.default_unit : "";
-    });
-    const addItem = async () => {
+    // Fast on purpose: the bar clears the moment Enter is hit so the next
+    // item can be typed while this one saves; adds run one after another.
+    const addItem = () => {
       const name = nameInput.value.trim();
       if (!name) return;
-      let match = ingredients.find(i => i.name.toLowerCase() === name.toLowerCase());
-      const qty = Number(qtyInput.value);
-      if (!qty) { App.toast("Enter a quantity"); return; }
-      // Something not in the catalog yet is created (and matched to USDA)
-      // rather than refused -- the list is allowed to teach the catalog.
-      if (!match) {
-        const created = await App.api("/api/ingredients", { method: "POST", body: { name, default_unit: "g" } });
-        match = created.ingredient;
-        ingredients.push(match);
-      }
-      const qty_g = _toGramsGP(match, qty);
-      if (qty_g === null) { App.toast(`Don't know how to convert ${match.default_unit} to grams for ${match.name}`); return; }
-      await App.api(`/api/groceries/${this._weekStart}/extra`, { method: "POST", body: { ingredient_id: match.id, qty_g } });
-      nameInput.value = ""; qtyInput.value = ""; unitLabel.textContent = "";
-      this._reload();
+      const qty = qtyInput.value.trim();
+      nameInput.value = ""; qtyInput.value = "";
+      nameInput.focus();
+      this._addQueue = this._addQueue.then(async () => {
+        let match = ingredients.find(i => i.name.toLowerCase() === name.toLowerCase());
+        // Something not in the catalog yet is created (and matched to USDA)
+        // rather than refused -- the list is allowed to teach the catalog.
+        if (!match) {
+          const created = await App.api("/api/ingredients", { method: "POST", body: { name, default_unit: "g" } });
+          match = created.ingredient;
+          ingredients.push(match);
+        }
+        await App.api(`/api/groceries/${this._weekStart}/extra`, { method: "POST", body: { ingredient_id: match.id, qty: qty || null } });
+      }).catch(() => App.toast(`Couldn't add ${name}`)).then(() => this._reload());
     };
     nameInput.addEventListener("keydown", (e) => { if (e.key === "Enter") addItem(); });
     qtyInput.addEventListener("keydown", (e) => { if (e.key === "Enter") addItem(); });
@@ -247,7 +318,7 @@ App.groceriesPanel = {
     container.querySelectorAll(".gp-copy").forEach(btn => {
       btn.addEventListener("click", async () => {
         const kind = btn.dataset.list;
-        const rows = Array.from(container.querySelectorAll(`.gp-section[data-list="${kind}"] .gp-row`));
+        const rows = Array.from(container.querySelectorAll(`.gp-section[data-list="${kind}"] .gp-row:not(.gp-sug)`));
         const text = rows.map(r => {
           const name = r.querySelector(".gp-row-name").textContent;
           const need = r.querySelector(".gp-row-need");
@@ -289,11 +360,49 @@ App.groceriesPanel = {
   },
 };
 
-function _toGramsGP(ingredient, qty) {
-  const unit = ingredient.default_unit || "g";
-  if (unit === "g") return qty;
-  const perUnit = (ingredient.unit_conversions || {})[unit];
-  return perUnit ? qty * perUnit : null;
+/* Swipe a row sideways to remove it (phones). The direction is decided on
+ * the first ~10px of travel, so a vertical scroll through the list is never
+ * mistaken for a swipe and a tap on the checkbox is still a tap. Past a
+ * third of the row's width it flies off and `onRemove` runs. */
+function _gpSwipe(row, onRemove) {
+  const wrap = App.el(`<div class="gp-swipe"><span class="gp-swipe-bin">${App.icon(GP_TRASH)}</span></div>`);
+  wrap.appendChild(row);
+  let x0 = 0, y0 = 0, dx = 0, mode = null;
+  row.addEventListener("touchstart", (e) => {
+    if (e.touches.length !== 1 || e.target.closest("input:not([type=checkbox])")) { mode = "no"; return; }
+    x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; dx = 0; mode = null;
+  }, { passive: true });
+  row.addEventListener("touchmove", (e) => {
+    if (mode === "no") return;
+    const mx = e.touches[0].clientX - x0, my = e.touches[0].clientY - y0;
+    if (mode === null) {
+      if (Math.abs(mx) < 10 && Math.abs(my) < 10) return;
+      mode = Math.abs(mx) > Math.abs(my) * 1.2 ? "swipe" : "no";
+      if (mode === "swipe") { row.style.transition = "none"; wrap.classList.add("swiping"); }
+    }
+    if (mode !== "swipe") return;
+    dx = mx;
+    row.style.transform = `translateX(${dx}px)`;
+    wrap.classList.toggle("armed", Math.abs(dx) > row.offsetWidth / 3);
+    wrap.classList.toggle("from-left", dx > 0);
+  }, { passive: true });
+  const end = () => {
+    if (mode !== "swipe") { mode = null; return; }
+    mode = null;
+    row.style.transition = "";
+    if (Math.abs(dx) > row.offsetWidth / 3) {
+      row.style.transform = `translateX(${dx > 0 ? 110 : -110}%)`;
+      wrap.style.height = wrap.offsetHeight + "px";
+      requestAnimationFrame(() => wrap.classList.add("gone"));
+      onRemove();
+    } else {
+      row.style.transform = "";
+      wrap.classList.remove("swiping", "armed");
+    }
+  };
+  row.addEventListener("touchend", end);
+  row.addEventListener("touchcancel", end);
+  return wrap;
 }
 
 /* Every row now carries the same field classes, so a class selector alone

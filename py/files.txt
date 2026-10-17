@@ -14,6 +14,7 @@ mealplanner/nutrition.py
 mealplanner/paths.py
 mealplanner/places.py
 mealplanner/prices.py
+mealplanner/recipe_import.py
 mealplanner/recipes.py
 mealplanner/routines.py
 mealplanner/stats.py

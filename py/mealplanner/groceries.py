@@ -9,6 +9,8 @@ recipe actually needs.
 """
 from __future__ import annotations
 
+import datetime
+import re
 import uuid
 from typing import Optional
 
@@ -45,9 +47,9 @@ def week_ingredient_needs(week_start_iso: str) -> dict[str, float]:
             ing = ing_by_id.get(item["ingredient_id"])
             if ing is None:
                 continue
-            grams = nutrition.qty_to_grams(ing, item["qty"], item["unit"])
-            if grams is None:
-                continue
+            # a unit with no known weight ("1 bunch") is still something to buy:
+            # it stays on the list, just without an amount
+            grams = nutrition.qty_to_grams(ing, item["qty"], item["unit"]) or 0.0
             needs[item["ingredient_id"]] = needs.get(item["ingredient_id"], 0.0) + grams
     return needs
 
@@ -86,7 +88,7 @@ def get_week_groceries(week_start_iso: str, with_prices: bool = True,
     extra_ids = set(extra)
     grams_by_id = {ing_id: learning.seeded_quantity(ing_id, grams) for ing_id, grams in needs.items()}
     for ing_id, ex in extra.items():
-        grams_by_id[ing_id] = grams_by_id.get(ing_id, 0.0) + ex["qty_g"]
+        grams_by_id[ing_id] = grams_by_id.get(ing_id, 0.0) + ex.get("qty_g", 0.0)
 
     shops = {"grocery": active_shop("grocery"), "market": active_shop("market")}
     out = []
@@ -95,13 +97,20 @@ def get_week_groceries(week_start_iso: str, with_prices: bool = True,
         if ing is None:
             continue
         s = saved.get(ing_id, {})
+        # Swiped off: stays off until the plan needs MORE of it than it did then.
+        if s.get("removed_g") is not None and grams <= s["removed_g"] + 0.5:
+            continue
         shop_list = aisles.list_for(ing)
+        typed = extra.get(ing_id, {}).get("qty_text", "")
+        label = ingredients.humanize_grams(ing, grams) if grams else ""
         item = {
             "ingredient_id": ing_id,
             "name": ing["name"],
             "planned_qty_g": round(grams, 1),
             "bought_qty_g": s.get("bought_qty_g"),
-            "unit_label": ingredients.humanize_grams(ing, grams),
+            # a name added with no amount has no amount -- never a made-up "0 g";
+            # a typed amount shows as typed, beside whatever the meals need
+            "unit_label": " + ".join(t for t in (label, typed) if t),
             "section": s.get("section", ing.get("store_section")),
             "checked": s.get("checked", False),
             "source": "extra" if ing_id in extra_ids else "recipe",
@@ -151,16 +160,135 @@ def list_totals(items: list[dict]) -> dict:
     return out
 
 
-def add_extra_item(week_start_iso: str, ingredient_id: str, qty_g: float) -> list[dict]:
+def add_extra_item(week_start_iso: str, ingredient_id: str, qty_g: Optional[float] = None,
+                   qty_text: Optional[str] = None) -> list[dict]:
     """A catalog item added straight to the grocery list, not derived from
-    any planned recipe -- repeated adds accumulate rather than overwrite."""
+    any planned recipe -- repeated adds accumulate rather than overwrite.
+    The amount is optional and is whatever was typed ("2 lb", "a dozen"):
+    kept as text, never turned into grams, so a bare name is a whole entry
+    and "2 lb" reads back as "2 lb". `qty_g` stays for callers that do
+    have a weight."""
     data = _load()
     week = data["weeks"].setdefault(week_start_iso, {"items": {}, "extra_items": {}, "free_list": []})
     extras = week.setdefault("extra_items", {})
-    existing = extras.get(ingredient_id, {}).get("qty_g", 0.0)
-    extras[ingredient_id] = {"qty_g": existing + qty_g}
+    entry = extras.setdefault(ingredient_id, {"qty_g": 0.0})
+    entry["qty_g"] = entry.get("qty_g", 0.0) + (qty_g or 0.0)
+    if qty_text and qty_text.strip():
+        entry["qty_text"] = " + ".join(t for t in (entry.get("qty_text"), qty_text.strip()) if t)
+    week.setdefault("items", {}).get(ingredient_id, {}).pop("removed_g", None)
     _save(data)
     return get_week_groceries(week_start_iso)
+
+
+def remove_item(week_start_iso: str, ingredient_id: str) -> list[dict]:
+    """Take a row off this week's list whatever put it there (the swipe):
+    a hand-add is dropped, and a recipe need is hidden at today's amount --
+    planning more of it later brings it back, since that's a new need."""
+    needs = week_ingredient_needs(week_start_iso)
+    need = learning.seeded_quantity(ingredient_id, needs[ingredient_id]) if ingredient_id in needs else 0.0
+    data = _load()
+    week = data["weeks"].setdefault(week_start_iso, {"items": {}, "extra_items": {}, "free_list": []})
+    week.setdefault("extra_items", {}).pop(ingredient_id, None)
+    if need:
+        week.setdefault("items", {}).setdefault(ingredient_id, {})["removed_g"] = round(need, 1)
+    _save(data)
+    return get_week_groceries(week_start_iso)
+
+
+# ── the usuals ───────────────────────────────────────────────────────────
+#
+# What gets put on the list by hand week after week (eggs, milk, "basil")
+# comes back as a suggestion: tap it and it's real, ✕ it and it's gone for
+# that week -- and the ✕ counts against it, so something stopped being
+# bought fades out instead of nagging. Recipe needs aren't learned here:
+# the plan already puts those on the list.
+
+SUGGEST_LOOKBACK = 8        # weeks of history considered
+SUGGEST_DECAY = 0.8         # last week counts 0.8, the week before 0.64, ...
+SUGGEST_MIN_WEEKS = 2       # once is a one-off, not a usual
+SUGGEST_MIN_SCORE = 0.9     # twice in the last ~3 weeks clears it; twice two months ago doesn't
+DISMISS_WEIGHT = 0.5
+
+_LEADING_QTY = re.compile(r"^\s*(?:\d+(?:[./]\d+)?|a few|a couple(?: of)?|some|few)\s*(?:x\b)?\s*", re.I)
+
+
+def _line_name(text: str) -> str:
+    """ "3 eggplant" and "2 eggplant" are the same usual: what's bought, not how many."""
+    return _LEADING_QTY.sub("", text).strip()
+
+
+def _weeks_between(a_iso: str, b_iso: str) -> int:
+    return max(1, round((datetime.date.fromisoformat(b_iso) - datetime.date.fromisoformat(a_iso)).days / 7))
+
+
+def suggestions(week_start_iso: str) -> list[dict]:
+    weeks = _load()["weeks"]
+    past = sorted(w for w in weeks if w < week_start_iso)[-SUGGEST_LOOKBACK:]
+    ing_by_id = ingredients.by_id()
+    stats: dict[str, dict] = {}
+
+    def tally(key: str, age: int, sign: float, **fields) -> None:
+        st = stats.setdefault(key, {"score": 0.0, "got": 0, **fields})
+        st["score"] += sign * SUGGEST_DECAY ** age
+        if sign > 0:
+            st["got"] += 1
+            st.update(fields)   # weeks run oldest-first, so the newest wording wins
+
+    for w in past:
+        wk, age = weeks[w], _weeks_between(w, week_start_iso)
+        got = set()
+        for ing_id in wk.get("extra_items", {}):
+            if ing_id in ing_by_id and wk.get("items", {}).get(ing_id, {}).get("removed_g") is None:
+                got.add("i:" + ing_id)
+                tally("i:" + ing_id, age, 1, ingredient_id=ing_id)
+        for line in wk.get("free_list", []):
+            name = _line_name(line["text"])
+            key = "t:" + name.lower()
+            if name and key not in got:
+                got.add(key)
+                tally(key, age, 1, text=name)
+        for key in wk.get("dismissed", []):
+            if key not in got:
+                tally(key, age, -DISMISS_WEIGHT)
+
+    this_week = weeks.get(week_start_iso, {})
+    current = get_week_groceries(week_start_iso, with_prices=False)
+    on_list = {"i:" + i["ingredient_id"] for i in current} | {"t:" + i["name"].lower() for i in current}
+    on_list |= {"t:" + _line_name(l["text"]).lower() for l in this_week.get("free_list", [])}
+    on_list |= set(this_week.get("dismissed", []))
+
+    out = []
+    for key, st in stats.items():
+        if key in on_list or st["got"] < SUGGEST_MIN_WEEKS or st["score"] < SUGGEST_MIN_SCORE:
+            continue
+        if key.startswith("i:"):
+            ing = ing_by_id[st["ingredient_id"]]
+            name, shop_list = ing["name"], aisles.list_for(ing)
+        else:
+            name, shop_list = st["text"], aisles.MARKET   # lines live on the market list
+        out.append({"key": key, "name": name, "shop_list": shop_list,
+                    "weeks": st["got"], "of": len(past), "score": round(st["score"], 3)})
+    out.sort(key=lambda s: (-s["score"], s["name"].lower()))
+    return out
+
+
+def accept_suggestion(week_start_iso: str, key: str) -> None:
+    if key.startswith("i:"):
+        add_extra_item(week_start_iso, key[2:])
+    elif key.startswith("t:"):
+        hit = next((s for s in suggestions(week_start_iso) if s["key"] == key), None)
+        add_free_item(week_start_iso, hit["name"] if hit else key[2:])
+    else:
+        raise KeyError(key)
+
+
+def dismiss_suggestion(week_start_iso: str, key: str) -> None:
+    data = _load()
+    week = data["weeks"].setdefault(week_start_iso, {"items": {}, "extra_items": {}, "free_list": []})
+    dismissed = week.setdefault("dismissed", [])
+    if key not in dismissed:
+        dismissed.append(key)
+    _save(data)
 
 
 def remove_extra_item(week_start_iso: str, ingredient_id: str) -> list[dict]:

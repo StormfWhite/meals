@@ -51,3 +51,23 @@ body.offline #topbar::after { content: "offline · saved on this phone"; font-si
   #bangers-dock { max-width: 100vw; }
   .ing-suggest, .ingsuggest, [class*="suggest-pop"] { max-width: calc(100vw - 16px); }
 }
+
+/* grocery list on a phone: the usuals wait behind the ▾ at the end of each add bar; rows swipe away */
+@media (max-width: 760px) {
+  .gp-sug-toggle { display: inline-flex; }
+  .gp-section:not(.sug-open) .gp-sugs { display: none; }
+  .gp-row { min-height: 40px; font-size: 15px; }
+  .gp-row-need { font-size: 12.5px; }
+  .gp-row .icon-btn { display: none; }          /* hover-only on the laptop: swipe instead */
+  .gp-sug .gp-sug-x { display: inline-flex; opacity: .8; width: 32px; height: 28px; }
+  .gp-add-qty { width: 76px; }
+}
+
+/* recipe editor on a phone: the ingredient's name gets the room, Save stays in reach */
+@media (max-width: 760px) {
+  .rf-ing-row { gap: 4px !important; }
+  .rf-ing-row .ing-qty { width: 52px !important; padding-left: 6px; padding-right: 4px; }
+  .rf-ing-row .ing-unit { width: 60px !important; padding-left: 6px; padding-right: 4px; }
+  .rf-ing-row .icon-btn { width: 30px; }
+  .modal-actions { position: sticky; bottom: -1px; background: var(--panel); padding: 10px 0 4px; z-index: 1; }
+}

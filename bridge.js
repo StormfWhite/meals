@@ -332,6 +332,19 @@ async def _call(method, path, body):
     serial(() => pull()).then((ch) => { if (ch) redraw(); longpoll(); }).catch(() => setOnline(false));
   })().catch((e) => { console.error(e); say("Couldn't start: " + e.message); });
 
+  // Recipes from the Notes app: its notes sit beside the meal data in this same Dropbox app folder
+  // (/notes). The picker asks for them, so they come down then -- one zip (~1.5 MB), at most every
+  // 2 minutes -- into /notes.zip, where recipe_import.py reads them. Offline: the last zip, if any.
+  let notesAt = 0;
+  async function notesZip() {
+    if (Date.now() - notesAt < 120000) return;
+    try {
+      const r = await content("files/download_zip", { path: "/notes" });
+      py.FS.writeFile("/notes.zip", new Uint8Array(await r.arrayBuffer()));
+      notesAt = Date.now();
+    } catch (e) { console.warn("notes zip", e); }
+  }
+
   const realFetch = window.fetch.bind(window);
   window.fetch = async (input, opts = {}) => {
     const url = new URL(typeof input === "string" ? input : input.url, location.href);
@@ -340,6 +353,7 @@ async def _call(method, path, body):
     await booted;
     const method = (opts.method || "GET").toUpperCase();
     const path = url.pathname.slice(at) + url.search;
+    if (path.startsWith("/api/notes")) await notesZip();
     const body = typeof opts.body === "string" ? opts.body : "";
     const res = await serial(async () => {
       const r = (await call(method, path, body)).toJs();
