@@ -50,6 +50,7 @@ App.groceriesPanel = {
   _shops: { grocery: null, market: null },
   _sugOpen: { grocery: false, market: false },   // phone only: the ▾ in the add bar
   _addQueue: Promise.resolve(),
+  _pending: [],        // typed but still being looked up (USDA, ~3 s each): shown at once, faintly
 
   mount(container, weekStart, onCount, title, range) {
     this._container = container;
@@ -57,6 +58,7 @@ App.groceriesPanel = {
     this._onCount = onCount || null;
     this._title = title || "This week";
     this._range = range || "";
+    container.innerHTML = "";   // a new mount draws its own frame (title, week)
     this.refresh();
   },
 
@@ -92,56 +94,78 @@ App.groceriesPanel = {
     const market = items.filter(i => i.shop_list === "market");
     sugs = sugs || [];
     const sugFor = (kind) => sugs.filter(s => (s.shop_list === "market" ? "market" : "grocery") === kind);
+    this._ingredients = ingredients;
+    // The frame (and its add bars) is built once per mount and only the parts inside it refresh:
+    // replacing the field being typed in drops a phone's keyboard after every Enter, so the next
+    // item couldn't just be typed.
+    if (!container.querySelector(".gp-head")) this._frame();
+
+    container.querySelector('[data-list="grocery"] .gp-head-slot').innerHTML =
+      this._sectionHead("grocery", GP_CART, "Groceries", grocery, totals);
+    container.querySelector('[data-list="market"] .gp-head-slot').innerHTML =
+      this._sectionHead("market", GP_BASKET, "Farmer's market", market, totals);
+    const datalist = container.querySelector("#gp-ingredient-catalog");
+    if (datalist) datalist.innerHTML = ingredients.map(i => `<option value="${App.esc(i.name)}">`).join("");
+
+    const rowsOf = (id) => { const el = container.querySelector(id); el.innerHTML = ""; return el; };
+    const groceryRows = rowsOf("#gp-grocery-rows");
+    this._fill(groceryRows, grocery, this._pending.length ? "" : "Nothing needed yet — plan some meals.");
+    this._pending.forEach(p => groceryRows.appendChild(App.el(`<div class="gp-row gp-pending">
+      <span class="gp-row-name">${App.esc(p.name)}</span><span class="gp-row-need dim num">${App.esc(p.qty)}</span></div>`)));
+    this._fill(rowsOf("#gp-market-rows"), market, "Nothing fresh needed yet.");
+    const freeRows = rowsOf("#gp-free-rows");
+    freeItems.forEach(item => freeRows.appendChild(_gpSwipe(this._freeRow(item), async () => {
+      await App.api(`/api/groceries/${this._weekStart}/free-list/${item.id}`, { method: "DELETE" });
+      this._reload();
+    })));
+    ["grocery", "market"].forEach(kind => {
+      const wrap = rowsOf(`#gp-${kind}-sugs`);
+      const mine = sugFor(kind);
+      mine.forEach(s => wrap.appendChild(this._sugRow(s)));
+      const btn = container.querySelector(`.gp-sug-toggle[data-list="${kind}"]`);
+      btn.hidden = !mine.length;
+      btn.title = `${mine.length} usual${mine.length > 1 ? "s" : ""}`;
+      btn.querySelector(".gp-sug-n").textContent = mine.length;
+    });
+
+    this._wireStoreHeads();
+    this._wireCopy();
+  },
+
+  _frame() {
+    const container = this._container;
     // a phone's datalist pops the whole catalog the moment the bar is tapped
     const listAttr = gpPhone() ? "" : 'list="gp-ingredient-catalog"';
-    const sugToggle = (kind) => {
-      const n = sugFor(kind).length;
-      return n ? `<button class="icon-btn gp-sug-toggle" data-list="${kind}" title="${n} usual${n > 1 ? "s" : ""}">${App.icon(GP_DOWN)}<span class="gp-sug-n num">${n}</span></button>` : "";
-    };
+    const sugToggle = (kind) => `<button class="icon-btn gp-sug-toggle" data-list="${kind}" hidden>${App.icon(GP_DOWN)}<span class="gp-sug-n num"></span></button>`;
     const open = (kind) => this._sugOpen[kind] ? " sug-open" : "";
-
+    // enterkeyhint "enter", not "done": done asks the keyboard to go away; Enter here means "next item"
     container.innerHTML = `
       <div class="gp-head">
         <span class="gp-head-title">${App.esc(this._title)}</span>
         <span class="gp-head-range dim num">${App.esc(this._range)}</span>
       </div>
       <div class="gp-section${open("grocery")}" data-list="grocery">
-        ${this._sectionHead("grocery", GP_CART, "Groceries", grocery, totals)}
+        <div class="gp-head-slot"></div>
         <div class="gp-rows" id="gp-grocery-rows"></div>
         <div class="gp-add-row">
-          <input class="gp-add-name" ${listAttr} placeholder="Add an item…" spellcheck="false" enterkeyhint="done">
-          <input class="gp-add-qty" placeholder="qty" spellcheck="false" enterkeyhint="done">
+          <input class="gp-add-name" ${listAttr} placeholder="Add an item…" spellcheck="false" enterkeyhint="enter">
+          <input class="gp-add-qty" placeholder="qty" spellcheck="false" enterkeyhint="enter">
           ${sugToggle("grocery")}
         </div>
         <div class="gp-rows gp-sugs" id="gp-grocery-sugs"></div>
-        ${listAttr ? `<datalist id="gp-ingredient-catalog">${ingredients.map(i => `<option value="${App.esc(i.name)}">`).join("")}</datalist>` : ""}
+        ${listAttr ? '<datalist id="gp-ingredient-catalog"></datalist>' : ""}
       </div>
       <div class="gp-section gp-market${open("market")}" data-list="market">
-        ${this._sectionHead("market", GP_BASKET, "Farmer's market", market, totals)}
+        <div class="gp-head-slot"></div>
         <div class="gp-rows" id="gp-market-rows"></div>
         <div class="gp-rows gp-free" id="gp-free-rows"></div>
         <div class="gp-add-row">
-          <input class="gp-free-add" placeholder="Add a line, press Enter…" spellcheck="false" enterkeyhint="done">
+          <input class="gp-free-add" placeholder="Add a line, press Enter…" spellcheck="false" enterkeyhint="enter">
           ${sugToggle("market")}
         </div>
         <div class="gp-rows gp-sugs" id="gp-market-sugs"></div>
       </div>
     `;
-
-    this._fill(container.querySelector("#gp-grocery-rows"), grocery,
-               "Nothing needed yet — plan some meals.");
-    this._fill(container.querySelector("#gp-market-rows"), market,
-               "Nothing fresh needed yet.");
-
-    const freeRows = container.querySelector("#gp-free-rows");
-    freeItems.forEach(item => freeRows.appendChild(_gpSwipe(this._freeRow(item), async () => {
-      await App.api(`/api/groceries/${this._weekStart}/free-list/${item.id}`, { method: "DELETE" });
-      this._reload();
-    })));
-    ["grocery", "market"].forEach(kind => {
-      const wrap = container.querySelector(`#gp-${kind}-sugs`);
-      sugFor(kind).forEach(s => wrap.appendChild(this._sugRow(s)));
-    });
     container.querySelectorAll(".gp-sug-toggle").forEach(btn => {
       btn.addEventListener("click", () => {
         const kind = btn.dataset.list;
@@ -149,9 +173,7 @@ App.groceriesPanel = {
         btn.closest(".gp-section").classList.toggle("sug-open", this._sugOpen[kind]);
       });
     });
-
-    this._wireStoreHeads();
-    this._wireAdd(ingredients);
+    this._wireAdd();
     this._wireFree();
   },
 
@@ -177,6 +199,7 @@ App.groceriesPanel = {
 
   _fill(wrap, rows, emptyText) {
     if (!rows.length) {
+      if (!emptyText) return;
       wrap.appendChild(App.el(`<div class="gp-empty">${App.esc(emptyText)}</div>`));
       return;
     }
@@ -288,19 +311,26 @@ App.groceriesPanel = {
     return row;
   },
 
-  _wireAdd(ingredients) {
+  _wireAdd() {
     const container = this._container;
     const nameInput = container.querySelector(".gp-add-name");
     const qtyInput = container.querySelector(".gp-add-qty");
     // Fast on purpose: the bar clears the moment Enter is hit so the next
     // item can be typed while this one saves; adds run one after another.
     const addItem = () => {
-      const name = nameInput.value.trim();
+      let name = nameInput.value.trim();
       if (!name) return;
-      const qty = qtyInput.value.trim();
+      let qty = qtyInput.value.trim();
+      if (!qty) [name, qty] = _gpSplitAmount(name);   // "grapes 2 lb" / "2 lb grapes" typed in one go
       nameInput.value = ""; qtyInput.value = "";
       nameInput.focus();
+      const pend = { name, qty };
+      this._pending.push(pend);
+      const rows = container.querySelector("#gp-grocery-rows");
+      rows.querySelector(".gp-empty")?.remove();
+      rows.appendChild(App.el(`<div class="gp-row gp-pending"><span class="gp-row-name">${App.esc(name)}</span><span class="gp-row-need dim num">${App.esc(qty)}</span></div>`));
       this._addQueue = this._addQueue.then(async () => {
+        const ingredients = this._ingredients;
         let match = ingredients.find(i => i.name.toLowerCase() === name.toLowerCase());
         // Something not in the catalog yet is created (and matched to USDA)
         // rather than refused -- the list is allowed to teach the catalog.
@@ -310,11 +340,17 @@ App.groceriesPanel = {
           ingredients.push(match);
         }
         await App.api(`/api/groceries/${this._weekStart}/extra`, { method: "POST", body: { ingredient_id: match.id, qty: qty || null } });
-      }).catch(() => App.toast(`Couldn't add ${name}`)).then(() => this._reload());
+      }).catch(() => App.toast(`Couldn't add ${name}`))
+        .then(() => { this._pending = this._pending.filter(p => p !== pend); return this._reload(); })
+        .catch(() => {});   // a failed redraw must never stall the adds queued behind it
     };
-    nameInput.addEventListener("keydown", (e) => { if (e.key === "Enter") addItem(); });
-    qtyInput.addEventListener("keydown", (e) => { if (e.key === "Enter") addItem(); });
+    const onEnter = (e) => { if (e.key === "Enter" || e.keyCode === 13) { e.preventDefault(); addItem(); } };
+    nameInput.addEventListener("keydown", onEnter);
+    qtyInput.addEventListener("keydown", onEnter);
+  },
 
+  _wireCopy() {
+    const container = this._container;
     container.querySelectorAll(".gp-copy").forEach(btn => {
       btn.addEventListener("click", async () => {
         const kind = btn.dataset.list;
@@ -332,7 +368,8 @@ App.groceriesPanel = {
   _wireFree() {
     const freeAdd = this._container.querySelector(".gp-free-add");
     freeAdd.addEventListener("keydown", async (e) => {
-      if (e.key !== "Enter") return;
+      if (e.key !== "Enter" && e.keyCode !== 13) return;
+      e.preventDefault();
       const text = freeAdd.value.trim();
       if (!text) return;
       freeAdd.value = "";
@@ -359,6 +396,19 @@ App.groceriesPanel = {
     return row;
   },
 };
+
+/* An amount typed into the name box, at either end: "grapes 2 lb" → ["grapes", "2 lb"],
+ * "2 lb grapes" → same, "3 lemons" → ["lemons", "3"]. Kept as typed, never converted; a name
+ * with no number at either end comes back whole. */
+const GP_UNITS = "cups?|c|tbsps?|tablespoons?|tsps?|teaspoons?|g|grams?|kg|oz|ounces?|lbs?|pounds?|ml|l|liters?|cans?|jars?|bags?|boxe?s?|packs?|packages?|bunch(?:es)?|heads?|dozen|doz|cartons?|bottles?|loaf|loaves|gal(?:lons?)?|qt|quarts?|pints?";
+function _gpSplitAmount(text) {
+  const num = "\\d+(?:[./]\\d+)?(?:\\s+\\d+/\\d+)?";
+  let m = text.match(new RegExp(`^(.+?)\\s+(${num}(?:\\s*(?:${GP_UNITS})\\b\\.?)?|${num}\\s*x)$`, "i"));
+  if (m) return [m[1], m[2]];
+  m = text.match(new RegExp(`^(${num}(?:\\s*(?:${GP_UNITS})\\b\\.?)?)\\s+(?:of\\s+)?(.+)$`, "i"));
+  if (m) return [m[2], m[1]];
+  return [text, ""];
+}
 
 /* Swipe a row sideways to remove it (phones). The direction is decided on
  * the first ~10px of travel, so a vertical scroll through the list is never

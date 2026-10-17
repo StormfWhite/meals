@@ -87,6 +87,17 @@ App.recipes = {
     </div>`);
     row.querySelector(".ing-remove").addEventListener("click", () => row.remove());
     row.dataset.note = (item && item.note) || "";
+    // Enter walks the line like a meal block: name → amount → a new line below (keyboard stays up)
+    row.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter" && e.keyCode !== 13) return;
+      e.preventDefault();
+      if (e.target.classList.contains("ing-name")) { row.querySelector(".ing-qty").focus(); return; }
+      const next = this._ingredientRow(null);
+      next.querySelector(".ing-unit").value = "";
+      row.after(next);
+      next.querySelector(".ing-name").focus();
+    });
+    row.querySelectorAll("input").forEach(i => i.setAttribute("enterkeyhint", "enter"));
     return row;
   },
 

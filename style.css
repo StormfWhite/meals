@@ -367,6 +367,7 @@ button.mb-tag:hover { color: var(--good); border-color: var(--good); }
 .gp-sug-icon { display: inline-flex; width: 16px; justify-content: center; }
 .gp-sug-icon svg { width: 11px; height: 11px; }
 .gp-sugs { gap: 3px; }
+.gp-pending { opacity: .45; padding-left: 30px; }   /* typed, still being looked up */
 .gp-sugs:empty { display: none; }
 /* swipe-to-remove (phones): the row slides over a red bin */
 .gp-swipe { position: relative; border-radius: 7px; overflow: hidden; transition: height .2s, opacity .2s; }

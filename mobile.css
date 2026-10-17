@@ -44,7 +44,8 @@ body.offline #topbar::after { content: "offline · saved on this phone"; font-si
   /* the grocery list: a full-screen sheet behind the cart button */
   .plan.list-open .list-panel, .plan.is-week.list-open .list-panel {
     position: fixed; z-index: 40; left: 0; right: 0; bottom: 0; top: calc(var(--topbar-h, 96px) + env(safe-area-inset-top));
-    width: auto; border-left: 0; border-top: 1px solid var(--border); box-shadow: 0 -8px 30px rgba(0,0,0,.18);
+    width: auto; height: auto;   /* the laptop's height:100% made the sheet 96px taller than the screen — its end was unreachable */
+    border-left: 0; border-top: 1px solid var(--border); box-shadow: 0 -8px 30px rgba(0,0,0,.18);
     padding-bottom: env(safe-area-inset-bottom);
   }
   .modal-panel { width: calc(100vw - 20px) !important; max-width: none !important; max-height: 85vh; overflow: auto; }
@@ -71,3 +72,4 @@ body.offline #topbar::after { content: "offline · saved on this phone"; font-si
   .rf-ing-row .icon-btn { width: 30px; }
   .modal-actions { position: sticky; bottom: -1px; background: var(--panel); padding: 10px 0 4px; z-index: 1; }
 }
+@media (max-width: 760px) { .plan.list-open .list-panel { padding-bottom: calc(64px + env(safe-area-inset-bottom)); } }   /* room to scroll past the Bangers button */
