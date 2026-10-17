@@ -75,3 +75,4 @@ body.offline #topbar::after { content: "offline · saved on this phone"; font-si
 @media (max-width: 760px) { .plan.list-open .list-panel { padding-bottom: calc(64px + env(safe-area-inset-bottom)); } }   /* room to scroll past the Bangers button */
 @media (max-width: 760px) { .gp-row-qty { width: 72px; } }   /* stays 16px: smaller makes iOS zoom on tap */
 @media (max-width: 760px) { .gp-free .gp-row-qty { width: 110px; } }   /* market lines have no price column: room for "2 baskets" */
+@media (max-width: 760px) { .gp-group { font-size: 12px; margin-top: 10px; } .gp-group svg { width: 13px; height: 13px; } }

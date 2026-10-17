@@ -376,6 +376,12 @@ input.gp-row-name:focus { background: var(--panel); border-color: var(--border);
 .gp-sug-icon { display: inline-flex; width: 16px; justify-content: center; }
 .gp-sug-icon svg { width: 11px; height: 11px; }
 .gp-sugs { gap: 3px; }
+/* a meal's heading over the items it needs */
+.gp-group { display: flex; align-items: center; gap: 5px; margin: 6px 0 1px; padding: 0 6px; font-size: 10px; font-weight: 700;
+  letter-spacing: .04em; text-transform: uppercase; color: var(--text-dim); }
+.gp-group:first-child { margin-top: 0; }
+.gp-group svg { width: 11px; height: 11px; flex: none; }
+.gp-group span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gp-pending { opacity: .45; padding-left: 30px; }   /* typed, still being looked up */
 .gp-free .gp-row-qty { width: 84px; }
 .gp-sugs:empty { display: none; }

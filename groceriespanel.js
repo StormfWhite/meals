@@ -35,6 +35,8 @@ const GP_BASKET = '<path d="M3 9h18l-1.5 11H4.5Z"/><path d="M8 9V6a4 4 0 0 1 8 0
 const GP_SWAP = '<path d="M7 4 3 8l4 4"/><path d="M3 8h14"/><path d="m17 20 4-4-4-4"/><path d="M21 16H7"/>';
 const GP_COPY = '<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>';
 const GP_X = '<path d="M18 6 6 18M6 6l12 12"/>';
+const GP_MEAL = '<path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"/>';
+const GP_PLUS = '<path d="M12 5v14M5 12h14"/>';
 const GP_DOWN = '<path d="m6 9 6 6 6-6"/>';
 const GP_USUAL = '<path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"/><path d="M3 21v-5h5"/>';
 const GP_TRASH = '<path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/>';
@@ -203,11 +205,29 @@ App.groceriesPanel = {
       wrap.appendChild(App.el(`<div class="gp-empty">${App.esc(emptyText)}</div>`));
       return;
     }
-    rows.forEach(item => wrap.appendChild(_gpSwipe(this._structuredRow(item), async () => {
-      await App.api(`/api/groceries/${this._weekStart}/items/${item.ingredient_id}`, { method: "DELETE" });
-      App.toast(`${item.name} off the list`);
-      this._reload();
-    })));
+    // Grouped by the meal that needs it, in the order next week cooks them; an item more than
+    // one meal needs sits under the first (its tooltip names the rest). What was added by hand
+    // follows under "Added" -- headed only when there are meal groups above it.
+    const groups = new Map();
+    [...rows].sort((a, b) => (a.meal_order ?? 1e9) - (b.meal_order ?? 1e9))
+      .forEach(item => {
+        const key = item.meals && item.meals.length ? item.meals[0] : "";
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(item);
+      });
+    const headed = [...groups.keys()].some(k => k);
+    groups.forEach((items, meal) => {
+      if (headed) wrap.appendChild(App.el(`<div class="gp-group">${App.icon(meal ? GP_MEAL : GP_PLUS)}<span>${App.esc(meal || "Added")}</span></div>`));
+      items.forEach(item => {
+        const row = this._structuredRow(item);
+        if (item.meals && item.meals.length > 1) row.querySelector(".gp-row-name").title = "For " + item.meals.join(", ");
+        wrap.appendChild(_gpSwipe(row, async () => {
+          await App.api(`/api/groceries/${this._weekStart}/items/${item.ingredient_id}`, { method: "DELETE" });
+          App.toast(`${item.name} off the list`);
+          this._reload();
+        }));
+      });
+    });
   },
 
   // A usual: tap it to put it on the list, ✕ (or swipe) for not this week.

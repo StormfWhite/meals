@@ -54,6 +54,32 @@ def week_ingredient_needs(week_start_iso: str) -> dict[str, float]:
     return needs
 
 
+def week_ingredient_meals(week_start_iso: str) -> tuple[dict[str, list[str]], list[str]]:
+    """(ingredient_id -> the names of the week's meals that use it, every meal name in the
+    order they're cooked: day, then breakfast/lunch/dinner) -- what the list groups itself by."""
+    week = board.get_week(week_start_iso)
+    meal_rank = {m: i for i, m in enumerate(board.MEALS)}
+
+    def when(key: str):
+        date, meal, index = board.parse_slot_key(key)
+        return date, meal_rank.get(meal, 9), index
+
+    out: dict[str, list[str]] = {}
+    order: list[str] = []
+    for key in sorted(week["slots"], key=when):
+        slot = week["slots"][key]
+        recipe = recipes.get(slot.get("recipe_id"))
+        if recipe is None:
+            continue
+        if recipe["name"] not in order:
+            order.append(recipe["name"])
+        for item in slot.get("ingredient_overrides") or recipe["ingredients"]:
+            names = out.setdefault(item["ingredient_id"], [])
+            if recipe["name"] not in names:
+                names.append(recipe["name"])
+    return out, order
+
+
 def active_shop(kind: str = "grocery") -> Optional[dict]:
     """The store (or market) prices are quoted against: whichever one the
     active place has picked."""
@@ -91,6 +117,8 @@ def get_week_groceries(week_start_iso: str, with_prices: bool = True,
         grams_by_id[ing_id] = grams_by_id.get(ing_id, 0.0) + ex.get("qty_g", 0.0)
 
     shops = {"grocery": active_shop("grocery"), "market": active_shop("market")}
+    meals_of, cooked = week_ingredient_meals(week_start_iso)
+    meal_order = {name: i for i, name in enumerate(cooked)}
     out = []
     for ing_id, grams in grams_by_id.items():
         ing = ing_by_id.get(ing_id)
@@ -120,6 +148,9 @@ def get_week_groceries(week_start_iso: str, with_prices: bool = True,
             "shop_list": shop_list,
             "category": ing.get("category", "other"),
             "fdc_matched": bool(ing.get("fdc_id")),
+            # the week's meals that use it, cooked-first first; the list groups under meals[0]
+            "meals": meals_of.get(ing_id, []),
+            "meal_order": meal_order.get(meals_of[ing_id][0]) if meals_of.get(ing_id) else None,
         }
         if with_prices:
             item.update(_priced(ing, item, shops[shop_list], allow_network))
