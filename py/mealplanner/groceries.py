@@ -10,12 +10,13 @@ recipe actually needs.
 from __future__ import annotations
 
 import datetime
+import json
 import re
 import uuid
 from typing import Optional
 
-from . import aisles, board, ingredients, learning, nutrition, places, prices, recipes, store
-from .paths import GROCERIES_FILE
+from . import aisles, board, config, ingredients, learning, nutrition, places, prices, recipes, store
+from .paths import DATA_DIR, GROCERIES_FILE
 
 
 def _load() -> dict:
@@ -271,9 +272,12 @@ def suggestions(week_start_iso: str) -> list[dict]:
             st["got"] += 1
             st.update(fields)   # weeks run oldest-first, so the newest wording wins
 
+    last_week_got: set = set()          # what was on the list just before this one: offered again too
     for w in past:
         wk, age = weeks[w], _weeks_between(w, week_start_iso)
         got = set()
+        if w == past[-1]:
+            last_week_got = got
         for ing_id in wk.get("extra_items", {}):
             if ing_id in ing_by_id and wk.get("items", {}).get(ing_id, {}).get("removed_g") is None:
                 got.add("i:" + ing_id)
@@ -297,7 +301,8 @@ def suggestions(week_start_iso: str) -> list[dict]:
 
     out = []
     for key, st in stats.items():
-        if key in on_list or st["got"] < SUGGEST_MIN_WEEKS or st["score"] < SUGGEST_MIN_SCORE:
+        usual = st["got"] >= SUGGEST_MIN_WEEKS and st["score"] >= SUGGEST_MIN_SCORE
+        if key in on_list or not (usual or key in last_week_got):
             continue
         if key.startswith("i:"):
             ing = ing_by_id[st["ingredient_id"]]
@@ -481,3 +486,107 @@ def export_text(week_start_iso: str, section: str) -> str:
     if not items:
         return "(nothing needed)"
     return "\n".join(f"- {i['unit_label']} {i['name']}" for i in items)
+
+
+# ── which week the list is for, and when it starts over ────────────────────
+#
+# The list is for the week being shopped for. It moves on (a) every Monday, and (b) the moment
+# the week's shop is done: the Pixel records each visit to a grocery store or market near home
+# (`trip-<ms>.json` beside the data, written by the Meals Android app on leaving), and a visit
+# counts as THE shop when at least half of that list was ticked off -- a quick top-up mid-week
+# leaves the list alone. Whatever was added by hand but not bought carries over to the new list;
+# what the new week's meals need fills in by itself, and last week's buys come back as usuals.
+
+TRIP_MIN_SHARE = 0.5
+TRIP_MIN_CHECKED = 2
+
+
+def _monday_target(day: datetime.date) -> datetime.date:
+    """The week the list is for by the Monday rule: the shopping week after the last Monday."""
+    last_monday = day - datetime.timedelta(days=day.weekday())
+    reup = config.load()["reup_day"]
+    return board.week_start_for(last_monday, reup) + datetime.timedelta(days=7)
+
+
+def trips() -> list[dict]:
+    out = []
+    for p in sorted(DATA_DIR.glob("trip-*.json")):
+        try:
+            t = json.loads(p.read_text())
+            out.append({"at": float(t["at"]) / 1000, **{k: t.get(k) for k in ("kind", "name", "dwell_s")}})
+        except (OSError, ValueError, KeyError, TypeError):
+            continue
+    return sorted(out, key=lambda t: t["at"])
+
+
+def _shopped(week_start_iso: str) -> bool:
+    """Was this week's list mostly ticked off?"""
+    rows = [i["checked"] for i in get_week_groceries(week_start_iso, with_prices=False)]
+    rows += [bool(i.get("checked")) for i in list_free_items(week_start_iso)]
+    done = sum(rows)
+    return bool(rows) and done >= TRIP_MIN_CHECKED and done / len(rows) >= TRIP_MIN_SHARE
+
+
+def list_week(today: Optional[datetime.date] = None) -> str:
+    """The week the shopping list is for right now (see above), carrying the unbought
+    hand-adds forward whenever it moves on."""
+    today = today or datetime.date.today()
+    moved = datetime.date.min          # how far counted shops have pushed the list
+    for t in trips():
+        when = datetime.datetime.fromtimestamp(t["at"]).date()
+        if when > today:
+            continue
+        current = max(_monday_target(when), moved)     # the list on screen at that trip
+        if _shopped(current.isoformat()):
+            moved = current + datetime.timedelta(days=7)
+    week = max(_monday_target(today), moved).isoformat()
+    _carry_forward(week)
+    return week
+
+
+def _carry_forward(week_start_iso: str) -> None:
+    """Unbought hand-adds and market lines from the list before this one, once."""
+    prev = (datetime.date.fromisoformat(week_start_iso) - datetime.timedelta(days=7)).isoformat()
+    data = _load()
+    old = data["weeks"].get(prev)
+    new = data["weeks"].setdefault(week_start_iso, {"items": {}, "extra_items": {}, "free_list": []})
+    if not old or new.get("carried_from") == prev:
+        return
+    old_items = old.get("items", {})
+    for ing_id, ex in old.get("extra_items", {}).items():
+        st = old_items.get(ing_id, {})
+        if st.get("checked") or st.get("removed_g") is not None or ing_id in new.setdefault("extra_items", {}):
+            continue
+        new["extra_items"][ing_id] = dict(ex)
+        if st.get("shop_list"):
+            new.setdefault("items", {}).setdefault(ing_id, {})["shop_list"] = st["shop_list"]
+    have = {l["text"].lower() for l in new.setdefault("free_list", [])}
+    for line in old.get("free_list", []):
+        if not line.get("checked") and line["text"].lower() not in have:
+            new["free_list"].append({**line, "id": "f_" + uuid.uuid4().hex[:8]})
+    new["carried_from"] = prev
+    _save(data)
+
+
+def geofences() -> list[dict]:
+    """Every grocery store and farmer's market near the active home (plus the ones picked),
+    for the Pixel to watch -- leaving one is a shopping trip."""
+    place = places.active()
+    if not place:
+        return []
+    out, seen = [], set()
+    for kind in ("grocery", "market"):
+        picked = place.get("store" if kind == "grocery" else "market")
+        near = places.cached_stores(place["lat"], place["lon"], kind)
+        if near is None:
+            near = places.stores_near(place["lat"], place["lon"], kind)
+        shops = ([picked] if picked else []) + near
+        for s in shops:
+            if not s or s.get("lat") is None:
+                continue
+            key = (round(s["lat"], 5), round(s["lon"], 5))
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append({"lat": s["lat"], "lon": s["lon"], "kind": kind, "name": s.get("name", "")})
+    return out[:90]       # Android allows 100 proximity alerts per app

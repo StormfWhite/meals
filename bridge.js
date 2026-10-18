@@ -325,8 +325,21 @@ async def _call(method, path, body):
     ready = true;
     if (splash.isConnected) { splash.classList.add("gone"); setTimeout(() => splash.remove(), 400); }
     if (servedStale) redraw();      // the saved copy was on screen: swap in the live plan
+    tellAndroid();
     serial(() => pull()).then((ch) => { if (ch) redraw(); longpoll(); }).catch(() => setOnline(false));
   })().catch((e) => { console.error(e); say("Couldn't start: " + e.message); });
+
+  // In the Pixel's Meals app (com.storm.meals): hand it the grocery stores + markets near home and
+  // the Dropbox sign-in, so it can notice a shopping trip (Trips.java). Once a day is plenty.
+  function tellAndroid() {
+    if (!window.MealsAndroid || !S.refresh) return;
+    const day = new Date().toDateString();
+    if (localStorage.getItem(LS + ".fences") === day) return;
+    window.fetch("/api/groceries/geofences").then((r) => r.json()).then((o) => {
+      window.MealsAndroid.setup(JSON.stringify({ token: S.refresh, fences: o.fences || [] }));
+      localStorage.setItem(LS + ".fences", day);
+    }).catch(() => {});
+  }
 
   // A USDA match found behind the screen (see fdc.JS_RESPONSES): Python asks for one URL at a time
   // (202 {need}), the page fetches it WITHOUT blocking -- typing, other requests and the screen carry

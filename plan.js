@@ -74,8 +74,9 @@ App.plan = {
     // ending today). But when the plan has been paged forward to a future
     // week, the list follows it -- otherwise you'd be typing meals into a
     // week whose ingredients never appear on the list beside them.
-    this._listWeek = day.week_start > todayDay.next_week_start
-      ? day.week_start : todayDay.next_week_start;
+    // Which week that is moves on every Monday, or once the week's shop is done (groceries.list_week).
+    const shopWeek = todayDay.list_week || todayDay.next_week_start;
+    this._listWeek = day.week_start > shopWeek ? day.week_start : shopWeek;
     this._week = week;
     this._recipes = recipesRes.recipes;
     this._ingredients = ingredientsRes.ingredients;

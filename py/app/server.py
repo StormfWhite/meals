@@ -439,7 +439,14 @@ def get_board(week: Optional[str] = None):
 
 @app.get("/api/board/day/{date}")
 def get_board_day(date: str):
-    return board.day_slots(date)
+    # `list_week`: the week the shopping list is for (Monday / after the week's shop, groceries.py)
+    return {**board.day_slots(date), "list_week": groceries.list_week()}
+
+
+@app.get("/api/groceries/geofences")
+def get_geofences():
+    """Grocery stores + markets near home, for the Pixel to notice a shopping trip."""
+    return {"fences": groceries.geofences()}
 
 
 @app.get("/api/board/meal-options")

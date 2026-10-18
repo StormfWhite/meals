@@ -243,6 +243,13 @@ def stores_near(lat: float, lon: float, kind: str = "grocery", refresh: bool = F
     return fetched
 
 
+def cached_stores(lat: float, lon: float, kind: str = "grocery") -> Optional[list[dict]]:
+    """The last fetched list for this spot however old, or None -- for callers that must never
+    wait on Overpass (the phone's trip watch: a cold fetch took 79 s)."""
+    hit = store.load(STORES_CACHE_FILE, {}).get(_cache_key(lat, lon, kind))
+    return hit["stores"] if hit else None
+
+
 def search_stores(q: str, lat: float, lon: float, kind: str = "grocery",
                   limit: int = 8) -> list[dict]:
     """Type-to-filter over the cached nearby shops, nearest first.
