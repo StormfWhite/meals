@@ -176,6 +176,10 @@ def get_week_groceries(week_start_iso: str, with_prices: bool = True,
 # A price that changes mid-week overwrites (the last one seen that week); "first"/"last" say when.
 
 def _record_prices(week_start_iso: str, rows: list[dict]) -> None:
+    # only the week being shopped for (or later): opening an old week's list must not stamp
+    # today's prices onto it
+    if week_start_iso < _monday_target(datetime.date.today()).isoformat():
+        return
     shops = {k: active_shop(k) for k in (aisles.GROCERY, aisles.MARKET)}
     today = datetime.date.today().isoformat()
     data = store.load(PRICE_HISTORY_FILE, {"weeks": {}})
