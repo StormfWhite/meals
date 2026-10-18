@@ -336,7 +336,8 @@ async def _call(method, path, body):
     const day = new Date().toDateString();
     if (localStorage.getItem(LS + ".fences") === day) return;
     window.fetch("/api/groceries/geofences").then((r) => r.json()).then((o) => {
-      window.MealsAndroid.setup(JSON.stringify({ token: S.refresh, fences: o.fences || [] }));
+      if (!(o.fences || []).length) return;          // nothing yet (store list not synced): try next open
+      window.MealsAndroid.setup(JSON.stringify({ token: S.refresh, fences: o.fences }));
       localStorage.setItem(LS + ".fences", day);
     }).catch(() => {});
   }
