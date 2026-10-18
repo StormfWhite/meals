@@ -87,6 +87,66 @@ App.plan = {
     this._draw(body);
   },
 
+  /* Swipe the day sideways for the next / previous one (phones). The day follows the finger,
+   * flies off past ~a fifth of the width, and the new one slides in from the far side. A swipe
+   * that starts on an ingredient line removes that line instead (App.swipeAway), and a field
+   * being typed in keeps its touches. */
+  _wireDaySwipe(cols, body) {
+    if (this._slideIn) {                       // arriving from a swipe: come in from that side
+      const from = this._slideIn;
+      this._slideIn = 0;
+      cols.style.transition = "none";
+      cols.style.transform = `translateX(${from * 35}%)`;
+      cols.style.opacity = "0";
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        cols.style.transition = "transform .22s ease-out, opacity .22s";
+        cols.style.transform = "";
+        cols.style.opacity = "";
+      }));
+    }
+    let x0 = 0, y0 = 0, dx = 0, mode = null;
+    cols.addEventListener("touchstart", (e) => {
+      const field = e.target.closest("input, textarea");
+      if (e.touches.length !== 1 || e.target.closest(".swipe-row, .list-panel, .isg")
+          || (field && field === document.activeElement)) { mode = "no"; return; }
+      x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; dx = 0; mode = null;
+    }, { passive: true });
+    cols.addEventListener("touchmove", (e) => {
+      if (mode === "no") return;
+      const mx = e.touches[0].clientX - x0, my = e.touches[0].clientY - y0;
+      if (mode === null) {
+        if (Math.abs(mx) < 12 && Math.abs(my) < 12) return;
+        mode = Math.abs(mx) > Math.abs(my) * 1.5 ? "day" : "no";
+        if (mode === "day") cols.style.transition = "none";
+      }
+      if (mode !== "day") return;
+      dx = mx;
+      cols.style.transform = `translateX(${dx * 0.9}px)`;
+      cols.style.opacity = String(Math.max(0.35, 1 - Math.abs(dx) / cols.offsetWidth));
+    }, { passive: true });
+    const end = () => {
+      if (mode !== "day") { mode = null; return; }
+      mode = null;
+      const step = dx < 0 ? 1 : -1;            // finger to the left = the next day
+      cols.style.transition = "transform .18s ease-in, opacity .18s";
+      if (Math.abs(dx) > Math.max(70, cols.offsetWidth * 0.22)) {
+        cols.style.transform = `translateX(${-step * 100}%)`;
+        cols.style.opacity = "0";
+        this.flush();
+        setTimeout(() => {
+          this._slideIn = step;
+          this._date = _planShift(this._date, step);
+          this.render(body);
+        }, 170);
+      } else {
+        cols.style.transform = "";
+        cols.style.opacity = "";
+      }
+    };
+    cols.addEventListener("touchend", end);
+    cols.addEventListener("touchcancel", end);
+  },
+
   // ── the host contract mealblock.js renders against ────────────────
   _host() {
     const self = this;
@@ -163,6 +223,7 @@ App.plan = {
     cols.style.gridTemplateColumns = weekMode
       ? `repeat(${dates.length}, minmax(144px, 1fr))`
       : "minmax(0, 780px)";
+    if (!weekMode) this._wireDaySwipe(cols, body);
 
     dates.forEach((date, ci) => {
       const isToday = date === _planToday();

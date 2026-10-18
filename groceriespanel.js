@@ -39,7 +39,6 @@ const GP_MEAL = '<path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/><path d="M7 2
 const GP_PLUS = '<path d="M12 5v14M5 12h14"/>';
 const GP_DOWN = '<path d="m6 9 6 6 6-6"/>';
 const GP_USUAL = '<path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"/><path d="M3 21v-5h5"/>';
-const GP_TRASH = '<path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/>';
 const gpPhone = () => window.matchMedia("(max-width: 760px)").matches;
 
 App.groceriesPanel = {
@@ -129,7 +128,7 @@ App.groceriesPanel = {
       <span class="gp-row-name">${App.esc(p.name)}</span><span class="gp-row-need dim num">${App.esc(p.qty)}</span></div>`)));
     this._fill(rowsOf("#gp-market-rows"), market, "Nothing fresh needed yet.");
     const freeRows = rowsOf("#gp-free-rows");
-    freeItems.forEach(item => freeRows.appendChild(_gpSwipe(this._freeRow(item), async () => {
+    freeItems.forEach(item => freeRows.appendChild(App.swipeAway(this._freeRow(item), async () => {
       await App.api(`/api/groceries/${this._marketWeek}/free-list/${item.id}`, { method: "DELETE" });
       this._reload();
     })));
@@ -237,7 +236,7 @@ App.groceriesPanel = {
       items.forEach(item => {
         const row = this._structuredRow(item);
         if (item.meals && item.meals.length > 1) row.querySelector(".gp-row-name").title = "For " + item.meals.join(", ");
-        wrap.appendChild(_gpSwipe(row, async () => {
+        wrap.appendChild(App.swipeAway(row, async () => {
           await App.api(`/api/groceries/${this._wk(item.shop_list)}/items/${item.ingredient_id}`, { method: "DELETE" });
           App.toast(`${item.name} off the list`);
           this._reload();
@@ -270,7 +269,7 @@ App.groceriesPanel = {
       row.classList.add("taken");
       dismiss();
     });
-    return _gpSwipe(row, dismiss);
+    return App.swipeAway(row, dismiss);
   },
 
   _wireStoreHeads() {
@@ -508,52 +507,6 @@ function _gpSplitAmount(text) {
   return [text, ""];
 }
 
-/* Swipe a row sideways to remove it (phones). The direction is decided on
- * the first ~10px of travel, so a vertical scroll through the list is never
- * mistaken for a swipe and a tap on the checkbox is still a tap. Past a
- * third of the row's width it flies off and `onRemove` runs. */
-function _gpSwipe(row, onRemove) {
-  const wrap = App.el(`<div class="gp-swipe"><span class="gp-swipe-bin">${App.icon(GP_TRASH)}</span></div>`);
-  wrap.appendChild(row);
-  let x0 = 0, y0 = 0, dx = 0, mode = null;
-  row.addEventListener("touchstart", (e) => {
-    // a field being typed in keeps its touches (caret, selection); an idle name/amount still swipes
-    const field = e.target.closest("input:not([type=checkbox])");
-    if (e.touches.length !== 1 || (field && field === document.activeElement)) { mode = "no"; return; }
-    x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; dx = 0; mode = null;
-  }, { passive: true });
-  row.addEventListener("touchmove", (e) => {
-    if (mode === "no") return;
-    const mx = e.touches[0].clientX - x0, my = e.touches[0].clientY - y0;
-    if (mode === null) {
-      if (Math.abs(mx) < 10 && Math.abs(my) < 10) return;
-      mode = Math.abs(mx) > Math.abs(my) * 1.2 ? "swipe" : "no";
-      if (mode === "swipe") { row.style.transition = "none"; wrap.classList.add("swiping"); }
-    }
-    if (mode !== "swipe") return;
-    dx = mx;
-    row.style.transform = `translateX(${dx}px)`;
-    wrap.classList.toggle("armed", Math.abs(dx) > row.offsetWidth / 3);
-    wrap.classList.toggle("from-left", dx > 0);
-  }, { passive: true });
-  const end = () => {
-    if (mode !== "swipe") { mode = null; return; }
-    mode = null;
-    row.style.transition = "";
-    if (Math.abs(dx) > row.offsetWidth / 3) {
-      row.style.transform = `translateX(${dx > 0 ? 110 : -110}%)`;
-      wrap.style.height = wrap.offsetHeight + "px";
-      requestAnimationFrame(() => wrap.classList.add("gone"));
-      onRemove();
-    } else {
-      row.style.transform = "";
-      wrap.classList.remove("swiping", "armed");
-    }
-  };
-  row.addEventListener("touchend", end);
-  row.addEventListener("touchcancel", end);
-  return wrap;
-}
 
 /* Every row now carries the same field classes, so a class selector alone
  * would put the caret back in the FIRST row's price box no matter which

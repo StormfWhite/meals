@@ -134,12 +134,15 @@ App.mealBlock = {
       note.addEventListener("input", () => note.classList.toggle("has-note", note.value.trim() !== ""));
       markDestination(row);
       row.querySelector(".mb-ing").addEventListener("change", () => markDestination(row));
-      row.querySelector(".mb-row-x").addEventListener("click", () => {
+      const removeRow = () => {
         row.remove();
         ensureBlankRow();
         markDirty();
         commit();
-      });
+      };
+      row.querySelector(".mb-row-x").addEventListener("click", removeRow);
+      // on a phone: swipe the line away (the ✕ is hover-only); the blank line at the end stays put
+      App.swipeAway(row, removeRow, { wrap: false, can: () => row.querySelector(".mb-ing").value.trim() !== "" });
       row.addEventListener("keydown", (e) => onRowKey(e, row));
 
       // The learned dropdown: ranked by what actually gets cooked, told

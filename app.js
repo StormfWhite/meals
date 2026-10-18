@@ -92,6 +92,59 @@ App.position = function () {
   });
 };
 
+/* Swipe a row sideways to remove it (phones) -- grocery rows, market lines, a meal's ingredient
+ * lines. The direction is decided on the first ~10px of travel, so a vertical scroll is never
+ * mistaken for a swipe and a tap is still a tap; a field being typed in keeps its touches. Past a
+ * third of the row's width it flies off and `onRemove` runs. `wrap: false` moves the row itself
+ * (no red bin behind it) for places whose code walks the rows as siblings, like a meal block;
+ * `can()` false = this row can't be swiped (the blank line at the end of a meal). The day swipe
+ * (plan.js) leaves anything inside `.swipe-row` alone. */
+App.swipeAway = function (row, onRemove, opts = {}) {
+  const wrapIt = opts.wrap !== false;
+  const wrap = wrapIt ? App.el(`<div class="swipe"><span class="swipe-bin">${App.icon('<path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/>')}</span></div>`) : row;
+  if (wrapIt) wrap.appendChild(row);
+  row.classList.add("swipe-row");
+  let x0 = 0, y0 = 0, dx = 0, mode = null;
+  row.addEventListener("touchstart", (e) => {
+    const field = e.target.closest("input:not([type=checkbox])");
+    if (e.touches.length !== 1 || (field && field === document.activeElement) || (opts.can && !opts.can())) { mode = "no"; return; }
+    x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; dx = 0; mode = null;
+  }, { passive: true });
+  row.addEventListener("touchmove", (e) => {
+    if (mode === "no") return;
+    const mx = e.touches[0].clientX - x0, my = e.touches[0].clientY - y0;
+    if (mode === null) {
+      if (Math.abs(mx) < 10 && Math.abs(my) < 10) return;
+      mode = Math.abs(mx) > Math.abs(my) * 1.2 ? "swipe" : "no";
+      if (mode === "swipe") { row.style.transition = "none"; wrap.classList.add("swiping"); }
+    }
+    if (mode !== "swipe") return;
+    dx = mx;
+    row.style.transform = `translateX(${dx}px)`;
+    if (!wrapIt) row.style.opacity = String(Math.max(0.25, 1 - Math.abs(dx) / row.offsetWidth));
+    wrap.classList.toggle("armed", Math.abs(dx) > row.offsetWidth / 3);
+    wrap.classList.toggle("from-left", dx > 0);
+  }, { passive: true });
+  const end = () => {
+    if (mode !== "swipe") { mode = null; return; }
+    mode = null;
+    row.style.transition = "";
+    if (Math.abs(dx) > row.offsetWidth / 3) {
+      row.style.transform = `translateX(${dx > 0 ? 110 : -110}%)`;
+      wrap.style.height = wrap.offsetHeight + "px";
+      requestAnimationFrame(() => wrap.classList.add("gone"));
+      setTimeout(onRemove, wrapIt ? 0 : 200);
+    } else {
+      row.style.transform = "";
+      row.style.opacity = "";
+      wrap.classList.remove("swiping", "armed");
+    }
+  };
+  row.addEventListener("touchend", end);
+  row.addEventListener("touchcancel", end);
+  return wrap;
+};
+
 App.icon = function (path) {
   return `<svg class="icon" viewBox="0 0 24 24">${path}</svg>`;
 };

@@ -386,16 +386,18 @@ input.gp-row-name:focus { background: var(--panel); border-color: var(--border);
 .gp-free .gp-row-qty { width: 84px; }
 .gp-sugs:empty { display: none; }
 /* swipe-to-remove (phones): the row slides over a red bin */
-.gp-swipe { position: relative; border-radius: 7px; overflow: hidden; transition: height .2s, opacity .2s; }
-.gp-swipe > .gp-row { position: relative; transition: transform .2s; touch-action: pan-y; }
-.gp-swipe.swiping > .gp-row { background: var(--panel); }
-.gp-swipe-bin { position: absolute; inset: 0; display: none; align-items: center; justify-content: flex-end; padding: 0 14px;
+.swipe { position: relative; border-radius: 7px; overflow: hidden; transition: height .2s, opacity .2s; }
+.swipe > .gp-row { position: relative; transition: transform .2s; touch-action: pan-y; }
+.swipe.swiping > .gp-row { background: var(--panel); }
+.swipe-bin { position: absolute; inset: 0; display: none; align-items: center; justify-content: flex-end; padding: 0 14px;
   background: #c9453a; color: #fff; }
-.gp-swipe-bin svg { width: 16px; height: 16px; opacity: .6; }
-.gp-swipe.swiping .gp-swipe-bin { display: flex; }
-.gp-swipe.from-left .gp-swipe-bin { justify-content: flex-start; }
-.gp-swipe.armed .gp-swipe-bin svg { opacity: 1; }
-.gp-swipe.gone { height: 0 !important; opacity: 0; }
+.swipe-bin svg { width: 16px; height: 16px; opacity: .6; }
+.swipe.swiping .swipe-bin { display: flex; }
+.swipe.from-left .swipe-bin { justify-content: flex-start; }
+.swipe.armed .swipe-bin svg { opacity: 1; }
+.swipe.gone { height: 0 !important; opacity: 0; }
+.mb-row.swipe-row { transition: transform .2s, opacity .2s, height .2s; touch-action: pan-y; }
+.mb-row.swipe-row.gone { height: 0 !important; overflow: hidden; opacity: 0; }
 
 /* trend badges (history.js Meals sub-tab) */
 .chip.trend-up { color: var(--warn); border-color: var(--warn); }
