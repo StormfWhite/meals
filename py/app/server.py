@@ -721,6 +721,18 @@ def clear_price(ingredient_id: str):
     return {"ok": True}
 
 
+class PriceLookupBody(BaseModel):
+    ids: list[str] = []
+
+
+@app.post("/api/groceries/{week}/prices/lookup")
+def lookup_prices(week: str, body: PriceLookupBody):
+    """Live prices for the list's unpriced rows, asked for by the list itself (a few at a time)."""
+    if not prices.kroger_configured():
+        return {"found": 0}
+    return {"found": groceries.price_missing(week, body.ids)}
+
+
 @app.post("/api/groceries/{week}/prices/refresh")
 def refresh_prices(week: str):
     """Go and fetch live prices for the whole list. Only ever on request:

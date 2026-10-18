@@ -16,7 +16,7 @@ import uuid
 from typing import Optional
 
 from . import aisles, board, config, ingredients, learning, nutrition, places, prices, recipes, store
-from .paths import DATA_DIR, GROCERIES_FILE
+from .paths import DATA_DIR, GROCERIES_FILE, PRICE_HISTORY_FILE
 
 
 def _load() -> dict:
@@ -157,7 +157,47 @@ def get_week_groceries(week_start_iso: str, with_prices: bool = True,
             item.update(_priced(ing, item, shops[shop_list], allow_network))
         out.append(item)
     out.sort(key=lambda r: r["name"].lower())
+    if with_prices:
+        _record_prices(week_start_iso, out)
     return out
+
+
+# ── price history ────────────────────────────────────────────────────────
+#
+# Every week's prices, kept beside the data (price_history.json, so in Dropbox) for whatever
+# they're wanted for later -- Storm 2026-10-18: "track the grocery prices over time and store them
+# for each week … i just want the data". Nothing reads it yet. Shape:
+#   {"weeks": {"2026-10-18": {
+#       "grocery": {"store": "Ralphs", "total": 44.25, "unpriced": 1},
+#       "market":  {"store": null,     "total": null,  "unpriced": 0},
+#       "items": {"<ingredient id>": {"name": "Milk", "list": "grocery", "price": 3.19,
+#                 "product": "Ralphs 2% … · 1/2 gal", "source": "kroger", "store": "Ralphs",
+#                 "first": "2026-10-18", "last": "2026-10-20"}}}}}
+# A price that changes mid-week overwrites (the last one seen that week); "first"/"last" say when.
+
+def _record_prices(week_start_iso: str, rows: list[dict]) -> None:
+    shops = {k: active_shop(k) for k in (aisles.GROCERY, aisles.MARKET)}
+    today = datetime.date.today().isoformat()
+    data = store.load(PRICE_HISTORY_FILE, {"weeks": {}})
+    week = data["weeks"].setdefault(week_start_iso, {"items": {}})
+    before = json.dumps(week, sort_keys=True)
+    totals = list_totals(rows)
+    for kind in (aisles.GROCERY, aisles.MARKET):
+        week[kind] = {"store": (shops[kind] or {}).get("name"), "total": totals[kind]["estimated"],
+                      "unpriced": totals[kind]["unpriced"]}
+    for r in rows:
+        if r.get("price") is None:
+            continue
+        prev = week["items"].get(r["ingredient_id"], {})
+        week["items"][r["ingredient_id"]] = {
+            "name": r["name"], "list": r["shop_list"], "price": r["price"],
+            "product": r.get("price_label", ""), "source": r.get("price_source"),
+            "store": (shops[r["shop_list"]] or {}).get("name"),
+            "first": prev.get("first", today),
+            "last": today if prev.get("price") != r["price"] or not prev else prev.get("last", today),
+        }
+    if json.dumps(week, sort_keys=True) != before:
+        store.save(PRICE_HISTORY_FILE, data)
 
 
 def _priced(ingredient: dict, item: dict, shop: Optional[dict], allow_network: bool) -> dict:
@@ -599,3 +639,23 @@ def geofences(lat: Optional[float] = None, lon: Optional[float] = None) -> list[
             seen.add(key)
             out.append({"lat": s["lat"], "lon": s["lon"], "kind": kind, "name": s.get("name", "")})
     return out[:90]       # Android allows 100 proximity alerts per app
+
+
+PRICE_BATCH = 6
+
+
+def price_missing(week_start_iso: str, ingredient_ids: list[str]) -> int:
+    """Live prices for these rows of the list that have none yet -- what the list asks for by
+    itself after drawing (Storm 2026-10-18: "does it auto find the prices?"). A few at a time;
+    a price already remembered and fresh isn't fetched again (prices.price_for)."""
+    want = set(ingredient_ids[:PRICE_BATCH])
+    shops = {"grocery": active_shop("grocery"), "market": active_shop("market")}
+    ing_by_id = ingredients.by_id()
+    found = 0
+    for row in get_week_groceries(week_start_iso, with_prices=True, allow_network=False):
+        if row["ingredient_id"] not in want or row.get("price") is not None:
+            continue
+        ing = ing_by_id.get(row["ingredient_id"])
+        if ing and prices.price_for(ing, shops[row["shop_list"]], allow_network=True):
+            found += 1
+    return found

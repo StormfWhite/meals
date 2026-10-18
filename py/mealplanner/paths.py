@@ -46,6 +46,7 @@ FDC_CACHE_FILE = DATA_DIR / "fdc_cache.sqlite"
 # Rebuildable from OpenStreetMap, unlike everything above it -- deleting
 # this only costs one Overpass call per place.
 STORES_CACHE_FILE = DATA_DIR / "stores_cache.json"
+PRICE_HISTORY_FILE = DATA_DIR / "price_history.json"   # every week's prices, kept for later use
 
 
 def ensure_dirs() -> None:

@@ -96,6 +96,7 @@ App.groceriesPanel = {
     this._shops = { grocery: itemsRes.store, market: itemsRes.market };
     const focus = _gpCaptureFocus(this._container);
     this._draw(itemsRes.items, ingredientsRes.ingredients, freeRes.items, itemsRes.totals, sugRes.items);
+    this._priceMissing(itemsRes.items);
     _gpRestoreFocus(this._container, focus);
     if (this._onCount) {
       this._onCount(itemsRes.items.filter(i => !i.checked).length + freeRes.items.filter(i => !i.checked).length);
@@ -193,18 +194,41 @@ App.groceriesPanel = {
 
   _wk(kind) { return kind === "market" ? this._marketWeek : this._weekStart; },
 
+  /* Unpriced rows at a store with live prices (Ralphs and the other Kroger banners) are looked
+   * up by themselves, in the background -- each at most once a day, so an item the store doesn't
+   * carry isn't asked about on every redraw. The list redraws when any price came back. */
+  _priceMissing(items) {
+    if (this._pricing) return;
+    let tried = {};
+    try { tried = JSON.parse(localStorage.getItem("meals.priced") || "{}"); } catch (e) {}
+    const day = new Date().toDateString();
+    const todo = items.filter(i => i.price == null && (this._shops[i.shop_list] || {}).chain === "kroger"
+                                   && tried[i.ingredient_id] !== day);
+    if (!todo.length) return;
+    const batch = todo.slice(0, 6);
+    batch.forEach(i => { tried[i.ingredient_id] = day; });
+    try { localStorage.setItem("meals.priced", JSON.stringify(tried)); } catch (e) {}
+    this._pricing = true;
+    const byWeek = {};
+    batch.forEach(i => (byWeek[this._wk(i.shop_list)] = byWeek[this._wk(i.shop_list)] || []).push(i.ingredient_id));
+    Promise.all(Object.entries(byWeek).map(([w, ids]) =>
+      App.api(`/api/groceries/${w}/prices/lookup`, { method: "POST", body: { ids } }).catch(() => ({ found: 0 }))))
+      .then(rs => { this._pricing = false; if (rs.some(r => r.found)) this.refresh(); })
+      .catch(() => { this._pricing = false; });
+  },
+
   _sectionHead(kind, icon, label, rows, totals) {
     const shop = this._shops[kind];
     const total = (totals && totals[kind]) || {};
     const money = total.estimated !== null && total.estimated !== undefined
       ? `$${total.estimated.toFixed(2)}` : "";
-    const missing = total.unpriced ? `<span class="gp-unpriced" title="${total.unpriced} item${total.unpriced > 1 ? "s" : ""} with no price yet">+${total.unpriced}?</span>` : "";
+    // just the price (Storm 2026-10-18); what it leaves out is said on hover, not hidden
+    const tip = total.unpriced ? `Not counted: ${total.unpriced} item${total.unpriced > 1 ? "s" : ""} with no price yet` : "Estimated, at this store";
     return `
       <div class="gp-section-head">
         <span class="field-label">${App.icon(icon)} ${label}</span>
         ${kind === "market" && this._marketWeek !== this._weekStart ? `<span class="gp-head-range dim num" title="The market list moved on by itself after the market trip">${App.esc(_gpRange(this._marketWeek))}</span>` : ""}
-        <span class="dim gp-count">${rows.filter(i => !i.checked).length}</span>
-        <span class="gp-total num">${money}${missing}</span>
+        <span class="gp-total num" title="${tip}">${money}</span>
         <button class="icon-btn gp-copy" data-list="${kind}" title="Copy list">${App.icon(GP_COPY)}</button>
       </div>
       <button class="gp-store" data-kind="${kind}" title="Pick the shop this list is for">

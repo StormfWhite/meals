@@ -515,7 +515,7 @@ input.gp-row-name:focus { background: var(--panel); border-color: var(--border);
   max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .gp-store:hover { color: var(--text); border-color: var(--border); }
-.gp-total { font-size: 11px; font-weight: 700; white-space: nowrap; }
+.gp-total { font-size: 11px; font-weight: 700; white-space: nowrap; margin-left: auto; }
 .gp-unpriced { color: var(--text-dim); font-weight: 500; margin-left: 3px; font-size: 10px; }
 .gp-row-price {
   width: 52px; min-width: 0; font-size: 11px; padding: 2px 5px;
