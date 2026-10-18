@@ -334,11 +334,11 @@ async def _call(method, path, body):
   function tellAndroid() {
     if (!window.MealsAndroid || !S.refresh) return;
     const day = new Date().toDateString();
-    if (localStorage.getItem(LS + ".fences") === day) return;
+    if (localStorage.getItem(LS + ".fences2") === day) return;
     window.fetch("/api/groceries/geofences").then((r) => r.json()).then((o) => {
       if (!(o.fences || []).length) return;          // nothing yet (store list not synced): try next open
       window.MealsAndroid.setup(JSON.stringify({ token: S.refresh, fences: o.fences }));
-      localStorage.setItem(LS + ".fences", day);
+      localStorage.setItem(LS + ".fences2", day);
     }).catch(() => {});
   }
 
