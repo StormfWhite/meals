@@ -125,10 +125,16 @@ def search_places(q: str):
 
 @app.get("/api/stores/search")
 def search_stores(q: str = "", kind: str = "grocery", place_id: Optional[str] = None,
-                  refresh: bool = False):
-    """Type-to-filter over real shops near the active place. `refresh`
-    re-fetches from OpenStreetMap; ordinary typing never touches the
-    network (see places.py)."""
+                  refresh: bool = False, lat: Optional[float] = None, lon: Optional[float] = None):
+    """Type-to-filter over real shops near the active place -- or near the phone's current
+    position (`lat`/`lon`, places.spot_for). `refresh` re-fetches from OpenStreetMap;
+    ordinary typing never touches the network (see places.py)."""
+    if lat is not None and lon is not None and not place_id:
+        slat, slon, label = places.spot_for(lat, lon)
+        if refresh:
+            places.stores_near(slat, slon, kind, refresh=True)
+        return {"results": places.search_stores(q, slat, slon, kind),
+                "place": {"id": None, "label": label}}
     place = next((p for p in places.list_places() if p["id"] == place_id), None) if place_id else places.active()
     if place is None:
         raise HTTPException(400, "add a place first — a store list needs somewhere to be near")
@@ -439,14 +445,17 @@ def get_board(week: Optional[str] = None):
 
 @app.get("/api/board/day/{date}")
 def get_board_day(date: str):
-    # `list_week`: the week the shopping list is for (Monday / after the week's shop, groceries.py)
-    return {**board.day_slots(date), "list_week": groceries.list_week()}
+    # `list_week` / `market_week`: the weeks the two lists are for (Monday / after that list's shop)
+    # (the grocery list and the farmer's market list move on separately)
+    return {**board.day_slots(date), "list_week": groceries.list_week(kind="grocery"),
+            "market_week": groceries.list_week(kind="market")}
 
 
 @app.get("/api/groceries/geofences")
-def get_geofences():
-    """Grocery stores + markets near home, for the Pixel to notice a shopping trip."""
-    return {"fences": groceries.geofences()}
+def get_geofences(lat: Optional[float] = None, lon: Optional[float] = None):
+    """Grocery stores + markets near home -- and near where the phone is, when that's elsewhere --
+    for the Pixel to notice a shopping trip."""
+    return {"fences": groceries.geofences(lat, lon)}
 
 
 @app.get("/api/board/meal-options")

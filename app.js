@@ -73,6 +73,19 @@ App.resolveLater = function (ingredientId, onDone) {
   return App._resolveQueue;
 };
 
+/* Where the phone is right now, for "stores near me" -- or null (no permission, no fix in 5 s, a
+ * laptop without location): callers then fall back to the saved home. One fix serves 15 min. */
+App._pos = null;
+App.position = function () {
+  if (App._pos && Date.now() - App._pos.at < 15 * 60 * 1000) return Promise.resolve(App._pos);
+  if (!navigator.geolocation) return Promise.resolve(null);
+  return new Promise((resolve) => {
+    navigator.geolocation.getCurrentPosition(
+      (p) => resolve(App._pos = { lat: p.coords.latitude, lon: p.coords.longitude, at: Date.now() }),
+      () => resolve(null), { timeout: 5000, maximumAge: 15 * 60 * 1000, enableHighAccuracy: false });
+  });
+};
+
 App.icon = function (path) {
   return `<svg class="icon" viewBox="0 0 24 24">${path}</svg>`;
 };

@@ -490,11 +490,11 @@ def export_text(week_start_iso: str, section: str) -> str:
 
 # ── which week the list is for, and when it starts over ────────────────────
 #
-# The list is for the week being shopped for. It moves on (a) every Monday, and (b) the moment
-# the week's shop is done: the Pixel records each visit to a grocery store or market near home
-# (`trip-<ms>.json` beside the data, written by the Meals Android app on leaving), and a visit
-# counts as THE shop when at least half of that list was ticked off -- a quick top-up mid-week
-# leaves the list alone. Whatever was added by hand but not bought carries over to the new list;
+# Each list is for the week being shopped for, and the grocery list and the farmer's market list
+# move on SEPARATELY: (a) every Monday, and (b) the moment that list's shop is done -- the Pixel
+# records each visit to a grocery store or market near home (`trip-<ms>.json` beside the data,
+# written by the Meals Android app on leaving, with its kind), and a visit counts as THE shop
+# when at least half of THAT list was ticked off -- a quick top-up mid-week leaves it alone. Whatever was added by hand but not bought carries over to the new list;
 # what the new week's meals need fills in by itself, and last week's buys come back as usuals.
 
 TRIP_MIN_SHARE = 0.5
@@ -519,67 +519,78 @@ def trips() -> list[dict]:
     return sorted(out, key=lambda t: t["at"])
 
 
-def _shopped(week_start_iso: str) -> bool:
-    """Was this week's list mostly ticked off?"""
-    rows = [i["checked"] for i in get_week_groceries(week_start_iso, with_prices=False)]
-    rows += [bool(i.get("checked")) for i in list_free_items(week_start_iso)]
+def _shopped(week_start_iso: str, kind: str) -> bool:
+    """Was this week's grocery (or market) list mostly ticked off?"""
+    rows = [i["checked"] for i in get_week_groceries(week_start_iso, with_prices=False)
+            if (i["shop_list"] == aisles.MARKET) == (kind == aisles.MARKET)]
+    if kind == aisles.MARKET:
+        rows += [bool(i.get("checked")) for i in list_free_items(week_start_iso)]
     done = sum(rows)
     return bool(rows) and done >= TRIP_MIN_CHECKED and done / len(rows) >= TRIP_MIN_SHARE
 
 
-def list_week(today: Optional[datetime.date] = None) -> str:
-    """The week the shopping list is for right now (see above), carrying the unbought
-    hand-adds forward whenever it moves on."""
+def list_week(today: Optional[datetime.date] = None, kind: str = aisles.GROCERY) -> str:
+    """The week the grocery (or market) list is for right now (see above), carrying that
+    list's unbought hand-adds forward whenever it moves on."""
     today = today or datetime.date.today()
-    moved = datetime.date.min          # how far counted shops have pushed the list
+    moved = datetime.date.min          # how far counted shops have pushed this list
     for t in trips():
         when = datetime.datetime.fromtimestamp(t["at"]).date()
-        if when > today:
+        if when > today or (t.get("kind") or aisles.GROCERY) != kind:
             continue
         current = max(_monday_target(when), moved)     # the list on screen at that trip
-        if _shopped(current.isoformat()):
+        if _shopped(current.isoformat(), kind):
             moved = current + datetime.timedelta(days=7)
     week = max(_monday_target(today), moved).isoformat()
-    _carry_forward(week)
+    _carry_forward(week, kind)
     return week
 
 
-def _carry_forward(week_start_iso: str) -> None:
-    """Unbought hand-adds and market lines from the list before this one, once."""
+def _carry_forward(week_start_iso: str, kind: str = aisles.GROCERY) -> None:
+    """Unbought hand-adds (and, for the market, its lines) from this list's previous week, once."""
     prev = (datetime.date.fromisoformat(week_start_iso) - datetime.timedelta(days=7)).isoformat()
     data = _load()
     old = data["weeks"].get(prev)
     new = data["weeks"].setdefault(week_start_iso, {"items": {}, "extra_items": {}, "free_list": []})
-    if not old or new.get("carried_from") == prev:
+    mark = "carried_from" if kind == aisles.GROCERY else "carried_from_market"
+    if not old or new.get(mark) == prev:
         return
     old_items = old.get("items", {})
+    ing_by_id = ingredients.by_id()
     for ing_id, ex in old.get("extra_items", {}).items():
         st = old_items.get(ing_id, {})
+        ing = ing_by_id.get(ing_id)
+        on = st.get("shop_list") or (aisles.list_for(ing) if ing else aisles.GROCERY)
+        if on != kind:
+            continue
         if st.get("checked") or st.get("removed_g") is not None or ing_id in new.setdefault("extra_items", {}):
             continue
         new["extra_items"][ing_id] = dict(ex)
         if st.get("shop_list"):
             new.setdefault("items", {}).setdefault(ing_id, {})["shop_list"] = st["shop_list"]
-    have = {l["text"].lower() for l in new.setdefault("free_list", [])}
-    for line in old.get("free_list", []):
-        if not line.get("checked") and line["text"].lower() not in have:
-            new["free_list"].append({**line, "id": "f_" + uuid.uuid4().hex[:8]})
-    new["carried_from"] = prev
+    if kind == aisles.MARKET:
+        have = {l["text"].lower() for l in new.setdefault("free_list", [])}
+        for line in old.get("free_list", []):
+            if not line.get("checked") and line["text"].lower() not in have:
+                new["free_list"].append({**line, "id": "f_" + uuid.uuid4().hex[:8]})
+    new[mark] = prev
     _save(data)
 
 
-def geofences() -> list[dict]:
-    """Every grocery store and farmer's market near the active home (plus the ones picked),
-    for the Pixel to watch -- leaving one is a shopping trip."""
+def geofences(lat: Optional[float] = None, lon: Optional[float] = None) -> list[dict]:
+    """Every grocery store and farmer's market around where the phone is (snapped to a saved
+    home when near one; places.spot_for), plus the ones picked, for the Pixel to watch --
+    leaving one is a shopping trip."""
     place = places.active()
-    if not place:
+    slat, slon, _ = places.spot_for(lat, lon)
+    if slat is None:
         return []
     out, seen = [], set()
     for kind in ("grocery", "market"):
-        picked = place.get("store" if kind == "grocery" else "market")
-        near = places.cached_stores(place["lat"], place["lon"], kind)
+        picked = place.get("store" if kind == "grocery" else "market") if place else None
+        near = places.cached_stores(slat, slon, kind)
         if near is None:
-            near = places.stores_near(place["lat"], place["lon"], kind)
+            near = places.stores_near(slat, slon, kind)
         shops = ([picked] if picked else []) + near
         for s in shops:
             if not s or s.get("lat") is None:

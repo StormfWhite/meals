@@ -44,7 +44,8 @@ const gpPhone = () => window.matchMedia("(max-width: 760px)").matches;
 
 App.groceriesPanel = {
   _container: null,
-  _weekStart: null,
+  _weekStart: null,    // the grocery list's week
+  _marketWeek: null,   // the farmer's market list's week: it resets on its own (groceries.list_week)
   _onCount: null,
   _timer: null,
   _title: "",
@@ -54,9 +55,10 @@ App.groceriesPanel = {
   _addQueue: Promise.resolve(),
   _pending: [],        // typed but still being looked up (USDA, ~3 s each): shown at once, faintly
 
-  mount(container, weekStart, onCount, title, range) {
+  mount(container, weekStart, onCount, title, range, marketWeek) {
     this._container = container;
     this._weekStart = weekStart;
+    this._marketWeek = marketWeek || weekStart;
     this._onCount = onCount || null;
     this._title = title || "This week";
     this._range = range || "";
@@ -75,12 +77,23 @@ App.groceriesPanel = {
 
   async _reload() {
     if (!this._container || !this._container.isConnected) return;
-    const [itemsRes, ingredientsRes, freeRes, sugRes] = await Promise.all([
-      App.api(`/api/groceries/${this._weekStart}`),
+    const gw = this._weekStart, mw = this._marketWeek, two = mw !== gw;
+    const [gRes, ingredientsRes, freeRes, gSug, mRes, mSug] = await Promise.all([
+      App.api(`/api/groceries/${gw}`),
       App.api("/api/ingredients"),
-      App.api(`/api/groceries/${this._weekStart}/free-list`),
-      App.api(`/api/groceries/${this._weekStart}/suggestions`).catch(() => ({ items: [] })),
+      App.api(`/api/groceries/${mw}/free-list`),
+      App.api(`/api/groceries/${gw}/suggestions`).catch(() => ({ items: [] })),
+      two ? App.api(`/api/groceries/${mw}`) : null,
+      two ? App.api(`/api/groceries/${mw}/suggestions`).catch(() => ({ items: [] })) : null,
     ]);
+    // each section from its own week: groceries from the grocery week, the market from the market's
+    const mItems = (mRes || gRes).items, mSugs = (mSug || gSug).items;
+    const itemsRes = {
+      items: gRes.items.filter(i => i.shop_list !== "market").concat(mItems.filter(i => i.shop_list === "market")),
+      totals: { grocery: gRes.totals.grocery, market: (mRes || gRes).totals.market },
+      store: gRes.store, market: gRes.market,
+    };
+    const sugRes = { items: gSug.items.filter(x => x.shop_list !== "market").concat(mSugs.filter(x => x.shop_list === "market")) };
     this._shops = { grocery: itemsRes.store, market: itemsRes.market };
     const focus = _gpCaptureFocus(this._container);
     this._draw(itemsRes.items, ingredientsRes.ingredients, freeRes.items, itemsRes.totals, sugRes.items);
@@ -117,7 +130,7 @@ App.groceriesPanel = {
     this._fill(rowsOf("#gp-market-rows"), market, "Nothing fresh needed yet.");
     const freeRows = rowsOf("#gp-free-rows");
     freeItems.forEach(item => freeRows.appendChild(_gpSwipe(this._freeRow(item), async () => {
-      await App.api(`/api/groceries/${this._weekStart}/free-list/${item.id}`, { method: "DELETE" });
+      await App.api(`/api/groceries/${this._marketWeek}/free-list/${item.id}`, { method: "DELETE" });
       this._reload();
     })));
     ["grocery", "market"].forEach(kind => {
@@ -179,6 +192,8 @@ App.groceriesPanel = {
     this._wireFree();
   },
 
+  _wk(kind) { return kind === "market" ? this._marketWeek : this._weekStart; },
+
   _sectionHead(kind, icon, label, rows, totals) {
     const shop = this._shops[kind];
     const total = (totals && totals[kind]) || {};
@@ -188,6 +203,7 @@ App.groceriesPanel = {
     return `
       <div class="gp-section-head">
         <span class="field-label">${App.icon(icon)} ${label}</span>
+        ${kind === "market" && this._marketWeek !== this._weekStart ? `<span class="gp-head-range dim num" title="The market list moved on by itself after the market trip">${App.esc(_gpRange(this._marketWeek))}</span>` : ""}
         <span class="dim gp-count">${rows.filter(i => !i.checked).length}</span>
         <span class="gp-total num">${money}${missing}</span>
         <button class="icon-btn gp-copy" data-list="${kind}" title="Copy list">${App.icon(GP_COPY)}</button>
@@ -222,7 +238,7 @@ App.groceriesPanel = {
         const row = this._structuredRow(item);
         if (item.meals && item.meals.length > 1) row.querySelector(".gp-row-name").title = "For " + item.meals.join(", ");
         wrap.appendChild(_gpSwipe(row, async () => {
-          await App.api(`/api/groceries/${this._weekStart}/items/${item.ingredient_id}`, { method: "DELETE" });
+          await App.api(`/api/groceries/${this._wk(item.shop_list)}/items/${item.ingredient_id}`, { method: "DELETE" });
           App.toast(`${item.name} off the list`);
           this._reload();
         }));
@@ -232,7 +248,7 @@ App.groceriesPanel = {
 
   // A usual: tap it to put it on the list, ✕ (or swipe) for not this week.
   _sugRow(sug) {
-    const url = `/api/groceries/${this._weekStart}/suggestions/${encodeURIComponent(sug.key)}`;
+    const url = `/api/groceries/${this._wk(sug.shop_list)}/suggestions/${encodeURIComponent(sug.key)}`;
     const row = App.el(`<div class="gp-row gp-sug" title="On the list ${sug.weeks} of the last ${sug.of} weeks — tap to add">
       <span class="gp-sug-icon">${App.icon(GP_USUAL)}</span>
       <span class="gp-row-name">${App.esc(sug.name)}</span>
@@ -296,7 +312,7 @@ App.groceriesPanel = {
 
     row.querySelector(".gp-chk").addEventListener("change", async (e) => {
       row.classList.toggle("done", e.target.checked);
-      await App.api(`/api/groceries/${this._weekStart}/items/${item.ingredient_id}`, { method: "PUT", body: { checked: e.target.checked } });
+      await App.api(`/api/groceries/${this._wk(item.shop_list)}/items/${item.ingredient_id}`, { method: "PUT", body: { checked: e.target.checked } });
       this._reload();
     });
 
@@ -314,7 +330,7 @@ App.groceriesPanel = {
       try {
         if (item.source === "extra") {
           const to = await App.resolveIngredientId(name, "g", this._ingredients, true);
-          await App.api(`/api/groceries/${this._weekStart}/items/${item.ingredient_id}/swap`, { method: "POST", body: { to } });
+          await App.api(`/api/groceries/${this._wk(item.shop_list)}/items/${item.ingredient_id}/swap`, { method: "POST", body: { to } });
         } else if (taken) {
           App.toast(`${taken.name} is another item — change it in the meal`);
           nameBox.value = item.name;
@@ -330,7 +346,7 @@ App.groceriesPanel = {
     const qtyBox = row.querySelector(".gp-row-qty");
     qtyBox.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.keyCode === 13) qtyBox.blur(); });
     qtyBox.addEventListener("change", async () => {
-      await App.api(`/api/groceries/${this._weekStart}/items/${item.ingredient_id}/amount`, {
+      await App.api(`/api/groceries/${this._wk(item.shop_list)}/items/${item.ingredient_id}/amount`, {
         method: "PUT", body: { qty: qtyBox.value },
       });
       this._reload();
@@ -360,7 +376,7 @@ App.groceriesPanel = {
     const removeBtn = row.querySelector(".gp-row-remove-extra");
     if (removeBtn) {
       removeBtn.addEventListener("click", async () => {
-        await App.api(`/api/groceries/${this._weekStart}/extra/${item.ingredient_id}`, { method: "DELETE" });
+        await App.api(`/api/groceries/${this._wk(item.shop_list)}/extra/${item.ingredient_id}`, { method: "DELETE" });
         this._reload();
       });
     }
@@ -432,7 +448,7 @@ App.groceriesPanel = {
       if (!freeAdd.value.trim()) return;
       const [text, qty] = _gpSplitAmount(freeAdd.value.trim());   // "6 peaches" → peaches · 6, like the grocery box
       freeAdd.value = "";
-      await App.api(`/api/groceries/${this._weekStart}/free-list`, { method: "POST", body: { text, qty } });
+      await App.api(`/api/groceries/${this._marketWeek}/free-list`, { method: "POST", body: { text, qty } });
       this._reload();
     });
   },
@@ -453,22 +469,22 @@ App.groceriesPanel = {
     textBox.addEventListener("change", async () => {
       const text = textBox.value.trim();
       if (!text) { textBox.value = item.text; return; }   // emptying isn't deleting: swipe or ✕ does that
-      await App.api(`/api/groceries/${this._weekStart}/free-list/${item.id}`, { method: "PUT", body: { text } });
+      await App.api(`/api/groceries/${this._marketWeek}/free-list/${item.id}`, { method: "PUT", body: { text } });
       this._reload();
     });
     const qtyBox = row.querySelector(".gp-row-qty");
     qtyBox.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.keyCode === 13) qtyBox.blur(); });
     qtyBox.addEventListener("change", async () => {
-      await App.api(`/api/groceries/${this._weekStart}/free-list/${item.id}`, { method: "PUT", body: { qty: qtyBox.value } });
+      await App.api(`/api/groceries/${this._marketWeek}/free-list/${item.id}`, { method: "PUT", body: { qty: qtyBox.value } });
       this._reload();
     });
     row.querySelector(".gp-free-chk").addEventListener("change", async (e) => {
       row.classList.toggle("done", e.target.checked);
-      await App.api(`/api/groceries/${this._weekStart}/free-list/${item.id}`, { method: "PUT", body: { checked: e.target.checked } });
+      await App.api(`/api/groceries/${this._marketWeek}/free-list/${item.id}`, { method: "PUT", body: { checked: e.target.checked } });
       this._reload();
     });
     row.querySelector(".gp-free-remove").addEventListener("click", async () => {
-      await App.api(`/api/groceries/${this._weekStart}/free-list/${item.id}`, { method: "DELETE" });
+      await App.api(`/api/groceries/${this._marketWeek}/free-list/${item.id}`, { method: "DELETE" });
       this._reload();
     });
     return row;
@@ -479,6 +495,10 @@ App.groceriesPanel = {
  * "2 lb grapes" → same, "3 lemons" → ["lemons", "3"]. Kept as typed, never converted; a name
  * with no number at either end comes back whole. */
 const GP_UNITS = "cups?|c|tbsps?|tablespoons?|tsps?|teaspoons?|g|grams?|kg|oz|ounces?|lbs?|pounds?|ml|l|liters?|cans?|jars?|bags?|boxe?s?|packs?|packages?|bunch(?:es)?|heads?|dozen|doz|cartons?|bottles?|loaf|loaves|gal(?:lons?)?|qt|quarts?|pints?";
+function _gpRange(week) {   // "Oct 25 – Oct 31", via plan.js's own formatter
+  return typeof _planRange === "function" ? _planRange(week, _planShift(week, 6)) : week;
+}
+
 function _gpSplitAmount(text) {
   const num = "\\d+(?:[./]\\d+)?(?:\\s+\\d+/\\d+)?";
   let m = text.match(new RegExp(`^(.+?)\\s+(${num}(?:\\s*(?:${GP_UNITS})\\b\\.?)?|${num}\\s*x)$`, "i"));

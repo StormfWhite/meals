@@ -34,6 +34,7 @@ App.plan = {
   _options: {},
   _blocks: [],
   _listWeek: null,      // week_start of the list beside the plan: always next week's
+  _marketWeek: null,    // the farmer's market list's week (it resets separately)
   _listOpen: true,
   _listTouched: false,
   _bandTimer: null,
@@ -76,7 +77,9 @@ App.plan = {
     // week whose ingredients never appear on the list beside them.
     // Which week that is moves on every Monday, or once the week's shop is done (groceries.list_week).
     const shopWeek = todayDay.list_week || todayDay.next_week_start;
+    const marketWeek = todayDay.market_week || shopWeek;      // the market list resets on its own
     this._listWeek = day.week_start > shopWeek ? day.week_start : shopWeek;
+    this._marketWeek = day.week_start > marketWeek ? day.week_start : marketWeek;
     this._week = week;
     this._recipes = recipesRes.recipes;
     this._ingredients = ingredientsRes.ingredients;
@@ -195,7 +198,7 @@ App.plan = {
 
     this._drawNav();
     App.groceriesPanel.mount(body.querySelector("#list-panel"), this._listWeek,
-      (n) => this._setBadge(n), "Next week", _planRange(this._listWeek, _planShift(this._listWeek, 6)));
+      (n) => this._setBadge(n), "Next week", _planRange(this._listWeek, _planShift(this._listWeek, 6)), this._marketWeek);
     this._refreshAllStats();
 
     if (!this._isWeekMode()) {

@@ -74,9 +74,12 @@ App.storePicker = {
     // rather than sending you off to Settings to come back afterwards.
     if (this._placeMode) return this._searchPlaces(kind);
 
+    // around where the phone is now (snapped to a saved home when near one, server-side), else home
+    const pos = await App.position();
+    const at = pos ? `&lat=${pos.lat}&lon=${pos.lon}` : "";
     let res;
     try {
-      res = await App.api(`/api/stores/search?q=${encodeURIComponent(q)}&kind=${kind}${refresh ? "&refresh=true" : ""}`);
+      res = await App.api(`/api/stores/search?q=${encodeURIComponent(q)}&kind=${kind}${refresh ? "&refresh=true" : ""}${at}`);
     } catch (err) {
       if (/place/i.test(err.message)) { this._enterPlaceMode(kind); return; }
       this._menu.querySelector(".sp-list").innerHTML =

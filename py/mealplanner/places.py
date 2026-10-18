@@ -243,6 +243,22 @@ def stores_near(lat: float, lon: float, kind: str = "grocery", refresh: bool = F
     return fetched
 
 
+NEAR_HOME_KM = 5.0
+
+
+def spot_for(lat: Optional[float], lon: Optional[float]) -> tuple[float, float, str]:
+    """Where to look for shops: the phone's position, snapped to a saved home when within
+    NEAR_HOME_KM (that home's store list is already cached), else the position itself (one
+    Overpass fetch, then cached). No position = the active home."""
+    home = active()
+    if lat is None or lon is None:
+        return (home["lat"], home["lon"], home["label"]) if home else (None, None, "")
+    near = min(list_places(), key=lambda p: _haversine_km(lat, lon, p["lat"], p["lon"]), default=None)
+    if near and _haversine_km(lat, lon, near["lat"], near["lon"]) <= NEAR_HOME_KM:
+        return near["lat"], near["lon"], near["label"]
+    return round(lat, 3), round(lon, 3), "you"
+
+
 def cached_stores(lat: float, lon: float, kind: str = "grocery") -> Optional[list[dict]]:
     """The last fetched list for this spot however old, or None -- for callers that must never
     wait on Overpass (the phone's trip watch: a cold fetch took 79 s)."""
