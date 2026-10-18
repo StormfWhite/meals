@@ -343,15 +343,16 @@ async def _call(method, path, body):
     serial(() => pull()).then((ch) => { if (ch) redraw(); longpoll(); }).catch(() => setOnline(false));
   })().catch((e) => { console.error(e); say("Couldn't start: " + e.message); });
 
-  // In the Pixel's Meals app (com.storm.meals): hand it the grocery stores + markets near home and
+  // In the Pixel's Meals app (com.storm.meals): hand it the picked grocery store + market and
   // the Dropbox sign-in, so it can notice a shopping trip (Trips.java). Every open asks (it's cached,
   // instant) and re-arms only when the list changed -- e.g. the home switched to Chatsworth.
   function tellAndroid() {
     if (!window.MealsAndroid || !S.refresh) return;
     App.position().then((pos) => window.fetch("/api/groceries/geofences" + (pos ? `?lat=${pos.lat}&lon=${pos.lon}` : "")))
       .then((r) => r.json()).then((o) => {
-      if (!(o.fences || []).length) return;          // nothing yet (store list not synced): try next open
-      const sig = o.fences.map((f) => f.lat.toFixed(4) + f.lon.toFixed(4)).join("|");
+      if (!o.fences) return;
+      // only the picked store + market (groceries.geofences); none picked = nothing watched
+      const sig = o.fences.length ? o.fences.map((f) => f.lat.toFixed(4) + f.lon.toFixed(4)).join("|") : "none";
       if (localStorage.getItem(LS + ".fences3") === sig) return;
       window.MealsAndroid.setup(JSON.stringify({ token: S.refresh, fences: o.fences }));
       localStorage.setItem(LS + ".fences3", sig);

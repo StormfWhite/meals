@@ -37,6 +37,7 @@ def meta():
         "reup_day": cfg["reup_day"],
         "fdc_key_set": config.fdc_key_set(),
         "kroger_key_set": prices.kroger_configured(),
+        "kroger_problem": prices.kroger_problem(),
         "place": place,
     }
 

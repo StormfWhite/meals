@@ -28,6 +28,7 @@ import json
 import math
 import re
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from typing import Optional
@@ -89,6 +90,14 @@ def remembered(ingredient_id: str, shop: Optional[dict]) -> Optional[dict]:
 
 # ── Kroger ───────────────────────────────────────────────────────────────
 
+def kroger_problem() -> str:
+    """Why live prices aren't coming, in words, or "" -- shown in Settings."""
+    if not kroger_configured():
+        return ""
+    _kroger_token()
+    return _token.get("error", "")
+
+
 def kroger_configured() -> bool:
     cfg = config.load()
     return bool(cfg.get("kroger_client_id") and cfg.get("kroger_client_secret"))
@@ -110,8 +119,15 @@ def _kroger_token() -> Optional[str]:
     try:
         with urllib.request.urlopen(req, timeout=20) as resp:
             payload = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        # invalid_scope = the app on developer.kroger.com wasn't given the Products API (2026-10-18:
+        # Storm's keys worked for Locations only) -- say so, rather than prices silently not coming
+        _token["error"] = ("Your Kroger app needs the Products API: on developer.kroger.com open the app, "
+                           "add Products, save") if b"invalid_scope" in e.read() else f"Kroger said {e.code}"
+        return None
     except Exception:
         return None
+    _token.pop("error", None)
     _token["value"] = payload.get("access_token")
     _token["expires_at"] = time.time() + float(payload.get("expires_in", 1800))
     return _token["value"]

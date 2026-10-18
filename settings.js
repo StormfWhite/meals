@@ -96,6 +96,7 @@ App.settings = {
             <input id="kroger-secret" type="password" placeholder="${this._config.kroger_key_set ? "•••••••• (secret set)" : "client secret"}" style="flex:1;">
             <button class="btn-ghost" id="kroger-save">Save</button>
           </div>
+          ${this._config.kroger_problem ? `<div class="modal-hint" style="color:var(--warn);">${App.esc(this._config.kroger_problem)}</div>` : ""}
         </div>
 
         <div class="modal-section">

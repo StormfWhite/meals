@@ -578,20 +578,18 @@ def _carry_forward(week_start_iso: str, kind: str = aisles.GROCERY) -> None:
 
 
 def geofences(lat: Optional[float] = None, lon: Optional[float] = None) -> list[dict]:
-    """Every grocery store and farmer's market around where the phone is (snapped to a saved
-    home when near one; places.spot_for), plus the ones picked, for the Pixel to watch --
-    leaving one is a shopping trip."""
+    """The PICKED grocery store and farmer's market of the active home, for the Pixel to watch --
+    leaving one is a shopping trip. Only those two (Storm 2026-10-18: "only do my selected
+    farmer's market and grocery store"); one not picked yet isn't watched. `lat`/`lon` are
+    accepted for older pages and ignored -- the phone's position already picks the home
+    (places.arrived)."""
     place = places.active()
-    slat, slon, _ = places.spot_for(lat, lon)
-    if slat is None:
+    if not place:
         return []
     out, seen = [], set()
     for kind in ("grocery", "market"):
-        picked = place.get("store" if kind == "grocery" else "market") if place else None
-        near = places.cached_stores(slat, slon, kind)
-        if near is None:
-            near = places.stores_near(slat, slon, kind)
-        shops = ([picked] if picked else []) + near
+        picked = place.get("store" if kind == "grocery" else "market")
+        shops = [picked] if picked else []
         for s in shops:
             if not s or s.get("lat") is None:
                 continue
