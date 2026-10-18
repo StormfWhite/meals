@@ -196,15 +196,32 @@ def _parse_grams(size: str) -> Optional[float]:
     return qty
 
 
+# Not food -- a search for "hemp seeds" ranked an Epsom-salt soak (Personal Care) next to Hemp
+# Hearts, "cashew butter" found a baby-food pouch (2026-10-18).
+NON_FOOD = {"personal care", "health & beauty", "beauty", "baby", "pet care", "pet", "cleaning products",
+            "household", "paper & plastic products", "home & garden", "kitchen", "health", "pharmacy"}
+
+
+def _stem(word: str) -> str:
+    word = word.lower().strip(".,®™'’")
+    return word[:-1] if len(word) > 3 and word.endswith("s") and not word.endswith("ss") else word
+
+
 def kroger_price(name: str, location_id: str) -> Optional[dict]:
-    """Cheapest sensible match for an ingredient name at one store."""
+    """The product an ingredient name means at one store: food only, every word of the name in
+    the product's name when any result has that, then KROGER'S OWN ranking -- not the cheapest
+    hit, which is how an Epsom soak once priced "hemp seeds"."""
     data = _kroger_get("/products", {
-        "filter.term": name, "filter.locationId": location_id, "filter.limit": 8,
+        "filter.term": name, "filter.locationId": location_id, "filter.limit": 20,
     })
     if not data:
         return None
-    best = None
-    for product in data.get("data", []):
+    want = {_stem(w) for w in name.split() if len(w) > 1}
+    ranked = []
+    for rank, product in enumerate(data.get("data", [])):
+        cats = {c.lower() for c in product.get("categories") or []}
+        if cats and cats <= NON_FOOD | {"natural & organic"}:
+            continue
         items = product.get("items") or []
         if not items:
             continue
@@ -213,16 +230,20 @@ def kroger_price(name: str, location_id: str) -> Optional[dict]:
         price = price_block.get("promo") or price_block.get("regular")
         if not price:
             continue
-        candidate = {
+        words = {_stem(w) for w in product.get("description", "").split()}
+        hits = len(want & words)
+        ranked.append(((hits < len(want), -hits, rank), {
             "price": round(float(price), 2),
             "label": f"{product.get('description', '')} · {item.get('size', '')}".strip(" ·"),
             "package_g": _parse_grams(item.get("size", "")),
             "aisle": ", ".join(a.get("description", "") for a in (product.get("aisleLocations") or [])[:1]),
             "source": "kroger",
-        }
-        if best is None or candidate["price"] < best["price"]:
-            best = candidate
-    return best
+        }))
+    if not ranked:
+        return None
+    ranked.sort(key=lambda r: r[0])
+    key, best = ranked[0]
+    return best if key[1] < 0 else None       # not one word of the name in it: no match beats a wrong one
 
 
 # ── what the list asks for ───────────────────────────────────────────────
