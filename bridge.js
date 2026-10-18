@@ -35,7 +35,7 @@
   splash.innerHTML = `<img src="icon-180.png" alt=""><div class="boot-t">Meal Planner</div><div class="boot-s" id="boot-s">Starting…</div>
     <div id="boot-connect" hidden>
       <p>Connect once to the Dropbox the plan lives in.</p>
-      <button class="boot-btn" id="boot-go">Connect Dropbox</button>
+      <a class="boot-btn" id="boot-go" target="_blank" rel="noopener">Connect Dropbox</a>
       <div id="boot-code" hidden><p>Tap <b>Allow</b>, copy the code Dropbox shows, paste it here.</p>
         <input id="boot-in" placeholder="Paste code" autocomplete="off" autocapitalize="off" spellcheck="false"><button class="boot-btn" id="boot-done">Done</button></div>
       <p class="boot-err" id="boot-err"></p>
@@ -95,12 +95,25 @@
     return new Promise((resolve) => {
       splash.querySelector("#boot-connect").hidden = false;
       say("");
-      splash.querySelector("#boot-go").onclick = async () => {
-        const v = b64url(crypto.getRandomValues(new Uint8Array(48)));
+      // The Dropbox link is made BEFORE the tap and the button is a real link to it: an iPhone only
+      // opens a new window straight from a tap, and the old button awaited the SHA-256 first, so
+      // iOS silently blocked it (Storm 2026-10-18: "when i hit connect dropbox nothing happens").
+      const go = splash.querySelector("#boot-go");
+      // The paste box shows from the start, and the verifier is KEPT while a sign-in is pending:
+      // an iPhone may reload the app while Dropbox is open, and a fresh verifier would make the
+      // code it shows useless.
+      splash.querySelector("#boot-code").hidden = false;
+      const ready = (async () => {
+        const kept = localStorage.getItem(LS + ".pkce"), at = +localStorage.getItem(LS + ".pkce.at") || 0;
+        const v = kept && Date.now() - at < 30 * 60 * 1000 ? kept : b64url(crypto.getRandomValues(new Uint8Array(48)));
         localStorage.setItem(LS + ".pkce", v);
+        if (v !== kept) localStorage.setItem(LS + ".pkce.at", String(Date.now()));
         const ch = b64url(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(v)));
-        window.open("https://www.dropbox.com/oauth2/authorize?" + new URLSearchParams({ client_id: APP_KEY, response_type: "code",
-          token_access_type: "offline", code_challenge_method: "S256", code_challenge: ch }), "_blank");
+        go.href = "https://www.dropbox.com/oauth2/authorize?" + new URLSearchParams({ client_id: APP_KEY, response_type: "code",
+          token_access_type: "offline", code_challenge_method: "S256", code_challenge: ch });
+      })();
+      go.onclick = (e) => {
+        if (!go.href) { e.preventDefault(); ready.then(() => window.open(go.href, "_blank")); }
         splash.querySelector("#boot-code").hidden = false;
       };
       splash.querySelector("#boot-done").onclick = async () => {
@@ -113,6 +126,7 @@
           const o = await r.json();
           if (!r.ok) throw new Error(o.error_description || o.error || r.status);
           S.refresh = o.refresh_token; S.access = o.access_token; S.exp = Date.now() + (o.expires_in - 120) * 1000; save();
+          localStorage.removeItem(LS + ".pkce"); localStorage.removeItem(LS + ".pkce.at");
           splash.querySelector("#boot-connect").hidden = true;
           resolve();
         } catch (e) { splash.querySelector("#boot-err").textContent = "That didn't work (" + e.message + "). Tap Connect Dropbox for a fresh code."; }
@@ -330,16 +344,17 @@ async def _call(method, path, body):
   })().catch((e) => { console.error(e); say("Couldn't start: " + e.message); });
 
   // In the Pixel's Meals app (com.storm.meals): hand it the grocery stores + markets near home and
-  // the Dropbox sign-in, so it can notice a shopping trip (Trips.java). Once a day is plenty.
+  // the Dropbox sign-in, so it can notice a shopping trip (Trips.java). Every open asks (it's cached,
+  // instant) and re-arms only when the list changed -- e.g. the home switched to Chatsworth.
   function tellAndroid() {
     if (!window.MealsAndroid || !S.refresh) return;
-    const day = new Date().toDateString();
-    if (localStorage.getItem(LS + ".fences2") === day) return;
     App.position().then((pos) => window.fetch("/api/groceries/geofences" + (pos ? `?lat=${pos.lat}&lon=${pos.lon}` : "")))
       .then((r) => r.json()).then((o) => {
       if (!(o.fences || []).length) return;          // nothing yet (store list not synced): try next open
+      const sig = o.fences.map((f) => f.lat.toFixed(4) + f.lon.toFixed(4)).join("|");
+      if (localStorage.getItem(LS + ".fences3") === sig) return;
       window.MealsAndroid.setup(JSON.stringify({ token: S.refresh, fences: o.fences }));
-      localStorage.setItem(LS + ".fences2", day);
+      localStorage.setItem(LS + ".fences3", sig);
     }).catch(() => {});
   }
 

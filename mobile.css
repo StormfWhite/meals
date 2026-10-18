@@ -7,6 +7,7 @@
 #boot .boot-s { color: var(--text-dim, #888); font-size: 14px; min-height: 1.2em; }
 #boot p { color: var(--text-dim, #888); font-size: 15px; max-width: 320px; }
 #boot input { width: 100%; max-width: 320px; height: 46px; border-radius: 12px; font-size: 16px; text-align: center; margin: 4px 0 10px; }
+a.boot-btn { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; box-sizing: border-box; }
 .boot-btn { height: 46px; padding: 0 24px; border-radius: 23px; border: 0; background: var(--accent, #2f7d32); color: var(--accent-text, #fff);
   font-weight: 650; font-size: 16px; }
 .boot-err { color: #d33 !important; }

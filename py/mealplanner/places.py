@@ -195,9 +195,21 @@ out center tags 60;"""
 out center tags 80;"""
 
 
-def _fetch_stores(lat: float, lon: float, kind: str) -> list[dict]:
+OVERPASS_MIRRORS = ("https://overpass.private.coffee/api/interpreter",
+                    "https://overpass.kumi.systems/api/interpreter")
+
+
+def _fetch_stores(lat: float, lon: float, kind: str) -> Optional[list[dict]]:
+    """None when no server answered -- "no shops here" and "couldn't ask" are different, and
+    caching the second as the first left Chatsworth with an empty picker for 14 days (2026-10-18)."""
     body = urllib.parse.urlencode({"data": _overpass_query(lat, lon, kind)}).encode()
-    data = _http_json(OVERPASS, body, timeout=45) or {}
+    data = None
+    for url in (OVERPASS,) + OVERPASS_MIRRORS:
+        data = _http_json(url, body, timeout=45)
+        if data is not None and "elements" in data:
+            break
+    else:
+        return _nominatim_stores(lat, lon, kind)
     out = []
     for element in data.get("elements", []):
         tags = element.get("tags", {})
@@ -227,6 +239,54 @@ def _fetch_stores(lat: float, lon: float, kind: str) -> list[dict]:
     return out
 
 
+NOMINATIM = "https://nominatim.openstreetmap.org/search"
+NOMINATIM_QUERIES = {"grocery": ("supermarket", "grocery"), "market": ("farmers market", "marketplace")}
+MARKET_TYPES = {"marketplace", "farm", "greengrocer"}
+
+
+def _nominatim_stores(lat: float, lon: float, kind: str, box_km: float = 8.0) -> Optional[list[dict]]:
+    """The fallback when every Overpass server is down (2026-10-18: one timing out, both mirrors
+    500): Nominatim's category search, bounded to a box round the point. Its usage policy is one
+    request a second with a real User-Agent, hence the pause."""
+    dlat = box_km / 111.0
+    dlon = box_km / (111.0 * max(0.2, math.cos(math.radians(lat))))
+    seen, out, answered = set(), [], False
+    for i, q in enumerate(NOMINATIM_QUERIES.get(kind, NOMINATIM_QUERIES["grocery"])):
+        if i:
+            time.sleep(1.1)
+        url = NOMINATIM + "?" + urllib.parse.urlencode({
+            "q": q, "format": "jsonv2", "limit": 50, "bounded": 1, "addressdetails": 1,
+            "viewbox": f"{lon - dlon},{lat + dlat},{lon + dlon},{lat - dlat}"})
+        rows = _http_json(url, timeout=20)
+        if rows is None:
+            continue
+        answered = True
+        for r in rows:
+            typ = r.get("type", "")
+            if kind == "market" and typ not in MARKET_TYPES:
+                continue                 # "Sprouts Farmers Market" is a supermarket
+            if kind == "grocery" and typ in MARKET_TYPES:
+                continue
+            key = f"{r.get('osm_type', 'node')}/{r.get('osm_id')}"
+            if not r.get("name") or key in seen:
+                continue
+            seen.add(key)
+            a = r.get("address") or {}
+            elat, elon = float(r["lat"]), float(r["lon"])
+            out.append({
+                "id": key, "name": r["name"], "brand": "", "kind": typ,
+                "address": ", ".join(b for b in (" ".join(x for x in (a.get("house_number"), a.get("road")) if x),
+                                                 a.get("city") or a.get("town") or a.get("suburb"), a.get("state"),
+                                                 a.get("postcode")) if b),
+                "postcode": a.get("postcode") or "", "lat": elat, "lon": elon,
+                "distance_km": round(_haversine_km(lat, lon, elat, elon), 2),
+            })
+    if not answered:
+        return None
+    out.sort(key=lambda s: s["distance_km"])
+    return out
+
+
 def stores_near(lat: float, lon: float, kind: str = "grocery", refresh: bool = False) -> list[dict]:
     """Every shop of `kind` around a point, cached -- the list the
     typeahead filters. One network call per place per fortnight."""
@@ -236,14 +296,28 @@ def stores_near(lat: float, lon: float, kind: str = "grocery", refresh: bool = F
     if hit and not refresh and time.time() - hit.get("fetched_at", 0) < STORE_CACHE_TTL:
         return hit["stores"]
     fetched = _fetch_stores(lat, lon, kind)
-    if not fetched and hit:
-        return hit["stores"]          # a failed refresh must not empty the picker
+    if fetched is None or (not fetched and hit):
+        return hit["stores"] if hit else []   # a failed fetch is never cached, nor empties the picker
     cache[key] = {"fetched_at": time.time(), "stores": fetched}
     store.save(STORES_CACHE_FILE, cache)
     return fetched
 
 
 NEAR_HOME_KM = 5.0
+HOME_SWITCH_KM = 25.0
+
+
+def arrived(lat: float, lon: float) -> Optional[dict]:
+    """A phone says where it is: when that's near a saved home other than the active one, that
+    home becomes active -- for every device, the laptop included (it has no location of its own).
+    Storm 2026-10-18: the planner kept saying "near E S King Village" while they were in Chatsworth."""
+    near = min(list_places(), key=lambda p: _haversine_km(lat, lon, p["lat"], p["lon"]), default=None)
+    if not near or _haversine_km(lat, lon, near["lat"], near["lon"]) > HOME_SWITCH_KM:
+        return None
+    cur = active()
+    if cur and cur["id"] == near["id"]:
+        return None
+    return set_active(near["id"])
 
 
 def spot_for(lat: Optional[float], lon: Optional[float]) -> tuple[float, float, str]:
@@ -255,7 +329,7 @@ def spot_for(lat: Optional[float], lon: Optional[float]) -> tuple[float, float, 
         return (home["lat"], home["lon"], home["label"]) if home else (None, None, "")
     near = min(list_places(), key=lambda p: _haversine_km(lat, lon, p["lat"], p["lon"]), default=None)
     if near and _haversine_km(lat, lon, near["lat"], near["lon"]) <= NEAR_HOME_KM:
-        return near["lat"], near["lon"], near["label"]
+        return near["lat"], near["lon"], "you"      # that home's cached list; it IS where you are
     return round(lat, 3), round(lon, 3), "you"
 
 

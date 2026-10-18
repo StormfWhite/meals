@@ -451,6 +451,18 @@ def get_board_day(date: str):
             "market_week": groceries.list_week(kind="market")}
 
 
+class HereBody(BaseModel):
+    lat: float
+    lon: float
+
+
+@app.post("/api/places/here")
+def phone_is_here(body: HereBody):
+    """The phone's position: switches the active home when it's near another saved one."""
+    switched = places.arrived(body.lat, body.lon)
+    return {"switched": bool(switched), "active": switched or places.active()}
+
+
 @app.get("/api/groceries/geofences")
 def get_geofences(lat: Optional[float] = None, lon: Optional[float] = None):
     """Grocery stores + markets near home -- and near where the phone is, when that's elsewhere --

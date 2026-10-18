@@ -81,7 +81,13 @@ App.position = function () {
   if (!navigator.geolocation) return Promise.resolve(null);
   return new Promise((resolve) => {
     navigator.geolocation.getCurrentPosition(
-      (p) => resolve(App._pos = { lat: p.coords.latitude, lon: p.coords.longitude, at: Date.now() }),
+      (p) => {
+        resolve(App._pos = { lat: p.coords.latitude, lon: p.coords.longitude, at: Date.now() });
+        // near a different saved home: that one becomes active for every device (places.arrived)
+        App.api("/api/places/here", { method: "POST", body: { lat: App._pos.lat, lon: App._pos.lon } })
+          .then((r) => { if (r && r.switched) { App.toast(`Home: ${r.active.label}`); App.render && App.render(); } })
+          .catch(() => {});
+      },
       () => resolve(null), { timeout: 5000, maximumAge: 15 * 60 * 1000, enableHighAccuracy: false });
   });
 };
