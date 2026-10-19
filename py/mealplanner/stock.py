@@ -130,6 +130,22 @@ def correct(ingredient_id: str, grams: float, week_start_iso: str, frozen: Optio
     store.save(STOCK_FILE, data)
 
 
+def _brand(label: str) -> str:
+    """ "Simple Truth® Creamy … · 16 oz" -> "simple truth": the words before the first ®/™, else
+    the first word -- what "the same product, a bigger size" has to share."""
+    name = (label or "").split(" · ")[0]
+    m = re.match(r"^(.*?)[®™]", name)
+    return (m.group(1) if m else name.split(" ")[0]).strip().lower()
+
+
+def product_name(label: str) -> str:
+    """What the store calls it, without the size or the ® marks -- shown under the row."""
+    name = re.sub(r"[®™]", "", (label or "").split(" · ")[0])
+    # the size is said by the math beside it: "…Rice, 32 oz (907g)" / "…Juice, 16 Ounce" -> gone
+    name = re.sub(r",?\s*\d+(\.\d+)?\s*(fl\.?\s*oz|oz|ounces?|lbs?|pounds?|g|kg|ct|count)\b.*$", "", name, flags=re.I)
+    return re.sub(r"\s{2,}", " ", name).strip(" ,")
+
+
 class Ledger:
     """One read of the plan and the list, for one drawing of the list (the files are read
     once per week asked about, not once per row)."""
@@ -179,13 +195,48 @@ class Ledger:
         return self.usual(list_week)
 
     # the store's package for a row
-    def package(self, week: str, ing_id: str) -> Optional[dict]:
+    def package(self, week: str, ing_id: str, chosen: bool = True) -> Optional[dict]:
+        """The pack picked on the row (`chosen`), else the store's match for the ingredient."""
         st = self.weeks.get(week, {}).get("items", {}).get(ing_id, {})
-        if st.get("package"):
+        if chosen and st.get("package"):
             return st["package"]
         ing = self.ings.get(ing_id)
         shop = self.shops.get(self.list_of(week, ing_id)) if ing else None
         return self._prices.get(prices._store_key(shop), {}).get(ing_id)
+
+    def sizes(self, week: str, ing_id: str) -> list[dict]:
+        """Every size the store carries of what this ingredient matched: the match itself, then
+        the other sizes the search found (prices.kroger_price `options`), smallest first."""
+        base = self.package(week, ing_id, chosen=False) or {}
+        out = {}
+        for o in [base] + list(base.get("options") or []):
+            if o.get("package_g") and o.get("price"):
+                g = round(o["package_g"])
+                if g not in out or o["price"] < out[g]["price"]:
+                    out[g] = {"package_g": o["package_g"], "price": o["price"], "label": o.get("label", "")}
+        return sorted(out.values(), key=lambda o: o["package_g"])
+
+    def best_package(self, week: str, ing_id: str, to_buy_g: float) -> Optional[dict]:
+        """The size to buy (Storm: "auto bump up the size when i need more to an actual size that
+        is carried"): the cheapest way to cover what's needed out of the sizes of the SAME brand
+        -- 22 oz needed is one 32 oz jar, not two 16s, when that costs less -- fewest grams on a
+        tie. A pack picked by hand on the row always wins."""
+        picked = self.package(week, ing_id)
+        base = self.package(week, ing_id, chosen=False)
+        if picked is not base or not base or not to_buy_g or not base.get("package_g"):
+            return picked
+        brand = _brand(base.get("label", ""))
+        best, best_key = base, None
+        for o in self.sizes(week, ing_id):
+            if _brand(o["label"]) != brand:
+                continue
+            n = max(1, math.ceil(to_buy_g / o["package_g"] - 0.03))
+            key = (round(n * o["price"], 2), n * o["package_g"])
+            if best_key is None or key < best_key:
+                best, best_key = o, key
+        if best is not base and round(best["package_g"]) == round(base["package_g"]):
+            return base
+        return best if best is base else {**base, **best}
 
     def list_of(self, week: str, ing_id: str) -> str:
         st = self.weeks.get(week, {}).get("items", {}).get(ing_id, {})
@@ -201,9 +252,12 @@ class Ledger:
         typed = st.get("qty_text")
         typed_g = prices._parse_grams(typed) if typed else None
         extra_g = (ex or {}).get("qty_g", 0.0) + (prices._parse_grams((ex or {}).get("qty_text") or "") or 0.0)
-        pkg = self.package(week, ing_id) or {}
-        return plan_buy(self.needs(week).get(ing_id, 0.0), on_hand_g, extra_g,
-                        typed_g, pkg.get("package_g"), ex is not None)
+        need = self.needs(week).get(ing_id, 0.0)
+        want = typed_g or max(0.0, need - on_hand_g) + extra_g
+        pkg = self.best_package(week, ing_id, want) or {}
+        out = plan_buy(need, on_hand_g, extra_g, typed_g, pkg.get("package_g"), ex is not None)
+        out["package"] = pkg or None
+        return out
 
     # stock at the START of a week (before that week's shop)
     def state(self, week: str) -> dict[str, list[dict]]:
@@ -338,8 +392,8 @@ class Ledger:
         """A bigger pack worth buying instead: cheaper per gram by BULK_MIN_SAVING, used within
         BULK_HORIZON_WEEKS (freezing what won't keep), and only for something bought often."""
         ing = self.ings.get(ing_id)
-        pkg = self.package(week, ing_id) or {}
-        opts = pkg.get("options") or []
+        pkg = self.best_package(week, ing_id, to_buy_g) or {}
+        opts = (self.package(week, ing_id, chosen=False) or {}).get("options") or []
         if not ing or not to_buy_g or not pkg.get("package_g") or not pkg.get("price") or not opts:
             return None
         days, freezes = keeps(ing)

@@ -764,6 +764,14 @@ def put_grocery_package(week: str, ingredient_id: str, body: PackageBody):
     return {"items": items, "totals": groceries.list_totals(items)}
 
 
+@app.get("/api/groceries/{week}/sizes/{ingredient_id}")
+def get_sizes(week: str, ingredient_id: str):
+    """The sizes the picked store carries of it -- offered while an amount is typed."""
+    return {"sizes": [{"text": stock.us_amount(o["package_g"]), "price": o["price"], "label": o["label"],
+                       "product": stock.product_name(o["label"])}
+                      for o in stock.Ledger().sizes(week, ingredient_id)]}
+
+
 @app.get("/api/stock/{week}")
 def get_stock(week: str):
     """What's on hand at the start of the week: fridge/pantry and freezer, and when each runs out."""

@@ -357,6 +357,8 @@ App.groceriesPanel = {
   // The leftover math under a row (stock.py): need · on hand · packages · where the extra goes.
   _mathLine(item) {
     const parts = [];
+    // which product that is at the store -- the brand, said once (Storm: "show the brand somewhere")
+    const product = item.product ? `<div class="gp-product" title="${App.esc(item.price_label || "")}">${App.esc(item.product)}</div>` : "";
     const pkgs = item.packages && item.package_g ? `${item.packages} × ${_gpUs(item.package_g)}` : "";
     if (item.on_hand_g > 0.5) parts.push(`need ${item.need_text} · ${_gpUs(item.on_hand_g)} on hand`);
     else if (pkgs && item.need_text) parts.push(`need ${item.need_text}`);
@@ -379,8 +381,8 @@ App.groceriesPanel = {
       const b = item.bulk;
       bulk = `<button class="gp-bulk" title="${App.esc(b.label || "")}">${App.esc(_gpUs(b.package_g))} pack saves $${b.saves.toFixed(2)}${b.frozen_g > 0.5 ? ` · ${App.icon(GP_SNOW)} ${_gpUs(b.frozen_g)}` : ""}</button>`;
     }
-    if (!parts.length && !bulk) return null;
-    const el = App.el(`<div class="gp-math num">${parts.join(" · ")}${bulk}</div>`);
+    if (!parts.length && !bulk && !product) return null;
+    const el = App.el(`<div class="gp-math num">${product}${parts.length ? `<span>${parts.join(" · ")}</span>` : ""}${bulk}</div>`);
     const btn = el.querySelector(".gp-bulk");
     if (btn) btn.addEventListener("click", async (e) => {
       e.stopPropagation();
@@ -456,6 +458,7 @@ App.groceriesPanel = {
 
     const math = this._mathLine(item);
     if (math) row.appendChild(math);
+    if (item.sizes && item.sizes.length) _gpSizeList(row.querySelector(".gp-row-qty"), item.sizes);
 
     row.querySelector(".gp-chk").addEventListener("change", async (e) => {
       row.classList.toggle("done", e.target.checked);
@@ -566,9 +569,23 @@ App.groceriesPanel = {
         .then(() => { this._pending = this._pending.filter(p => p !== pend); return this._reload(); })
         .catch(() => {});   // a failed redraw must never stall the adds queued behind it
     };
-    const onEnter = (e) => { if (e.key === "Enter" || e.keyCode === 13) { e.preventDefault(); addItem(); } };
+    const onEnter = (e) => { if (e.key === "Enter" || e.keyCode === 13) { e.preventDefault(); addItem(); sizesFor = ""; } };
     nameInput.addEventListener("keydown", onEnter);
     qtyInput.addEventListener("keydown", onEnter);
+    // something the store has been asked about before: its sizes are offered in the amount box
+    let sizesFor = "";
+    const offerSizes = async () => {
+      const name = nameInput.value.trim().toLowerCase();
+      const match = name && (this._ingredients || []).find(i => i.name.toLowerCase() === name);
+      if (!match || sizesFor === match.id) return;
+      sizesFor = match.id;
+      const res = await App.api(`/api/groceries/${this._weekStart}/sizes/${match.id}`).catch(() => ({ sizes: [] }));
+      if (qtyInput.nextElementSibling && qtyInput.nextElementSibling.tagName === "DATALIST") qtyInput.nextElementSibling.remove();
+      qtyInput.removeAttribute("list");
+      if (res.sizes.length && sizesFor === match.id) _gpSizeList(qtyInput, res.sizes);
+    };
+    qtyInput.addEventListener("focus", offerSizes);
+    nameInput.addEventListener("change", offerSizes);
   },
 
   _wireCopy() {
@@ -691,4 +708,20 @@ function _gpUs(g) {
 
 function _gpDay(iso) {
   return new Date(iso + "T00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+// The store's sizes as the choices an amount box offers while typing ("16 oz", "2 lb").
+function _gpSizeList(input, sizes) {
+  if (!input) return;
+  const id = "gp-sizes-" + Math.random().toString(36).slice(2, 9);
+  const dl = document.createElement("datalist");
+  dl.id = id;
+  sizes.forEach(z => {
+    const o = document.createElement("option");
+    o.value = z.text;
+    o.label = `$${z.price.toFixed(2)} · ${z.product || z.label || ""}`;
+    dl.appendChild(o);
+  });
+  input.after(dl);
+  input.setAttribute("list", id);
 }

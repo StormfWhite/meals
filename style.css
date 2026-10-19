@@ -347,6 +347,8 @@ button.mb-tag:hover { color: var(--good); border-color: var(--good); }
   font-size: 10px; color: var(--text-dim); line-height: 1.5; }
 .gp-math svg, .gp-stock-badges svg, .gp-onhand-icon svg, .gp-stock-where svg { width: 10px; height: 10px; vertical-align: -1px; }
 .gp-math .warn, .gp-stock-badges .warn { color: var(--warn); }
+.gp-product { flex-basis: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); opacity: 0.75; }
+.gp-row-qty::-webkit-calendar-picker-indicator, .gp-add-qty::-webkit-calendar-picker-indicator { display: none !important; }
 .gp-bulk { margin-left: 4px; padding: 0 6px; border: 1px solid var(--border); border-radius: 9px; background: var(--panel);
   color: var(--good); font: inherit; font-size: 10px; cursor: pointer; display: inline-flex; align-items: center; gap: 3px; }
 .gp-bulk.on { color: var(--text); background: var(--panel-2); }

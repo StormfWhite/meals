@@ -173,6 +173,12 @@ def get_week_groceries(week_start_iso: str, with_prices: bool = True,
             "buy_g": None if buy["buy_g"] is None else round(buy["buy_g"], 1),
             "packages": buy["packages"],
             "covered": covered,
+            # the store's sizes of it (typing an amount offers them) and the pack the math picked
+            "sizes": [{"text": stock.us_amount(o["package_g"]), "price": o["price"], "label": o["label"],
+                       "product": stock.product_name(o["label"])}
+                      for o in ledger.sizes(week_start_iso, ing_id)],
+            "auto_package": ({k: buy["package"].get(k) for k in ("package_g", "price", "label")}
+                             if buy.get("package") and not s.get("package") else None),
             "freezes": stock.keeps(ing)[1],
             "keep_days": stock.keeps(ing)[0],
         }
@@ -237,14 +243,16 @@ def _priced(ingredient: dict, item: dict, shop: Optional[dict], allow_network: b
     contributes nothing to the total and is counted as unpriced instead,
     because a total that quietly skips items reads as complete."""
     price = prices.price_for(ingredient, shop, allow_network=allow_network)
-    if item.get("package"):            # a bigger pack picked on the row (the bulk hint)
-        price = {**(price or {}), **item["package"], "source": (price or {}).get("source", "kroger")}
+    pick = item.get("package") or item.get("auto_package")   # picked on the row / the size that covers it
+    if pick and pick.get("price"):
+        price = {**(price or {}), **{k: pick[k] for k in ("package_g", "price", "label") if k in pick},
+                 "source": (price or {}).get("source", "kroger")}
     if not price:
         return {"price": None, "est_cost": None,
                 "price_source": None, "price_age_days": None, "price_label": ""}
     if item.get("covered"):            # on hand already: nothing to pay this week
         packages = 0
-    elif item.get("package") or item.get("packages") is None:
+    elif item.get("packages") is None:
         packages = prices.packages_needed(item.get("to_buy_g") or item["planned_qty_g"], price.get("package_g"))
     else:
         packages = item["packages"]
@@ -255,6 +263,7 @@ def _priced(ingredient: dict, item: dict, shop: Optional[dict], allow_network: b
         "price_source": price.get("source"),
         "price_age_days": price.get("age_days"),
         "price_label": price.get("label", ""),
+        "product": stock.product_name(price.get("label", "")),
         "package_g": price.get("package_g"),
         "aisle": price.get("aisle", ""),
         "aisle_num": price.get("aisle_num"),
