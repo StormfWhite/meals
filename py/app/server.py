@@ -219,6 +219,7 @@ class IngredientUpdateBody(BaseModel):
     fdc_id: Optional[int] = None
     freezes: Optional[bool] = None     # overrides stock.keeps' guess
     keep_days: Optional[int] = None
+    storage: Optional[str] = None      # "fridge" / "pantry" (stock.storage)
 
 
 @app.get("/api/ingredients")

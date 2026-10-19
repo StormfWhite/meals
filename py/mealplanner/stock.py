@@ -76,6 +76,21 @@ def keeps(ing: dict) -> tuple[int, bool]:
     return days, freezes
 
 
+FRIDGE_NAMES = r"\beggs?\b|cheese|\bbutter\b|milk|yogh?urt|cream|kefir|tofu|tempeh|juice"
+LOW_DAYS = 7                    # runs out within this long after the list week starts = running low
+
+
+def storage(ing: dict) -> str:
+    """Where it lives when it isn't frozen: "pantry" for what keeps three weeks or more on a shelf
+    (garlic, onions, rice, spices), else "fridge". The ingredient's own `storage` wins."""
+    if ing.get("storage") in ("fridge", "pantry"):
+        return ing["storage"]
+    if re.search(FRIDGE_NAMES, (ing.get("name") or "").lower()):
+        return "fridge"
+    days, _ = keeps(ing)
+    return "pantry" if days >= 21 and ing.get("category") != "dairy" else "fridge"
+
+
 # ── amounts in the units the store sells by ─────────────────────────────
 
 def us_amount(grams: Optional[float]) -> str:
@@ -420,18 +435,27 @@ class Ledger:
         return best
 
     def on_hand(self, week: str) -> list[dict]:
-        """Everything on hand at the start of the week, for the On hand drawer."""
+        """Everything on hand at the start of the week, for the Pantry: where it is, how much,
+        when it runs out (and whether that's soon), and by when the fresh part should be used."""
+        from . import groceries
+        listed = {i["ingredient_id"] for i in groceries.get_week_groceries(week, with_prices=False)
+                  if not i.get("covered")}
+        soon = _add_days(week, LOW_DAYS)
         out = []
         for ing_id, lots in self.state(week).items():
             ing = self.ings.get(ing_id)
             if not ing:
                 continue
-            fridge = self.total([l for l in lots if not l["frozen"]])
-            frozen = self.total([l for l in lots if l["frozen"]])
+            days, freezes = keeps(ing)
+            fresh = [l for l in lots if not l["frozen"]]
+            fridge, frozen = self.total(fresh), self.total([l for l in lots if l["frozen"]])
             look = self.outlook(week, ing_id, 0.0)
-            out.append({"ingredient_id": ing_id, "name": ing["name"],
+            use_by = min((_add_days(l["since"], days) for l in fresh), default=None) if fresh and not freezes else None
+            out.append({"ingredient_id": ing_id, "name": ing["name"], "where": storage(ing),
                         "fridge_g": round(fridge, 1), "freezer_g": round(frozen, 1),
                         "fridge_text": us_amount(fridge), "freezer_text": us_amount(frozen),
-                        "runs_out": look["runs_out"], "keep_days": keeps(ing)[0], "freezes": keeps(ing)[1]})
-        out.sort(key=lambda r: r["name"].lower())
+                        "runs_out": look["runs_out"], "use_by": use_by,
+                        "low": bool(look["runs_out"] and look["runs_out"] <= soon),
+                        "on_list": ing_id in listed, "keep_days": days, "freezes": freezes})
+        out.sort(key=lambda r: (r["runs_out"] or "9999", r["name"].lower()))
         return out

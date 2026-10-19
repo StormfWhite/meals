@@ -102,7 +102,7 @@ def update(ingredient_id: str, **fields) -> dict:
     if ing is None:
         raise KeyError(ingredient_id)
     for key in ("name", "fdc_id", "fdc_description", "default_unit", "unit_conversions",
-                "category", "store_section", "manual_nutrients", "shop_list", "freezes", "keep_days"):
+                "category", "store_section", "manual_nutrients", "shop_list", "freezes", "keep_days", "storage"):
         if key in fields and fields[key] is not None:
             ing[key] = fields[key].strip() if key == "name" else fields[key]
     # Moving something between the two lists by hand is a decision, not a

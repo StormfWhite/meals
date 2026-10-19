@@ -197,6 +197,12 @@ function init() {
     btn.addEventListener("click", () => App.setView(btn.dataset.view));
   });
   document.getElementById("back-btn").addEventListener("click", () => App.setView("plan"));
+  // the Pantry lives in the list panel (groceriespanel.js): open the list, then it
+  document.getElementById("pantry-btn").addEventListener("click", () => {
+    const open = () => { App.plan.toggleList(true); App.groceriesPanel.openPantry(); };
+    if (App.state.view !== "plan") { App.setView("plan"); setTimeout(open, 60); return; }
+    open();
+  });
   document.getElementById("list-btn").addEventListener("click", () => {
     if (App.state.view !== "plan") { App.setView("plan"); setTimeout(() => App.plan.toggleList(true), 60); return; }
     App.plan.toggleList();

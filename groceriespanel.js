@@ -41,6 +41,7 @@ const GP_DOWN = '<path d="m6 9 6 6 6-6"/>';
 const GP_AISLE = '<path d="M4 3v18M20 3v18"/><path d="M4 8h5M4 14h5M15 8h5M15 14h5"/>';
 const GP_SNOW = '<path d="M12 2v20M4.9 7l14.2 10M4.9 17 19.1 7"/><path d="m9 4 3 2 3-2M9 20l3-2 3 2"/>';
 const GP_PANTRY = '<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M4 10h16M10 6.5h4M10 14h4"/>';
+const GP_FRIDGE = '<rect x="5" y="2" width="14" height="20" rx="2"/><path d="M5 10h14M9 5v2M9 13v3"/>';
 const GP_WARN = '<path d="M12 3 2 20h20Z"/><path d="M12 10v4M12 17h.01"/>';
 const GP_USUAL = '<path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"/><path d="M3 21v-5h5"/>';
 const gpPhone = () => window.matchMedia("(max-width: 760px)").matches;
@@ -81,14 +82,19 @@ App.groceriesPanel = {
   async _reload() {
     if (!this._container || !this._container.isConnected) return;
     const gw = this._weekStart, mw = this._marketWeek, two = mw !== gw;
-    const [gRes, ingredientsRes, freeRes, gSug, mRes, mSug] = await Promise.all([
+    const [gRes, ingredientsRes, freeRes, gSug, mRes, mSug, stockRes] = await Promise.all([
       App.api(`/api/groceries/${gw}`),
       App.api("/api/ingredients"),
       App.api(`/api/groceries/${mw}/free-list`),
       App.api(`/api/groceries/${gw}/suggestions`).catch(() => ({ items: [] })),
       two ? App.api(`/api/groceries/${mw}`) : null,
       two ? App.api(`/api/groceries/${mw}/suggestions`).catch(() => ({ items: [] })) : null,
+      App.api(`/api/stock/${gw}`).catch(() => ({ items: [] })),
     ]);
+    this._stock = stockRes.items;
+    const low = this._stock.filter(i => i.low && !i.on_list).length;
+    const pb = document.getElementById("pantry-count");
+    if (pb) { pb.textContent = low ? String(low) : ""; pb.classList.toggle("on", low > 0); }
     // each section from its own week: groceries from the grocery week, the market from the market's
     const mItems = (mRes || gRes).items, mSugs = (mSug || gSug).items;
     const itemsRes = {
@@ -131,7 +137,7 @@ App.groceriesPanel = {
       r.classList.toggle("on-hand", on);
       if (on) r.title = "Taken from what's on hand — nothing to buy";
     });
-    if (this._stockOpen) this._loadStock();
+    if (this._stockOpen) this._drawStock();
     const datalist = container.querySelector("#gp-ingredient-catalog");
     if (datalist) datalist.innerHTML = ingredients.map(i => `<option value="${App.esc(i.name)}">`).join("");
 
@@ -195,7 +201,7 @@ App.groceriesPanel = {
       </div>
       <div class="gp-section gp-stock" hidden>
         <div class="gp-section-head">
-          <span class="field-label">${App.icon(GP_PANTRY)} On hand</span>
+          <span class="field-label">${App.icon(GP_PANTRY)} Pantry</span>
           <button class="icon-btn gp-stock-close" title="Close">${App.icon(GP_X)}</button>
         </div>
         <div class="gp-rows" id="gp-stock-rows"></div>
@@ -315,19 +321,33 @@ App.groceriesPanel = {
     }
   },
 
-  // ── On hand: the pantry/fridge and the freezer (stock.py) ──────────────
+  // ── Pantry: what's on hand -- running low, fridge, pantry, freezer (stock.py) ──
+  openPantry() {
+    this._stockOpen = true;
+    if (this._container && this._container.querySelector(".gp-stock")) this._toggleStock(true);
+  },
+
   _toggleStock(open) {
     this._stockOpen = open === undefined ? !this._stockOpen : open;
     const sec = this._container.querySelector(".gp-stock");
     sec.hidden = !this._stockOpen;
-    if (this._stockOpen) { this._loadStock(); sec.scrollIntoView({ block: "nearest", behavior: "smooth" }); }
+    if (this._stockOpen) {
+      this._drawStock();
+      this._loadStock();
+      requestAnimationFrame(() => sec.scrollIntoView({ block: "start", behavior: "smooth" }));
+    }
   },
 
   async _loadStock() {
-    const res = await App.api(`/api/stock/${this._weekStart}`);
+    const res = await App.api(`/api/stock/${this._weekStart}`).catch(() => null);
+    if (res) { this._stock = res.items; this._drawStock(); }
+  },
+
+  _drawStock() {
     const wrap = this._container.querySelector("#gp-stock-rows");
+    const items = this._stock || [];
     wrap.innerHTML = "";
-    if (!res.items.length) {
+    if (!items.length) {
       wrap.appendChild(App.el(`<div class="gp-empty">Nothing yet — what's bought beyond the week's meals shows up here.</div>`));
       return;
     }
@@ -335,23 +355,58 @@ App.groceriesPanel = {
       await App.api(`/api/stock/${this._weekStart}/${item.ingredient_id}`, { method: "PUT", body });
       this._reload();
     };
-    res.items.forEach(item => {
-      const row = App.el(`<div class="gp-row gp-stock-row">
+    const head = (icon, label, cls = "") => wrap.appendChild(App.el(`<div class="gp-stock-sub ${cls}">${App.icon(icon)}<span>${label}</span></div>`));
+    const wk = this._weekStart, soon = _gpAddDays(wk, 10);
+    const day = (iso) => iso <= wk ? "this week" : "~" + _gpDay(iso);
+    const when = (item) => {
+      if (item.use_by && (!item.runs_out || item.use_by < item.runs_out))   // goes off before it's used up
+        return `<span class="gp-stock-when${item.use_by <= soon ? " warn" : ""}" title="Won't keep past this">use by ${day(item.use_by)}</span>`;
+      return item.runs_out ? `<span class="gp-stock-when" title="When it has to be bought again">out ${day(item.runs_out)}</span>` : "";
+    };
+    const row = (item, frozen) => {
+      const text = frozen ? item.freezer_text : item.fridge_text;
+      const el = App.el(`<div class="gp-row gp-stock-row">
         <span class="gp-row-name">${App.esc(item.name)}</span>
-        <span class="gp-stock-where" title="Fridge / pantry">${App.icon(GP_PANTRY)}<input class="gp-row-qty num" data-frozen="false" value="${App.esc(item.fridge_text)}" placeholder="—" enterkeyhint="done"></span>
-        <span class="gp-stock-where" title="Freezer">${App.icon(GP_SNOW)}<input class="gp-row-qty num" data-frozen="true" value="${App.esc(item.freezer_text)}" placeholder="—" enterkeyhint="done"></span>
-        <span class="gp-row-need dim num" title="When it has to be bought again">${item.runs_out ? "~" + _gpDay(item.runs_out) : ""}</span>
+        <input class="gp-row-qty num" value="${App.esc(text)}" placeholder="—" enterkeyhint="done" title="How much there really is">
+        ${when(item)}
       </div>`);
-      row.querySelectorAll("input").forEach(inp => {
-        const was = inp.value;
-        inp.addEventListener("change", () => { if (inp.value !== was) put(item, { text: inp.value || "0", frozen: inp.dataset.frozen === "true" }); });
-        inp.addEventListener("keydown", e => { if (e.key === "Enter") inp.blur(); });
+      const inp = el.querySelector("input");
+      inp.addEventListener("change", () => { if (inp.value !== text) put(item, { text: inp.value || "0", frozen }); });
+      inp.addEventListener("keydown", e => { if (e.key === "Enter") inp.blur(); });
+      return App.swipeAway(el, async () => { App.toast(`${item.name}: used up`); await put(item, { grams: 0, frozen }); });
+    };
+    // running low first: each one a tap from the list
+    const low = items.filter(i => i.low);
+    if (low.length) {
+      head(GP_WARN, "Running low", "low");
+      low.forEach(item => {
+        const total = _gpUs(item.fridge_g + item.freezer_g);
+        const el = App.el(`<div class="gp-row gp-stock-row">
+          <span class="gp-row-name">${App.esc(item.name)}</span>
+          <span class="gp-row-need dim num">${App.esc(total)}</span>
+          ${when(item)}
+          <button class="gp-stock-add${item.on_list ? " done" : ""}" ${item.on_list ? "disabled" : ""}>${item.on_list ? "on list" : "+ list"}</button>
+        </div>`);
+        el.querySelector(".gp-stock-add").addEventListener("click", async () => {
+          await App.api(`/api/groceries/${this._weekStart}/extra`, { method: "POST", body: { ingredient_id: item.ingredient_id, qty: null } });
+          App.toast(`${item.name} on the list`);
+          this._reload();
+        });
+        wrap.appendChild(el);
       });
-      wrap.appendChild(App.swipeAway(row, async () => {
-        App.toast(`${item.name}: used up`);
-        await put(item, { grams: 0 });
-      }));
+    }
+    const rest = items.filter(i => !i.low);
+    [["fridge", GP_FRIDGE, "Fridge"], ["pantry", GP_PANTRY, "Pantry"]].forEach(([where, icon, label]) => {
+      const mine = rest.filter(i => i.where === where && i.fridge_g > 0.5);
+      if (!mine.length) return;
+      head(icon, label);
+      mine.forEach(i => wrap.appendChild(row(i, false)));
     });
+    const frozen = rest.filter(i => i.freezer_g > 0.5);
+    if (frozen.length) {
+      head(GP_SNOW, "Freezer");
+      frozen.forEach(i => wrap.appendChild(row(i, true)));
+    }
   },
 
   // The leftover math under a row (stock.py): need · on hand · packages · where the extra goes.
@@ -724,4 +779,10 @@ function _gpSizeList(input, sizes) {
   });
   input.after(dl);
   input.setAttribute("list", id);
+}
+
+function _gpAddDays(iso, n) {
+  const d = new Date(iso + "T00:00");
+  d.setDate(d.getDate() + n);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
