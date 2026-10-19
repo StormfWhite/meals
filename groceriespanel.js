@@ -39,6 +39,9 @@ const GP_MEAL = '<path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/><path d="M7 2
 const GP_PLUS = '<path d="M12 5v14M5 12h14"/>';
 const GP_DOWN = '<path d="m6 9 6 6 6-6"/>';
 const GP_AISLE = '<path d="M4 3v18M20 3v18"/><path d="M4 8h5M4 14h5M15 8h5M15 14h5"/>';
+const GP_SNOW = '<path d="M12 2v20M4.9 7l14.2 10M4.9 17 19.1 7"/><path d="m9 4 3 2 3-2M9 20l3-2 3 2"/>';
+const GP_PANTRY = '<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M4 10h16M10 6.5h4M10 14h4"/>';
+const GP_WARN = '<path d="M12 3 2 20h20Z"/><path d="M12 10v4M12 17h.01"/>';
 const GP_USUAL = '<path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"/><path d="M3 21v-5h5"/>';
 const gpPhone = () => window.matchMedia("(max-width: 760px)").matches;
 
@@ -120,6 +123,15 @@ App.groceriesPanel = {
       this._sectionHead("grocery", GP_CART, "Groceries", grocery, totals);
     container.querySelector('[data-list="market"] .gp-head-slot').innerHTML =
       this._sectionHead("market", GP_BASKET, "Farmer's market", market, totals);
+    container.querySelectorAll(".gp-stock-badges").forEach(b => b.addEventListener("click", () => this._toggleStock()));
+    // the meal lines whose ingredient comes out of what's on hand get marked (mealblock.js)
+    const onHand = new Set(items.filter(i => i.covered).map(i => i.name.toLowerCase()));
+    document.querySelectorAll(".mb-row").forEach(r => {
+      const on = onHand.has((r.querySelector(".mb-ing") || {}).value?.trim().toLowerCase());
+      r.classList.toggle("on-hand", on);
+      if (on) r.title = "Taken from what's on hand — nothing to buy";
+    });
+    if (this._stockOpen) this._loadStock();
     const datalist = container.querySelector("#gp-ingredient-catalog");
     if (datalist) datalist.innerHTML = ingredients.map(i => `<option value="${App.esc(i.name)}">`).join("");
 
@@ -181,7 +193,15 @@ App.groceriesPanel = {
         </div>
         <div class="gp-rows gp-sugs" id="gp-market-sugs"></div>
       </div>
+      <div class="gp-section gp-stock" hidden>
+        <div class="gp-section-head">
+          <span class="field-label">${App.icon(GP_PANTRY)} On hand</span>
+          <button class="icon-btn gp-stock-close" title="Close">${App.icon(GP_X)}</button>
+        </div>
+        <div class="gp-rows" id="gp-stock-rows"></div>
+      </div>
     `;
+    container.querySelector(".gp-stock-close").addEventListener("click", () => this._toggleStock(false));
     container.querySelectorAll(".gp-sug-toggle").forEach(btn => {
       btn.addEventListener("click", () => {
         const kind = btn.dataset.list;
@@ -229,6 +249,7 @@ App.groceriesPanel = {
       <div class="gp-section-head">
         <span class="field-label">${App.icon(icon)} ${label}</span>
         ${kind === "market" && this._marketWeek !== this._weekStart ? `<span class="gp-head-range dim num" title="The market list moved on by itself after the market trip">${App.esc(_gpRange(this._marketWeek))}</span>` : ""}
+        ${total.to_freezer || total.wasted ? `<button class="gp-stock-badges num" title="${[total.to_freezer ? `${total.to_freezer} with extra for the freezer` : "", total.wasted ? `${total.wasted} likely to go bad before it's used` : ""].filter(Boolean).join(" · ")} — tap for what's on hand">${total.to_freezer ? `${App.icon(GP_SNOW)}${total.to_freezer}` : ""}${total.wasted ? `<span class="warn">${App.icon(GP_WARN)}${total.wasted}</span>` : ""}</button>` : ""}
         <span class="gp-total num" title="${tip}">${money}</span>
         <button class="icon-btn gp-copy" data-list="${kind}" title="Copy list">${App.icon(GP_COPY)}</button>
       </div>
@@ -250,6 +271,8 @@ App.groceriesPanel = {
     // Otherwise grouped by the meal that needs it, in the order next week cooks them; an item more
     // than one meal needs sits under the first (its tooltip names the rest). What was added by hand
     // follows under "Added" -- headed only when there are meal groups above it.
+    const onHand = rows.filter(r => r.covered);
+    rows = rows.filter(r => !r.covered);
     const groups = new Map();
     const byAisle = rows.some(r => r.aisle);
     // departments (Produce, Fruit, Deli -- Kroger numbers them 0 or 105) before the numbered aisles
@@ -276,6 +299,95 @@ App.groceriesPanel = {
         }));
       });
     });
+    // what the meals take from the pantry or freezer: nothing to buy, said where it comes from
+    if (onHand.length) {
+      wrap.appendChild(App.el(`<div class="gp-group">${App.icon(GP_PANTRY)}<span>On hand</span></div>`));
+      onHand.forEach(item => {
+        const till = item.runs_out ? ` · lasts till ~${_gpDay(item.runs_out)}` : "";
+        const row = App.el(`<div class="gp-row gp-onhand" title="Tap for what's on hand">
+          <span class="gp-onhand-icon">${App.icon(item.freezes && item.keep_days < 14 ? GP_SNOW : GP_PANTRY)}</span>
+          <span class="gp-row-name">${App.esc(item.name)}</span>
+          <span class="gp-row-need dim num">${App.esc(item.need_text || "")}${till}</span>
+        </div>`);
+        row.addEventListener("click", () => this._toggleStock(true));
+        wrap.appendChild(row);
+      });
+    }
+  },
+
+  // ── On hand: the pantry/fridge and the freezer (stock.py) ──────────────
+  _toggleStock(open) {
+    this._stockOpen = open === undefined ? !this._stockOpen : open;
+    const sec = this._container.querySelector(".gp-stock");
+    sec.hidden = !this._stockOpen;
+    if (this._stockOpen) { this._loadStock(); sec.scrollIntoView({ block: "nearest", behavior: "smooth" }); }
+  },
+
+  async _loadStock() {
+    const res = await App.api(`/api/stock/${this._weekStart}`);
+    const wrap = this._container.querySelector("#gp-stock-rows");
+    wrap.innerHTML = "";
+    if (!res.items.length) {
+      wrap.appendChild(App.el(`<div class="gp-empty">Nothing yet — what's bought beyond the week's meals shows up here.</div>`));
+      return;
+    }
+    const put = async (item, body) => {
+      await App.api(`/api/stock/${this._weekStart}/${item.ingredient_id}`, { method: "PUT", body });
+      this._reload();
+    };
+    res.items.forEach(item => {
+      const row = App.el(`<div class="gp-row gp-stock-row">
+        <span class="gp-row-name">${App.esc(item.name)}</span>
+        <span class="gp-stock-where" title="Fridge / pantry">${App.icon(GP_PANTRY)}<input class="gp-row-qty num" data-frozen="false" value="${App.esc(item.fridge_text)}" placeholder="—" enterkeyhint="done"></span>
+        <span class="gp-stock-where" title="Freezer">${App.icon(GP_SNOW)}<input class="gp-row-qty num" data-frozen="true" value="${App.esc(item.freezer_text)}" placeholder="—" enterkeyhint="done"></span>
+        <span class="gp-row-need dim num" title="When it has to be bought again">${item.runs_out ? "~" + _gpDay(item.runs_out) : ""}</span>
+      </div>`);
+      row.querySelectorAll("input").forEach(inp => {
+        const was = inp.value;
+        inp.addEventListener("change", () => { if (inp.value !== was) put(item, { text: inp.value || "0", frozen: inp.dataset.frozen === "true" }); });
+        inp.addEventListener("keydown", e => { if (e.key === "Enter") inp.blur(); });
+      });
+      wrap.appendChild(App.swipeAway(row, async () => {
+        App.toast(`${item.name}: used up`);
+        await put(item, { grams: 0 });
+      }));
+    });
+  },
+
+  // The leftover math under a row (stock.py): need · on hand · packages · where the extra goes.
+  _mathLine(item) {
+    const parts = [];
+    const pkgs = item.packages && item.package_g ? `${item.packages} × ${_gpUs(item.package_g)}` : "";
+    if (item.on_hand_g > 0.5) parts.push(`need ${item.need_text} · ${_gpUs(item.on_hand_g)} on hand`);
+    else if (pkgs && item.need_text) parts.push(`need ${item.need_text}`);
+    if (pkgs) parts.push(pkgs);
+    // meat left after the week is frozen and THEN eaten next week: one fact, said once
+    const nxt = item.next_week_g > 0.5 ? item.next_week_g : 0;
+    const frozenForNext = item.frozen_g > 0.5 ? Math.min(nxt, item.frozen_g) : 0;
+    if (nxt) parts.push(frozenForNext ? `${App.icon(GP_SNOW)} ${_gpUs(nxt)} for next week` : `${_gpUs(nxt)} next week`);
+    if (item.frozen_g - frozenForNext > 0.5) parts.push(`${App.icon(GP_SNOW)} ${_gpUs(item.frozen_g - frozenForNext)}`);
+    if (item.wasted_g > 0.5) parts.push(`<span class="warn" title="Won't keep till it's next used — plan a meal with it, or buy less">${App.icon(GP_WARN)} ${_gpUs(item.wasted_g)} may go bad</span>`);
+    else if (item.left_g - nxt - (item.frozen_g - frozenForNext || 0) > 0.5 && item.need_g) {
+      const rest = item.left_g - nxt - Math.max(0, item.frozen_g - frozenForNext);
+      parts.push(item.runs_out ? `lasts till ~${_gpDay(item.runs_out)}` : `${_gpUs(rest)} → pantry`);
+    }
+    const wk = this._wk(item.shop_list);
+    let bulk = "";
+    if (item.package) {
+      bulk = `<button class="gp-bulk on" title="Back to the usual size">${App.esc(_gpUs(item.package.package_g))} pack ${App.icon(GP_X)}</button>`;
+    } else if (item.bulk) {
+      const b = item.bulk;
+      bulk = `<button class="gp-bulk" title="${App.esc(b.label || "")}">${App.esc(_gpUs(b.package_g))} pack saves $${b.saves.toFixed(2)}${b.frozen_g > 0.5 ? ` · ${App.icon(GP_SNOW)} ${_gpUs(b.frozen_g)}` : ""}</button>`;
+    }
+    if (!parts.length && !bulk) return null;
+    const el = App.el(`<div class="gp-math num">${parts.join(" · ")}${bulk}</div>`);
+    const btn = el.querySelector(".gp-bulk");
+    if (btn) btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      await App.api(`/api/groceries/${wk}/items/${item.ingredient_id}/package`, { method: "PUT", body: { package: item.package ? null : item.bulk } });
+      this._reload();
+    });
+    return el;
   },
 
   // A usual: tap it to put it on the list, ✕ (or swipe) for not this week.
@@ -341,6 +453,9 @@ App.groceriesPanel = {
       <button class="icon-btn gp-move" title="Move to the ${other === "market" ? "farmer's market" : "grocery"} list">${App.icon(GP_SWAP)}</button>
       ${item.source === "extra" ? `<button class="icon-btn gp-row-remove-extra" title="Remove the amount added by hand">${App.icon(GP_X)}</button>` : ""}
     </div>`);
+
+    const math = this._mathLine(item);
+    if (math) row.appendChild(math);
 
     row.querySelector(".gp-chk").addEventListener("change", async (e) => {
       row.classList.toggle("done", e.target.checked);
@@ -564,4 +679,16 @@ function _gpRestoreFocus(container, focus) {
   if (focus.value) el.value = focus.value;
   el.focus();
   try { el.setSelectionRange(focus.start, focus.start); } catch (e) {}
+}
+
+// grams -> what a package says: ounces under a pound, then pounds (stock.us_amount)
+function _gpUs(g) {
+  if (!g || g <= 0) return "";
+  const oz = g / 28.3495;
+  if (oz < 15.95) return oz < 10 ? `${(Math.round(oz * 10) / 10).toString()} oz` : `${Math.round(oz)} oz`;
+  return `${(Math.round(g / 453.592 * 10) / 10).toString()} lb`;
+}
+
+function _gpDay(iso) {
+  return new Date(iso + "T00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }

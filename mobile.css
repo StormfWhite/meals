@@ -78,3 +78,13 @@ body.offline #topbar::after { content: "offline · saved on this phone"; font-si
 @media (max-width: 760px) { .gp-free .gp-row-qty { width: 110px; } }   /* market lines have no price column: room for "2 baskets" */
 @media (max-width: 760px) { .gp-group { font-size: 12px; margin-top: 10px; } .gp-group svg { width: 13px; height: 13px; } }
 @media (max-width: 760px) { .plan-cols.one-day { touch-action: pan-y; } }   /* sideways belongs to the day swipe */
+/* the leftover math under a row + the On hand drawer (stock.py) */
+@media (max-width: 760px) {
+  .gp-math { font-size: 12px; padding-left: 30px; }
+  .gp-math svg, .gp-stock-badges svg, .gp-stock-where svg { width: 12px; height: 12px; }
+  .gp-onhand-icon svg { width: 15px; height: 15px; }
+  .gp-stock-badges { font-size: 12.5px; }
+  .gp-bulk { font-size: 12px; padding: 1px 8px; }
+  .gp-row-price { width: 64px; }
+  .gp-stock-row .gp-row-qty { width: 64px; }
+}

@@ -18,7 +18,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from mealplanner import (bangers, aisles, board, config, fdc, groceries, household, ingredients,
-                         learning, nutrition, places, prices, recipe_import, recipes, routines, stats, suggest)
+                         learning, nutrition, places, prices, recipe_import, recipes, routines, stats, stock,
+                         suggest)
 from mealplanner.paths import ensure_dirs
 
 WEB_DIR = Path(__file__).parent / "web"
@@ -216,6 +217,8 @@ class IngredientUpdateBody(BaseModel):
     store_section: Optional[str] = None
     manual_nutrients: Optional[dict] = None
     fdc_id: Optional[int] = None
+    freezes: Optional[bool] = None     # overrides stock.keeps' guess
+    keep_days: Optional[int] = None
 
 
 @app.get("/api/ingredients")
@@ -747,6 +750,40 @@ def refresh_prices(week: str):
 def put_grocery_item(week: str, ingredient_id: str, body: GroceryItemBody):
     item = groceries.update_item(week, ingredient_id, body.model_dump(exclude_unset=True))
     return {"item": item}
+
+
+class PackageBody(BaseModel):
+    package: Optional[dict] = None     # {package_g, price, label}; None = back to the usual size
+
+
+@app.put("/api/groceries/{week}/items/{ingredient_id}/package")
+def put_grocery_package(week: str, ingredient_id: str, body: PackageBody):
+    """The bigger pack from the row's bulk hint (or back to the normal one)."""
+    groceries.set_package(week, ingredient_id, body.package)
+    items = groceries.get_week_groceries(week)
+    return {"items": items, "totals": groceries.list_totals(items)}
+
+
+@app.get("/api/stock/{week}")
+def get_stock(week: str):
+    """What's on hand at the start of the week: fridge/pantry and freezer, and when each runs out."""
+    return {"items": stock.Ledger().on_hand(week)}
+
+
+class StockBody(BaseModel):
+    grams: Optional[float] = None
+    text: Optional[str] = None         # "1 lb" -- typed on the On hand drawer
+    frozen: Optional[bool] = None
+
+
+@app.put("/api/stock/{week}/{ingredient_id}")
+def put_stock(week: str, ingredient_id: str, body: StockBody):
+    """A correction: there's actually this much (0 = used up)."""
+    grams = body.grams
+    if grams is None:
+        grams = prices._parse_grams(body.text or "") or 0.0
+    stock.correct(ingredient_id, grams, week, body.frozen)
+    return {"items": stock.Ledger().on_hand(week)}
 
 
 @app.post("/api/groceries/{week}/items/{ingredient_id}/section")

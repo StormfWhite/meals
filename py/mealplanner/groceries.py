@@ -15,7 +15,7 @@ import re
 import uuid
 from typing import Optional
 
-from . import aisles, board, config, ingredients, learning, nutrition, places, prices, recipes, store
+from . import aisles, board, config, ingredients, learning, nutrition, places, prices, recipes, stock, store
 from .paths import DATA_DIR, GROCERIES_FILE, PRICE_HISTORY_FILE
 
 
@@ -118,6 +118,8 @@ def get_week_groceries(week_start_iso: str, with_prices: bool = True,
         grams_by_id[ing_id] = grams_by_id.get(ing_id, 0.0) + ex.get("qty_g", 0.0)
 
     shops = {"grocery": active_shop("grocery"), "market": active_shop("market")}
+    ledger = stock.Ledger()
+    on_hand = ledger.state(week_start_iso)
     meals_of, cooked = week_ingredient_meals(week_start_iso)
     meal_order = {name: i for i, name in enumerate(cooked)}
     out = []
@@ -132,7 +134,18 @@ def get_week_groceries(week_start_iso: str, with_prices: bool = True,
         # typed into one list's box = on that list (this week), whatever aisles.py would say
         shop_list = s.get("shop_list") or aisles.list_for(ing)
         typed = extra.get(ing_id, {}).get("qty_text", "")
-        label = ingredients.humanize_grams(ing, grams) if grams else ""
+        # what's on hand first, then whole packages (stock.py): the row asks for what to BUY
+        have = ledger.total(on_hand.get(ing_id, []))
+        buy = ledger.row_buy(week_start_iso, ing_id, have)
+        need = ledger.needs(week_start_iso).get(ing_id, 0.0)
+        covered = need > 0 and buy["to_buy_g"] == 0 and ing_id not in extra_ids
+        to_buy = buy["to_buy_g"] if buy["to_buy_g"] is not None else 0.0
+        if ing.get("default_unit", "g") == "g" or not to_buy:
+            label = stock.us_amount(to_buy)
+        else:
+            label = ingredients.humanize_grams(ing, to_buy)
+        if extra.get(ing_id, {}).get("qty_text") and ing_id not in needs:
+            label = ""                        # a hand-add's typed amount says it already
         if s.get("qty_text") is not None:     # the amount typed on the list row itself wins
             label, typed = "", s["qty_text"]
         item = {
@@ -152,9 +165,23 @@ def get_week_groceries(week_start_iso: str, with_prices: bool = True,
             # the week's meals that use it, cooked-first first; the list groups under meals[0]
             "meals": meals_of.get(ing_id, []),
             "meal_order": meal_order.get(meals_of[ing_id][0]) if meals_of.get(ing_id) else None,
+            # the leftover math (stock.py)
+            "need_g": round(need, 1),
+            "need_text": stock.us_amount(need),
+            "on_hand_g": round(have, 1),
+            "to_buy_g": None if buy["to_buy_g"] is None else round(buy["to_buy_g"], 1),
+            "buy_g": None if buy["buy_g"] is None else round(buy["buy_g"], 1),
+            "packages": buy["packages"],
+            "covered": covered,
+            "freezes": stock.keeps(ing)[1],
+            "keep_days": stock.keeps(ing)[0],
         }
         if with_prices:
+            look = ledger.outlook(week_start_iso, ing_id, buy["buy_g"] or 0.0)
+            item.update({k: (round(v, 1) if isinstance(v, float) else v) for k, v in look.items()})
+            item["package"] = s.get("package")
             item.update(_priced(ing, item, shops[shop_list], allow_network))
+            item["bulk"] = None if covered or s.get("package") else ledger.bulk(week_start_iso, ing_id, to_buy)
         out.append(item)
     out.sort(key=lambda r: r["name"].lower())
     if with_prices:
@@ -210,22 +237,30 @@ def _priced(ingredient: dict, item: dict, shop: Optional[dict], allow_network: b
     contributes nothing to the total and is counted as unpriced instead,
     because a total that quietly skips items reads as complete."""
     price = prices.price_for(ingredient, shop, allow_network=allow_network)
+    if item.get("package"):            # a bigger pack picked on the row (the bulk hint)
+        price = {**(price or {}), **item["package"], "source": (price or {}).get("source", "kroger")}
     if not price:
-        return {"price": None, "packages": None, "est_cost": None,
+        return {"price": None, "est_cost": None,
                 "price_source": None, "price_age_days": None, "price_label": ""}
-    packages = prices.packages_needed(item["planned_qty_g"], price.get("package_g"))
+    if item.get("covered"):            # on hand already: nothing to pay this week
+        packages = 0
+    elif item.get("package") or item.get("packages") is None:
+        packages = prices.packages_needed(item.get("to_buy_g") or item["planned_qty_g"], price.get("package_g"))
+    else:
+        packages = item["packages"]
     return {
         "price": price["price"],
         "packages": packages,
-        "est_cost": round(price["price"] * packages, 2),
+        "est_cost": round(price["price"] * packages, 2) if packages else None,
         "price_source": price.get("source"),
         "price_age_days": price.get("age_days"),
         "price_label": price.get("label", ""),
+        "package_g": price.get("package_g"),
         "aisle": price.get("aisle", ""),
         "aisle_num": price.get("aisle_num"),
         "aisle_bay": price.get("aisle_bay"),
         # a Ralphs price saved before aisles were kept: worth one more lookup (price_missing)
-        "aisle_known": price.get("source") != "kroger" or "aisle_num" in price,
+        "aisle_known": price.get("source") != "kroger" or ("aisle_num" in price and "options" in price),
     }
 
 
@@ -233,12 +268,16 @@ def list_totals(items: list[dict]) -> dict:
     """Per-list estimated cost, with the honesty counter beside it."""
     out = {}
     for shop_list in (aisles.GROCERY, aisles.MARKET):
-        rows = [i for i in items if i.get("shop_list") == shop_list and not i.get("checked")]
+        mine = [i for i in items if i.get("shop_list") == shop_list]
+        rows = [i for i in mine if not i.get("checked") and not i.get("covered")]
         priced = [i for i in rows if i.get("est_cost") is not None]
         out[shop_list] = {
             "items": len(rows),
             "estimated": round(sum(i["est_cost"] for i in priced), 2) if priced else None,
             "unpriced": len(rows) - len(priced),
+            "to_freezer": sum(1 for i in mine if (i.get("frozen_g") or 0) > 0.5 and not i.get("covered")),
+            "wasted": sum(1 for i in mine if (i.get("wasted_g") or 0) > 0.5 and not i.get("covered")),
+            "on_hand": sum(1 for i in mine if i.get("covered")),
         }
     return out
 
@@ -499,6 +538,17 @@ def update_item(week_start_iso: str, ingredient_id: str, fields: dict) -> dict:
     return matches[0] if matches else {}
 
 
+def set_package(week_start_iso: str, ingredient_id: str, package: Optional[dict]) -> None:
+    """Buy this pack size this week instead of the store's usual match (stock.Ledger.bulk)."""
+    data = _load()
+    item = data["weeks"].setdefault(week_start_iso, {"items": {}})["items"].setdefault(ingredient_id, {})
+    if package:
+        item["package"] = {k: package.get(k) for k in ("package_g", "price", "label")}
+    else:
+        item.pop("package", None)
+    _save(data)
+
+
 def set_section(week_start_iso: str, ingredient_id: str, section: Optional[str]) -> dict:
     """Unconditional, unlike update_item's partial-update semantics -- this
     is the dedicated section-move endpoint, so `None` means "back to
@@ -570,7 +620,7 @@ def trips() -> list[dict]:
 def _shopped(week_start_iso: str, kind: str) -> bool:
     """Was this week's grocery (or market) list mostly ticked off?"""
     rows = [i["checked"] for i in get_week_groceries(week_start_iso, with_prices=False)
-            if (i["shop_list"] == aisles.MARKET) == (kind == aisles.MARKET)]
+            if (i["shop_list"] == aisles.MARKET) == (kind == aisles.MARKET) and not i.get("covered")]
     if kind == aisles.MARKET:
         rows += [bool(i.get("checked")) for i in list_free_items(week_start_iso)]
     done = sum(rows)

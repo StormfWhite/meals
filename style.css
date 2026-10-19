@@ -341,7 +341,23 @@ button.mb-tag:hover { color: var(--good); border-color: var(--good); }
 .gp-section-head .field-label svg { width: 13px; height: 13px; }
 .gp-section-head .gp-count { font-size: 10.5px; margin-left: auto; }
 .gp-rows { display: flex; flex-direction: column; gap: 2px; }
-.gp-row { display: flex; align-items: center; gap: 6px; padding: 4px 6px; border-radius: 7px; font-size: 12px; }
+.gp-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0 6px; padding: 4px 6px; border-radius: 7px; font-size: 12px; }
+/* the leftover math under a row (stock.py) */
+.gp-math { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 0 4px; padding: 0 0 1px 24px;
+  font-size: 10px; color: var(--text-dim); line-height: 1.5; }
+.gp-math svg, .gp-stock-badges svg, .gp-onhand-icon svg, .gp-stock-where svg { width: 10px; height: 10px; vertical-align: -1px; }
+.gp-math .warn, .gp-stock-badges .warn { color: var(--warn); }
+.gp-bulk { margin-left: 4px; padding: 0 6px; border: 1px solid var(--border); border-radius: 9px; background: var(--panel);
+  color: var(--good); font: inherit; font-size: 10px; cursor: pointer; display: inline-flex; align-items: center; gap: 3px; }
+.gp-bulk.on { color: var(--text); background: var(--panel-2); }
+.gp-stock-badges { display: inline-flex; align-items: center; gap: 5px; border: 0; background: none; font: inherit; font-size: 10.5px;
+  color: var(--accent); cursor: pointer; padding: 0 2px; }
+.gp-stock-badges .warn { display: inline-flex; align-items: center; gap: 2px; }
+.gp-onhand { opacity: 0.6; cursor: pointer; }
+.gp-onhand-icon { width: 18px; display: inline-flex; justify-content: center; color: var(--text-dim); }
+.gp-stock-where { display: inline-flex; align-items: center; gap: 2px; color: var(--text-dim); }
+.gp-stock-row .gp-row-qty { width: 48px; }
+.mb-row.on-hand { border-left-color: var(--warn); }
 .gp-row:hover { background: var(--panel-2); }
 .gp-row.done .gp-row-name { text-decoration: line-through; color: var(--text-dim); }
 .gp-row-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

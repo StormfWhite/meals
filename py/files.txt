@@ -18,5 +18,6 @@ mealplanner/recipe_import.py
 mealplanner/recipes.py
 mealplanner/routines.py
 mealplanner/stats.py
+mealplanner/stock.py
 mealplanner/store.py
 mealplanner/suggest.py

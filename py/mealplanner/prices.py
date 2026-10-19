@@ -63,7 +63,8 @@ def _store_key(shop: Optional[dict]) -> str:
 
 def remember(ingredient_id: str, shop: Optional[dict], price: float,
              package_g: Optional[float] = None, label: str = "",
-             source: str = "typed", aisle: Optional[dict] = None) -> dict:
+             source: str = "typed", aisle: Optional[dict] = None,
+             options: Optional[list] = None) -> dict:
     data = _load()
     per_store = data["prices"].setdefault(_store_key(shop), {})
     entry = {
@@ -74,6 +75,8 @@ def remember(ingredient_id: str, shop: Optional[dict], price: float,
         "updated_at": time.time(),
         **(aisle or {}),
     }
+    if options is not None:
+        entry["options"] = options
     per_store[ingredient_id] = entry
     _save(data)
     return entry
@@ -183,7 +186,7 @@ def _parse_grams(size: str) -> Optional[float]:
     text = (size or "").strip().lower()
     if not text:
         return None
-    m = re.match(r"^([\d.]+)\s*(oz|ounce|ounces|lb|lbs|pound|pounds|g|gram|grams|kg)\b", text)
+    m = re.match(r"^([\d.]+)\s*(oz|ounce|ounces|lb|lbs|lbr|pound|pounds|g|gram|grams|kg)\b", text)
     if not m:
         return None
     qty = float(m.group(1))
@@ -255,7 +258,16 @@ def kroger_price(name: str, location_id: str) -> Optional[dict]:
         return None
     ranked.sort(key=lambda r: r[0])
     key, best = ranked[0]
-    return best if key[1] < 0 else None       # not one word of the name in it: no match beats a wrong one
+    if key[1] >= 0:
+        return None       # not one word of the name in it: no match beats a wrong one
+    # the other sizes of what matched as well as the best one did -- what a bulk buy picks from
+    sizes = {}
+    for k, r in ranked:
+        if k[:2] == key[:2] and r["package_g"] and r["package_g"] != best["package_g"]:
+            g = round(r["package_g"])
+            if g not in sizes or r["price"] < sizes[g]["price"]:
+                sizes[g] = {f: r[f] for f in ("price", "package_g", "label")}
+    return {**best, "options": sorted(sizes.values(), key=lambda o: o["package_g"])[:6]}
 
 
 # ── what the list asks for ───────────────────────────────────────────────
@@ -272,7 +284,7 @@ def price_for(ingredient: dict, shop: Optional[dict], allow_network: bool = True
     known = remembered(ingredient["id"], shop)
     fresh_enough = known and (known.get("source") != "kroger"
                               or (time.time() - known.get("updated_at", 0) < LIVE_TTL
-                                  and "aisle_num" in known))     # saved before aisles were kept
+                                  and "aisle_num" in known and "options" in known))   # saved before those were kept
     if known and fresh_enough:
         return _aged(known)
     if not allow_network or not shop or chain_of(shop) != "kroger" or not kroger_configured():
@@ -284,7 +296,8 @@ def price_for(ingredient: dict, shop: Optional[dict], allow_network: bool = True
         return _aged(known)
     entry = remember(ingredient["id"], shop, live["price"], live.get("package_g"),
                      live.get("label", ""), source="kroger",
-                     aisle={k: live.get(k) for k in ("aisle", "aisle_num", "aisle_bay")})
+                     aisle={k: live.get(k) for k in ("aisle", "aisle_num", "aisle_bay")},
+                     options=live.get("options", []))
     return {**entry, "age_days": 0}
 
 
