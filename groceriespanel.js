@@ -38,6 +38,7 @@ const GP_X = '<path d="M18 6 6 18M6 6l12 12"/>';
 const GP_MEAL = '<path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"/>';
 const GP_PLUS = '<path d="M12 5v14M5 12h14"/>';
 const GP_DOWN = '<path d="m6 9 6 6 6-6"/>';
+const GP_AISLE = '<path d="M4 3v18M20 3v18"/><path d="M4 8h5M4 14h5M15 8h5M15 14h5"/>';
 const GP_USUAL = '<path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"/><path d="M3 21v-5h5"/>';
 const gpPhone = () => window.matchMedia("(max-width: 760px)").matches;
 
@@ -202,7 +203,7 @@ App.groceriesPanel = {
     let tried = {};
     try { tried = JSON.parse(localStorage.getItem("meals.priced") || "{}"); } catch (e) {}
     const day = new Date().toDateString();
-    const todo = items.filter(i => i.price == null && (this._shops[i.shop_list] || {}).chain === "kroger"
+    const todo = items.filter(i => (i.price == null || i.aisle_known === false) && (this._shops[i.shop_list] || {}).chain === "kroger"
                                    && tried[i.ingredient_id] !== day);
     if (!todo.length) return;
     const batch = todo.slice(0, 6);
@@ -244,22 +245,30 @@ App.groceriesPanel = {
       wrap.appendChild(App.el(`<div class="gp-empty">${App.esc(emptyText)}</div>`));
       return;
     }
-    // Grouped by the meal that needs it, in the order next week cooks them; an item more than
-    // one meal needs sits under the first (its tooltip names the rest). What was added by hand
+    // At a store that says where things are (Ralphs does), grouped by aisle in walking order --
+    // departments like Produce first, then Aisle 1, 2…; what it doesn't carry last.
+    // Otherwise grouped by the meal that needs it, in the order next week cooks them; an item more
+    // than one meal needs sits under the first (its tooltip names the rest). What was added by hand
     // follows under "Added" -- headed only when there are meal groups above it.
     const groups = new Map();
-    [...rows].sort((a, b) => (a.meal_order ?? 1e9) - (b.meal_order ?? 1e9))
+    const byAisle = rows.some(r => r.aisle);
+    // departments (Produce, Fruit, Deli -- Kroger numbers them 0 or 105) before the numbered aisles
+    const aisleKey = r => !r.aisle ? [1e9, 0] : /^aisle\b/i.test(r.aisle) ? [r.aisle_num ?? 999, r.aisle_bay ?? 0] : [-1, 0];
+    [...rows].sort(byAisle
+        ? (a, b) => { const x = aisleKey(a), y = aisleKey(b);
+                      return x[0] - y[0] || (x[0] === -1 ? a.aisle.localeCompare(b.aisle) : 0) || x[1] - y[1]; }
+        : (a, b) => (a.meal_order ?? 1e9) - (b.meal_order ?? 1e9))
       .forEach(item => {
-        const key = item.meals && item.meals.length ? item.meals[0] : "";
+        const key = byAisle ? (item.aisle || "Other") : (item.meals && item.meals.length ? item.meals[0] : "");
         if (!groups.has(key)) groups.set(key, []);
         groups.get(key).push(item);
       });
     const headed = [...groups.keys()].some(k => k);
     groups.forEach((items, meal) => {
-      if (headed) wrap.appendChild(App.el(`<div class="gp-group">${App.icon(meal ? GP_MEAL : GP_PLUS)}<span>${App.esc(meal || "Added")}</span></div>`));
+      if (headed) wrap.appendChild(App.el(`<div class="gp-group">${App.icon(byAisle ? GP_AISLE : meal ? GP_MEAL : GP_PLUS)}<span>${App.esc(meal || "Added")}</span></div>`));
       items.forEach(item => {
         const row = this._structuredRow(item);
-        if (item.meals && item.meals.length > 1) row.querySelector(".gp-row-name").title = "For " + item.meals.join(", ");
+        if (item.meals && (item.meals.length > 1 || byAisle && item.meals.length)) row.querySelector(".gp-row-name").title = "For " + item.meals.join(", ");
         wrap.appendChild(App.swipeAway(row, async () => {
           await App.api(`/api/groceries/${this._wk(item.shop_list)}/items/${item.ingredient_id}`, { method: "DELETE" });
           App.toast(`${item.name} off the list`);
@@ -335,6 +344,7 @@ App.groceriesPanel = {
 
     row.querySelector(".gp-chk").addEventListener("change", async (e) => {
       row.classList.toggle("done", e.target.checked);
+      if (e.target.checked) window.MealsAndroid?.shopping?.();   // the phone starts watching for leaving the shop
       await App.api(`/api/groceries/${this._wk(item.shop_list)}/items/${item.ingredient_id}`, { method: "PUT", body: { checked: e.target.checked } });
       this._reload();
     });
@@ -503,6 +513,7 @@ App.groceriesPanel = {
     });
     row.querySelector(".gp-free-chk").addEventListener("change", async (e) => {
       row.classList.toggle("done", e.target.checked);
+      if (e.target.checked) window.MealsAndroid?.shopping?.();   // the phone starts watching for leaving the shop
       await App.api(`/api/groceries/${this._marketWeek}/free-list/${item.id}`, { method: "PUT", body: { checked: e.target.checked } });
       this._reload();
     });

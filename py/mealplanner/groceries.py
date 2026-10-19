@@ -222,6 +222,10 @@ def _priced(ingredient: dict, item: dict, shop: Optional[dict], allow_network: b
         "price_age_days": price.get("age_days"),
         "price_label": price.get("label", ""),
         "aisle": price.get("aisle", ""),
+        "aisle_num": price.get("aisle_num"),
+        "aisle_bay": price.get("aisle_bay"),
+        # a Ralphs price saved before aisles were kept: worth one more lookup (price_missing)
+        "aisle_known": price.get("source") != "kroger" or "aisle_num" in price,
     }
 
 
@@ -651,13 +655,14 @@ PRICE_BATCH = 6
 def price_missing(week_start_iso: str, ingredient_ids: list[str]) -> int:
     """Live prices for these rows of the list that have none yet -- what the list asks for by
     itself after drawing (Storm 2026-10-18: "does it auto find the prices?"). A few at a time;
-    a price already remembered and fresh isn't fetched again (prices.price_for)."""
+    a price already remembered and fresh isn't fetched again (prices.price_for), unless it was
+    saved before its aisle was kept."""
     want = set(ingredient_ids[:PRICE_BATCH])
     shops = {"grocery": active_shop("grocery"), "market": active_shop("market")}
     ing_by_id = ingredients.by_id()
     found = 0
     for row in get_week_groceries(week_start_iso, with_prices=True, allow_network=False):
-        if row["ingredient_id"] not in want or row.get("price") is not None:
+        if row["ingredient_id"] not in want or (row.get("price") is not None and row.get("aisle_known", True)):
             continue
         ing = ing_by_id.get(row["ingredient_id"])
         if ing and prices.price_for(ing, shops[row["shop_list"]], allow_network=True):

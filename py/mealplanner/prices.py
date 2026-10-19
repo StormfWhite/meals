@@ -63,7 +63,7 @@ def _store_key(shop: Optional[dict]) -> str:
 
 def remember(ingredient_id: str, shop: Optional[dict], price: float,
              package_g: Optional[float] = None, label: str = "",
-             source: str = "typed") -> dict:
+             source: str = "typed", aisle: Optional[dict] = None) -> dict:
     data = _load()
     per_store = data["prices"].setdefault(_store_key(shop), {})
     entry = {
@@ -72,6 +72,7 @@ def remember(ingredient_id: str, shop: Optional[dict], price: float,
         "label": label,
         "source": source,
         "updated_at": time.time(),
+        **(aisle or {}),
     }
     per_store[ingredient_id] = entry
     _save(data)
@@ -207,6 +208,17 @@ def _stem(word: str) -> str:
     return word[:-1] if len(word) > 3 and word.endswith("s") and not word.endswith("ss") else word
 
 
+def _aisle(locations: list[dict]) -> dict:
+    """Where the store shelves it, for walking the list in order: Kroger's first location gives
+    "AISLE 1" (number 1, bay 12) or a department like "FRUIT" (number 0)."""
+    if not locations:
+        return {"aisle": "", "aisle_num": None, "aisle_bay": None}
+    a = locations[0]
+    num = lambda k: int(a[k]) if str(a.get(k, "")).isdigit() else None
+    return {"aisle": (a.get("description") or "").strip().title(), "aisle_num": num("number"),
+            "aisle_bay": num("bayNumber")}
+
+
 def kroger_price(name: str, location_id: str) -> Optional[dict]:
     """The product an ingredient name means at one store: food only, every word of the name in
     the product's name when any result has that, then KROGER'S OWN ranking -- not the cheapest
@@ -236,7 +248,7 @@ def kroger_price(name: str, location_id: str) -> Optional[dict]:
             "price": round(float(price), 2),
             "label": f"{product.get('description', '')} · {item.get('size', '')}".strip(" ·"),
             "package_g": _parse_grams(item.get("size", "")),
-            "aisle": ", ".join(a.get("description", "") for a in (product.get("aisleLocations") or [])[:1]),
+            **_aisle(product.get("aisleLocations") or []),
             "source": "kroger",
         }))
     if not ranked:
@@ -259,7 +271,8 @@ def price_for(ingredient: dict, shop: Optional[dict], allow_network: bool = True
 
     known = remembered(ingredient["id"], shop)
     fresh_enough = known and (known.get("source") != "kroger"
-                              or time.time() - known.get("updated_at", 0) < LIVE_TTL)
+                              or (time.time() - known.get("updated_at", 0) < LIVE_TTL
+                                  and "aisle_num" in known))     # saved before aisles were kept
     if known and fresh_enough:
         return _aged(known)
     if not allow_network or not shop or chain_of(shop) != "kroger" or not kroger_configured():
@@ -270,8 +283,9 @@ def price_for(ingredient: dict, shop: Optional[dict], allow_network: bool = True
     if live is None:
         return _aged(known)
     entry = remember(ingredient["id"], shop, live["price"], live.get("package_g"),
-                     live.get("label", ""), source="kroger")
-    return {**entry, "aisle": live.get("aisle", ""), "age_days": 0}
+                     live.get("label", ""), source="kroger",
+                     aisle={k: live.get(k) for k in ("aisle", "aisle_num", "aisle_bay")})
+    return {**entry, "age_days": 0}
 
 
 def _aged(entry: Optional[dict]) -> Optional[dict]:
