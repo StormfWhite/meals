@@ -41,6 +41,9 @@ NUTRIENT_IDS = {
     1003: "protein_g",
     1079: "fiber_g",
 }
+# bumped when what's read out of a USDA record changes: older cached records are read again
+# (2: Atwater kcal for Foundation foods, survey foods' "1 cup" portions; 3: `missing`)
+NORMALIZED_V = 3
 VITAMIN_IDS = {
     1162: "vitamin_c_mg",
     1106: "vitamin_a_mcg",
@@ -97,6 +100,10 @@ def _get(path: str, params: dict) -> Optional[dict]:
     return resp.json()
 
 
+# survey (FNDDS) foods joined the search -- answers cached before that are asked again
+SEARCH_KEY = "|fndds"
+
+
 def search(query: str) -> list[dict]:
     """Ingredient name -> [{fdc_id, description, data_type, food_category}],
     cache-first.
@@ -111,15 +118,23 @@ def search(query: str) -> list[dict]:
         return []
     conn = _connect()
     try:
-        row = conn.execute("SELECT results, fetched_at FROM fdc_search WHERE query = ?", (query,)).fetchone()
+        key = query + SEARCH_KEY
+        row = conn.execute("SELECT results, fetched_at FROM fdc_search WHERE query = ?", (key,)).fetchone()
         if row and time.time() - row[1] < SEARCH_TTL:
             cached = json.loads(row[0])
             if all("food_category" in r for r in cached):
                 return cached
 
-        data = _get("/foods/search", {
-            "query": query, "pageSize": 15, "dataType": "Foundation,SR Legacy",
-        })
+        # USDA's front end turns some survey-food searches away (a bare 400) now and then:
+        # again once, then without the survey foods
+        data, partial = None, False
+        for types in ("Foundation,SR Legacy,Survey (FNDDS)",) * 2 + ("Foundation,SR Legacy",):
+            try:
+                data = _get("/foods/search", {"query": query, "pageSize": 15, "dataType": types})
+                partial = "FNDDS" not in types
+                break
+            except requests.HTTPError:
+                continue
         if data is None:
             return []
         results = [
@@ -127,9 +142,10 @@ def search(query: str) -> list[dict]:
              "data_type": f.get("dataType", ""), "food_category": _category_name(f)}
             for f in data.get("foods", [])
         ]
-        conn.execute("INSERT OR REPLACE INTO fdc_search (query, results, fetched_at) VALUES (?, ?, ?)",
-                     (query, json.dumps(results), time.time()))
-        conn.commit()
+        if not partial:                 # an answer without the survey foods is asked for again
+            conn.execute("INSERT OR REPLACE INTO fdc_search (query, results, fetched_at) VALUES (?, ?, ?)",
+                         (key, json.dumps(results), time.time()))
+            conn.commit()
         return results
     finally:
         conn.close()
@@ -141,6 +157,10 @@ def _category_name(food: dict) -> str:
     cat = food.get("foodCategory")
     if isinstance(cat, dict):
         return cat.get("description", "") or ""
+    # survey (FNDDS) foods file under WWEIA's categories instead ("Yogurt, Greek")
+    wweia = food.get("wweiaFoodCategory")
+    if not cat and isinstance(wweia, dict):
+        return wweia.get("wweiaFoodCategoryDescription", "") or ""
     return cat or ""
 
 
@@ -160,6 +180,9 @@ _CATEGORY_MAP = (
     ("finfish", "protein"),
     ("shellfish", "protein"),
     ("dairy and egg", "dairy"),
+    ("yogurt", "dairy"),
+    ("cheese", "dairy"),
+    ("milk", "dairy"),
     ("cereal grain", "grain"),
     ("baked", "grain"),
     ("breakfast cereal", "grain"),
@@ -193,6 +216,10 @@ def _portions(food: dict) -> dict:
         if unit in ("", "undetermined"):
             # e.g. {"modifier": "cup, chopped"} with no measure unit
             unit = (p.get("modifier") or "").strip().lower()
+            # survey foods: the modifier is a code, the words are "1 cup" / "1 fruit"
+            m = re.match(r"^([\d.]+)\s+([a-z][a-z ]*)", (p.get("portionDescription") or "").lower())
+            if (not unit or unit.isdigit()) and m:
+                amount, unit = float(m.group(1)), m.group(2)
         unit = unit.split(",")[0].strip()
         if not unit or unit == "undetermined":
             continue
@@ -215,7 +242,19 @@ def _normalize(food: dict) -> dict:
             out[NUTRIENT_IDS[nid]] = amount
         elif nid in VITAMIN_IDS:
             out["vitamins"][VITAMIN_IDS[nid]] = amount
+    # newer Foundation records give energy only as Atwater kcal (2048 specific, 2047 general), no 1008
+    if not out["calories_kcal"]:
+        found = {}
+        for n in food.get("foodNutrients", []):
+            nid = (n.get("nutrient") or {}).get("id") or n.get("nutrientId")
+            if nid in (2047, 2048) and n.get("amount", n.get("value")) is not None:
+                found[nid] = n.get("amount", n.get("value"))
+        out["calories_kcal"] = round(found.get(2048) or found.get(2047) or 0.0, 1)
     out["portions"] = _portions(food)
+    # what the record doesn't list at all (not "0") -- filled from another record of the same food
+    listed = {(n.get("nutrient") or {}).get("id") or n.get("nutrientId") for n in food.get("foodNutrients", [])}
+    out["missing"] = [k for nid, k in NUTRIENT_IDS.items() if nid not in listed and not out[k]]
+    out["v"] = NORMALIZED_V
     out["description"] = food.get("description", "")
     out["food_category"] = _category_name(food)
     return out
@@ -233,7 +272,8 @@ def get_nutrients(fdc_id: int) -> Optional[dict]:
         row = conn.execute("SELECT data FROM fdc_foods WHERE fdc_id = ?", (fdc_id,)).fetchone()
         if row:
             cached = json.loads(row[0])
-            if "portions" in cached:
+            # a survey food read before its "1 cup" portions were understood ({"10205": 180})
+            if cached.get("v") == NORMALIZED_V:
                 return cached
 
         food = _get(f"/food/{fdc_id}", {})
@@ -272,6 +312,13 @@ def _match_score(query: str, result: dict) -> float:
     head = segments[0] if segments else desc
     qualifiers = segments[1:]
 
+    def stem(w: str) -> str:            # strawberries / strawberry, tomatoes / tomato, grapes / grape
+        if w.endswith("ies") and len(w) > 4:
+            return w[:-3] + "y"
+        if w.endswith("oes") and len(w) > 4:
+            return w[:-2]
+        return w[:-1] if w.endswith("s") and not w.endswith("ss") and len(w) > 3 else w
+    words = lambda t: {stem(w) for w in re.split(r"[^a-z]+", t) if w}
     if head == q:
         score = 1.0
     elif q in head.split():
@@ -285,6 +332,9 @@ def _match_score(query: str, result: dict) -> float:
         if not shared:
             return 0.0
         score = 0.3 * (len(shared) / max(len(q.split()), 1))
+    # every word asked for is in it: "greek yogurt" is "Yogurt, Greek, plain"
+    if len(q.split()) > 1 and words(q) <= words(desc):
+        score = max(score, 0.62)
 
     # "raw" is the right default for an ingredient going into a recipe;
     # every extra qualifier is a more specific food than was asked for.

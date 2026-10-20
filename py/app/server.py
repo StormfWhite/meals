@@ -806,6 +806,19 @@ def add_stock(week: str, body: StockAddBody):
     return {"items": stock.Ledger().on_hand(week)}
 
 
+class StockMoveBody(BaseModel):
+    to: str                            # "fridge" / "pantry" / "freezer"
+    frozen: bool = False               # the row being moved is the freezer's
+
+
+@app.put("/api/stock/{week}/{ingredient_id}/where")
+def move_stock(week: str, ingredient_id: str, body: StockMoveBody):
+    if body.to not in ("fridge", "pantry", "freezer"):
+        raise HTTPException(400, "fridge, pantry or freezer")
+    stock.move(ingredient_id, week, body.to, body.frozen)
+    return {"items": stock.Ledger().on_hand(week)}
+
+
 @app.put("/api/stock/{week}/{ingredient_id}")
 def put_stock(week: str, ingredient_id: str, body: StockBody):
     """A correction: there's actually this much (0 = used up)."""

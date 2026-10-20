@@ -406,19 +406,42 @@ App.groceriesPanel = {
       return item.runs_out ? `<span class="gp-stock-when" title="When it has to be bought again">out ${day(item.runs_out)}</span>` : "";
     };
     // this week's meals take some: what's left after them
-    const left = (item) => item.uses_g > 0.5
+    const left = (item) => item.uses_g > 0.5 && item.left_text      // "→ 0" says nothing "out this week" doesn't
       ? `<span class="gp-stock-left dim num" title="Left after this week's meals">→ ${App.esc(item.left_text || "0")}</span>` : "";
+    // the section icon moves it on: fridge → dry → freezer → fridge
+    const PLACES = { fridge: [GP_FRIDGE, "Fridge"], pantry: [GP_PANTRY, "Dry"], freezer: [GP_SNOW, "Freezer"] };
+    const NEXT = { fridge: "pantry", pantry: "freezer", freezer: "fridge" };
+    const controls = (el, item, frozen) => {
+      const at = frozen ? "freezer" : item.where;
+      el.querySelector(".gp-stock-move").addEventListener("click", async () => {
+        const to = NEXT[at];
+        await App.api(`/api/stock/${this._weekStart}/${item.ingredient_id}/where`, { method: "PUT", body: { to, frozen } });
+        App.toast(`${item.name} → ${PLACES[to][1].toLowerCase()}`);
+        this._reload();
+      });
+      el.querySelector(".gp-stock-rm").addEventListener("click", async () => {
+        App.toast(`${item.name}: removed`); await put(item, { grams: 0, frozen });
+      });
+    };
+    const moveBtn = (item, frozen) => {
+      const [icon, label] = PLACES[frozen ? "freezer" : item.where];
+      return `<button class="icon-btn gp-stock-move" title="${label} — tap to move it">${App.icon(icon)}</button>`;
+    };
+    const rmBtn = `<button class="icon-btn gp-stock-rm" title="Remove (used up)">${App.icon(GP_X)}</button>`;
     const row = (item, frozen) => {
       const text = frozen ? item.freezer_text : item.fridge_text;
       const el = App.el(`<div class="gp-row gp-stock-row">
+        ${moveBtn(item, frozen)}
         <span class="gp-row-name">${App.esc(item.name)}</span>
         <input class="gp-row-qty num" value="${App.esc(text)}" placeholder="—" enterkeyhint="done" title="How much there really is">
         ${frozen ? "" : left(item)}
         ${when(item)}
+        ${rmBtn}
       </div>`);
       const inp = el.querySelector("input");
       inp.addEventListener("change", () => { if (inp.value !== text) put(item, { text: inp.value || "0", frozen }); });
       inp.addEventListener("keydown", e => { if (e.key === "Enter") inp.blur(); });
+      controls(el, item, frozen);
       return App.swipeAway(el, async () => { App.toast(`${item.name}: used up`); await put(item, { grams: 0, frozen }); });
     };
     // running low first: each one a tap from the list
@@ -427,13 +450,17 @@ App.groceriesPanel = {
       head(GP_WARN, "Running low", "low");
       low.forEach(item => {
         const total = _gpUs(item.fridge_g + item.freezer_g);
+        const frozen = !(item.fridge_g > 0.5);
         const el = App.el(`<div class="gp-row gp-stock-row">
+          ${moveBtn(item, frozen)}
           <span class="gp-row-name">${App.esc(item.name)}</span>
           <span class="gp-row-need dim num">${App.esc(total)}</span>
           ${left(item)}
           ${when(item)}
           <button class="gp-stock-add${item.on_list ? " done" : ""}" ${item.on_list ? "disabled" : ""}>${item.on_list ? "on list" : "+ list"}</button>
+          ${rmBtn}
         </div>`);
+        controls(el, item, frozen);
         el.querySelector(".gp-stock-add").addEventListener("click", async () => {
           await App.api(`/api/groceries/${this._weekStart}/extra`, { method: "POST", body: { ingredient_id: item.ingredient_id, qty: null } });
           App.toast(`${item.name} on the list`);

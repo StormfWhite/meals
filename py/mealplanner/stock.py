@@ -171,6 +171,24 @@ def add(ingredient_id: str, grams: float, week_start_iso: str, where: Optional[s
     correct(ingredient_id, now + max(0.0, float(grams)), week_start_iso, frozen)
 
 
+def move(ingredient_id: str, week_start_iso: str, to: str, from_frozen: bool = False) -> None:
+    """The Pantry's section icon: fridge <-> dry changes where the ingredient lives (and so
+    every later week); into or out of the freezer moves that much of it there."""
+    lots = Ledger().state(week_start_iso).get(ingredient_id, [])
+    fresh = sum(l["g"] for l in lots if not l["frozen"])
+    frozen = sum(l["g"] for l in lots if l["frozen"])
+    if to == "freezer":
+        if not from_frozen:
+            correct(ingredient_id, 0, week_start_iso, False)
+            correct(ingredient_id, frozen + fresh, week_start_iso, True)
+        return
+    if to in ("fridge", "pantry"):
+        ingredients.update(ingredient_id, storage=to)
+        if from_frozen:
+            correct(ingredient_id, 0, week_start_iso, True)
+            correct(ingredient_id, fresh + frozen, week_start_iso, False)
+
+
 def _brand(label: str) -> str:
     """ "Simple Truth® Creamy … · 16 oz" -> "simple truth": the words before the first ®/™, else
     the first word -- what "the same product, a bigger size" has to share."""

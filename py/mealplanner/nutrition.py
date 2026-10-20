@@ -34,17 +34,37 @@ def nutrients_per_100g(ingredient: dict) -> Optional[dict]:
     """USDA data wins when it's available; a manually-typed estimate is the
     fallback, not the other way around -- real data should never be shadowed
     by a guess someone typed in before the ingredient was bound to FDC."""
-    return _fdc_nutrients(ingredient.get("fdc_id")) or ingredient.get("manual_nutrients")
+    food = _fdc_nutrients(ingredient.get("fdc_id"))
+    if food and ingredient.get("nutrient_fill"):
+        # a gap in the record (Foundation chia lists no fiber) taken from another record of it
+        food = {**food, **{k: v for k, v in ingredient["nutrient_fill"].items() if k in food.get("missing", [])}}
+    return food or ingredient.get("manual_nutrients")
 
 
 COUNT_UNITS = ("medium", "piece", "egg", "fruit", "large", "small", "clove", "slice")
 
 
+# the same unit, written out -- a line says "teaspoon", USDA's table says "tsp"
+UNIT_ALIASES = {"teaspoon": "tsp", "teaspoons": "tsp", "tablespoon": "tbsp", "tablespoons": "tbsp",
+                "tbs": "tbsp", "cups": "cup", "c": "cup", "t": "tsp", "ounce": "oz", "ounces": "oz",
+                "pound": "lb", "pounds": "lb", "lbs": "lb"}
+WEIGHTS_G = {"oz": 28.3495, "lb": 453.592, "kg": 1000.0}
+TSP_PER = {"tsp": 1, "tbsp": 3, "cup": 48}    # a cup is 16 tbsp is 48 tsp
+
+
 def qty_to_grams(ingredient: dict, qty: float, unit: str) -> Optional[float]:
+    unit = UNIT_ALIASES.get((unit or "").strip().lower(), (unit or "").strip().lower())
     if unit == "g":
         return qty
-    conversions = ingredient.get("unit_conversions") or {}
+    if unit in WEIGHTS_G:
+        return qty * WEIGHTS_G[unit]
+    conversions = {UNIT_ALIASES.get(u, u): g for u, g in (ingredient.get("unit_conversions") or {}).items()}
     grams_per_unit = conversions.get(unit)
+    if grams_per_unit is None and unit in TSP_PER:
+        # only "1 tbsp" is known: a teaspoon is a third of it, a cup sixteen of them
+        known = next(((u, g) for u, g in conversions.items() if u in TSP_PER), None)
+        if known:
+            grams_per_unit = known[1] / TSP_PER[known[0]] * TSP_PER[unit]
     if grams_per_unit is None and unit == "each":
         # "2 eggs", "3 onions": a count weighs whatever USDA says one of them weighs
         grams_per_unit = next((conversions[u] for u in COUNT_UNITS if u in conversions), None)

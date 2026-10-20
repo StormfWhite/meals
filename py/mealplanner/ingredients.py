@@ -10,6 +10,7 @@ total yet.
 """
 from __future__ import annotations
 
+import re
 import uuid
 from typing import Optional
 
@@ -107,7 +108,8 @@ def update(ingredient_id: str, **fields) -> dict:
     if ing is None:
         raise KeyError(ingredient_id)
     for key in ("name", "fdc_id", "fdc_description", "default_unit", "unit_conversions",
-                "category", "store_section", "manual_nutrients", "shop_list", "freezes", "keep_days", "storage"):
+                "category", "store_section", "manual_nutrients", "shop_list", "freezes", "keep_days", "storage",
+                "nutrient_fill"):
         if key in fields and fields[key] is not None:
             ing[key] = fields[key].strip() if key == "name" else fields[key]
     # Moving something between the two lists by hand is a decision, not a
@@ -124,6 +126,123 @@ def _kitchen_portions(nutrients: dict) -> dict:
     return {u: g for u, g in (nutrients.get("portions") or {}).items() if u in KITCHEN_UNITS}
 
 
+# words on a package that say nothing about what the food is
+_FILLER = r"\b(organic|natural|pure|raw|unfiltered|fresh|sliced|diced|chopped|pieces?|chunks?|whole|premium|plain)\b"
+
+
+# how it gets typed -> how USDA spells it
+_SPELLINGS = {"dragonfruit": "dragon fruit", "bannanas?": "banana", "bananna": "banana", "makgo": "mango", "yoghurt": "yogurt",
+              "strawberrys": "strawberries", "blueberrys": "blueberries", "tomatos": "tomatoes"}
+
+
+_GENERIC = {"fruit", "fruits", "vegetable", "vegetables", "meat", "mix", "blend", "sauce", "seeds",
+            "berries", "berry", "greens", "nuts"}
+
+
+def _usda_queries(name: str) -> list[str]:
+    """What to ask USDA for, most specific first: the name, the name without package words
+    ("organic raw and unfiltered honey" -> "honey"), then without a leading word USDA has
+    never heard of -- a brand ("fage yogurt" -> "yogurt"), never a food ("almond butter")."""
+    from . import fdc
+    name = name.strip().lower()
+    for typed, usda in _SPELLINGS.items():
+        name = re.sub(rf"\b{typed}\b", usda, name)
+    out = [name]
+    clean = re.sub(r"\s{2,}", " ", re.sub(r"\band\b", " ", re.sub(_FILLER, " ", name))).strip(" ,")
+    if clean and clean not in out and clean not in _GENERIC:      # "fresh berries" is no particular berry
+        out.append(clean)
+    if clean.startswith("frozen ") and clean[7:]:
+        out.append(clean[7:])
+    words = (out[-1]).split()
+    def known(word: str) -> bool:
+        try:
+            return bool(fdc.search(word))
+        except Exception:
+            return True                 # can't tell: keep the word
+    if "," in name:
+        return []                       # several foods: only as a mix (_resolve_blend)
+    # one leading brand at most, and never down to a word that names no food in particular
+    if len(words) > 1 and words[-1] not in _GENERIC and not known(words[0]):
+        out.append(" ".join(words[1:]))
+    return list(dict.fromkeys(out))
+
+
+def _resolve_blend(ingredient_id: str, ing: dict) -> Optional[dict]:
+    """A bag of mixed fruit ("strawberry, blueberry, and mango pieces"): equal parts of each,
+    when every one of them is a USDA food -- otherwise nothing (no guessing)."""
+    from . import fdc
+    name = re.sub(_FILLER, " ", ing["name"].lower())
+    name = re.sub(r"^\s*frozen\s+", "", name)
+    for typed, usda in _SPELLINGS.items():
+        name = re.sub(rf"\b{typed}\b", usda, name)
+    parts = [p.strip() for p in re.split(r",|\band\b|&|/", name) if p.strip()]
+    if len(parts) < 2:
+        return None
+    foods = []
+    for part in parts:
+        # the fruit itself -- "Strawberries, frozen", never "Strawberry drink syrup"
+        names = {part, part + "s", part + "es", re.sub(r"y$", "ies", part)}
+        hit = next((m for q in (part + " frozen", part + " raw", part)
+                    for m in fdc.ranked_matches(q, limit=6)
+                    if m["description"].lower().split(",")[0].strip() in names), None)
+        food = hit and fdc.get_nutrients(hit["fdc_id"])
+        if not food:
+            return None
+        foods.append(food)
+    n = len(foods)
+    blend = {k: round(sum(f.get(k, 0.0) for f in foods) / n, 2) for k in ("calories_kcal", "protein_g", "fiber_g")}
+    vit = {}
+    for f in foods:
+        for k, v in (f.get("vitamins") or {}).items():
+            vit[k] = vit.get(k, 0.0) + v / n
+    blend["vitamins"] = {k: round(v, 2) for k, v in vit.items()}
+    cups = [(_kitchen_portions(f).get("cup")) for f in foods]
+    fields = {"manual_nutrients": blend, "fdc_description": "Equal parts: " + ", ".join(f["description"] for f in foods),
+              "category": fdc.category_for(foods[0].get("food_category", "")) or ing.get("category")}
+    if all(cups):
+        fields["unit_conversions"] = {"cup": round(sum(cups) / n, 1), **(ing.get("unit_conversions") or {})}
+    return update(ingredient_id, **fields)
+
+
+def fill_portions(ingredient_id: str) -> Optional[dict]:
+    """A matched ingredient whose USDA record has no kitchen measures, or leaves a nutrient out
+    (Foundation "Chia seeds, dry, raw": no cup, no fiber): those from another record of the same
+    food. The match itself stays as it is."""
+    from . import fdc
+    ing = get(ingredient_id)
+    if not ing or not ing.get("fdc_id"):
+        return ing
+    missing = [k for k in (fdc.get_nutrients(ing["fdc_id"]) or {}).get("missing", [])
+               if k not in (ing.get("nutrient_fill") or {})]
+    need_portions = not ing.get("unit_conversions")
+    if not missing and not need_portions:
+        return ing
+    head = ", ".join((ing.get("fdc_description") or "").split(",")[:2]).lower()
+    want = head.split(",")[0].strip()
+    fields: dict = {}
+    # the closest record of the same food: fewest words the matched one doesn't have
+    # ("Grapes, raw" for green seedless grapes -- never "Grapes, muscadine, raw")
+    mine = set(re.split(r"[^a-z]+", (ing.get("fdc_description") or "").lower()))
+    seen: dict = {}
+    for query in dict.fromkeys([head.replace(",", ""), want] + _usda_queries(ing["name"])):
+        for other in fdc.ranked_matches(query, limit=6):
+            if other["fdc_id"] != ing["fdc_id"] and other["description"].lower().split(",")[0].strip() == want:
+                seen.setdefault(other["fdc_id"], other)
+    extra = lambda o: len(set(re.split(r"[^a-z]+", o["description"].lower())) - mine - {""})
+    for other in sorted(seen.values(), key=lambda o: (extra(o), -o["score"])):
+        food = fdc.get_nutrients(other["fdc_id"]) or {}
+        portions = _kitchen_portions(food)
+        if need_portions and portions and "unit_conversions" not in fields:
+            fields["unit_conversions"] = portions
+        got = {k: food[k] for k in missing if k not in food.get("missing", []) and food.get(k)}
+        if got:
+            fields["nutrient_fill"] = {**(ing.get("nutrient_fill") or {}), **fields.get("nutrient_fill", {}), **got}
+            missing = [k for k in missing if k not in got]
+        if not missing and (not need_portions or "unit_conversions" in fields):
+            return update(ingredient_id, **fields)
+    return update(ingredient_id, **fields) if fields else ing
+
+
 def resolve_usda(ingredient_id: str, force: bool = False) -> Optional[dict]:
     """Bind an ingredient to the USDA food it most likely means, and take
     that food's category and portion table with it.
@@ -138,11 +257,15 @@ def resolve_usda(ingredient_id: str, force: bool = False) -> Optional[dict]:
     ing = get(ingredient_id)
     if ing is None:
         raise KeyError(ingredient_id)
-    if ing.get("fdc_id") and not force:
+    if (ing.get("fdc_id") or (ing.get("fdc_description") or "").startswith("Equal parts")) and not force:
         return ing
-    match = fdc.best_match(ing["name"])
+    match = None
+    for query in _usda_queries(ing["name"]):
+        match = fdc.best_match(query)
+        if match is not None:
+            break
     if match is None:
-        return None
+        return _resolve_blend(ingredient_id, ing)
 
     fields: dict = {"fdc_id": match["fdc_id"], "fdc_description": match["description"]}
     category = fdc.category_for(match.get("food_category", ""))
@@ -158,7 +281,7 @@ def resolve_usda(ingredient_id: str, force: bool = False) -> Optional[dict]:
         # a clove is 3g (measured). So nutrition comes from the best match
         # and the portions come from whichever record for the same name
         # actually has them.
-        for other in fdc.ranked_matches(ing["name"], limit=3):
+        for other in fdc.ranked_matches(query, limit=3):
             if other["fdc_id"] == match["fdc_id"]:
                 continue
             portions = _kitchen_portions(fdc.get_nutrients(other["fdc_id"]) or {})
@@ -172,7 +295,7 @@ def resolve_usda(ingredient_id: str, force: bool = False) -> Optional[dict]:
     if not updated.get("shop_list_locked"):
         updated = update(ingredient_id, shop_list=aisles.classify(updated["name"], updated["category"]),
                          lock_shop_list=False)
-    return updated
+    return fill_portions(ingredient_id) or updated
 
 
 def humanize_grams(ingredient: dict, grams: float) -> str:

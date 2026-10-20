@@ -92,4 +92,7 @@ body.offline #topbar::after { content: "offline · saved on this phone"; font-si
   .gp-stock-pick .icon-btn { width: 34px; height: 34px; }
   .gp-stock-pick svg { width: 18px; height: 18px; }
   .gp-stock-left { font-size: 12.5px; }
+  .gp-row .gp-stock-move, .gp-row .gp-stock-rm { display: inline-flex; width: 32px; height: 32px; }
+  .gp-row .gp-stock-rm { opacity: .55; }
+  .gp-stock-move svg, .gp-stock-rm svg { width: 17px; height: 17px; }
 }

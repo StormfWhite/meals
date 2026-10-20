@@ -367,6 +367,14 @@ button.mb-tag:hover { color: var(--good); border-color: var(--good); }
 .gp-stock-when { font-size: 10.5px; white-space: nowrap; color: var(--text-dim); }
 .gp-stock-when.warn { color: var(--warn); }
 .gp-stock-left { font-size: 10.5px; white-space: nowrap; }
+.gp-row .gp-stock-move, .gp-row .gp-stock-rm { width: 20px; height: 20px; flex: none; color: var(--text-dim); }
+.gp-row .icon-btn.gp-stock-move { opacity: .8; }  /* says where it is: always shown */
+.gp-stock-row .gp-row-name { min-width: 56px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gp-stock-row { gap: 4px; flex-wrap: nowrap; }
+.gp-stock-row > :not(.gp-row-name) { flex-shrink: 0; }
+.gp-stock-add { white-space: nowrap; }
+.gp-stock-move svg, .gp-stock-rm svg { width: 12px; height: 12px; }
+.gp-row .gp-stock-rm:hover { opacity: 1; color: var(--warn); }
 .gp-stock-addrow { margin-top: 6px; }
 .gp-stock-name { flex: 1; min-width: 0; font-size: 12px; padding: 5px 8px; }
 .gp-stock-qty { width: 58px; min-width: 0; font-size: 12px; padding: 5px 6px; }
