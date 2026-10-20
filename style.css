@@ -366,6 +366,14 @@ button.mb-tag:hover { color: var(--good); border-color: var(--good); }
 .gp-stock-sub.low { color: var(--warn); }
 .gp-stock-when { font-size: 10.5px; white-space: nowrap; color: var(--text-dim); }
 .gp-stock-when.warn { color: var(--warn); }
+.gp-stock-left { font-size: 10.5px; white-space: nowrap; }
+.gp-stock-addrow { margin-top: 6px; }
+.gp-stock-name { flex: 1; min-width: 0; font-size: 12px; padding: 5px 8px; }
+.gp-stock-qty { width: 58px; min-width: 0; font-size: 12px; padding: 5px 6px; }
+.gp-stock-pick { display: inline-flex; gap: 1px; }
+.gp-stock-pick .icon-btn { width: 24px; height: 24px; opacity: .45; }
+.gp-stock-pick .icon-btn.on { opacity: 1; color: var(--accent); background: var(--panel); }
+.gp-stock-pick svg { width: 14px; height: 14px; }
 .gp-stock-add { border: 1px solid var(--border); background: var(--panel); border-radius: 9px; padding: 0 7px; font: inherit;
   font-size: 10.5px; color: var(--accent); cursor: pointer; }
 .gp-stock-add.done { color: var(--text-dim); border-color: transparent; cursor: default; }

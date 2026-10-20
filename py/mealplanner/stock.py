@@ -145,6 +145,32 @@ def correct(ingredient_id: str, grams: float, week_start_iso: str, frozen: Optio
     store.save(STOCK_FILE, data)
 
 
+def amount_g(ing: dict, text: str) -> Optional[float]:
+    """What's typed in the Pantry's add box -> grams: "2 lb", "8 oz", or a count ("3", "2 heads")
+    weighed by the ingredient's own unit table."""
+    g = prices._parse_grams(text)
+    if g:
+        return g
+    m = re.match(r"^\s*([\d.]+)\s*([a-z]*)", (text or "").lower())
+    if not m:
+        return None
+    from . import nutrition
+    unit = m.group(2).rstrip("s") or "each"
+    return nutrition.qty_to_grams(ing, float(m.group(1)), unit) or nutrition.qty_to_grams(ing, float(m.group(1)), "each")
+
+
+def add(ingredient_id: str, grams: float, week_start_iso: str, where: Optional[str] = None) -> None:
+    """Put some in the pantry by hand: on top of what's already there. `where` is "fridge",
+    "pantry" (dry) or "freezer"; fridge/pantry also becomes where that ingredient lives."""
+    ing = ingredients.get(ingredient_id) or {}
+    if where in ("fridge", "pantry") and storage(ing) != where:
+        ingredients.update(ingredient_id, storage=where)
+    frozen = where == "freezer"
+    have = Ledger().state(week_start_iso).get(ingredient_id, [])
+    now = sum(l["g"] for l in have if l["frozen"] == frozen)
+    correct(ingredient_id, now + max(0.0, float(grams)), week_start_iso, frozen)
+
+
 def _brand(label: str) -> str:
     """ "Simple Truth® Creamy … · 16 oz" -> "simple truth": the words before the first ®/™, else
     the first word -- what "the same product, a bigger size" has to share."""
@@ -455,6 +481,9 @@ class Ledger:
                         "fridge_g": round(fridge, 1), "freezer_g": round(frozen, 1),
                         "fridge_text": us_amount(fridge), "freezer_text": us_amount(frozen),
                         "runs_out": look["runs_out"], "use_by": use_by,
+                        # what this week's meals take, and what's left after them
+                        "uses_g": round(max(0.0, fridge + frozen - look["left_g"]), 1),
+                        "left_text": us_amount(look["left_g"]),
                         "low": bool(look["runs_out"] and look["runs_out"] <= soon),
                         "on_list": ing_id in listed, "keep_days": days, "freezes": freezes})
         out.sort(key=lambda r: (r["runs_out"] or "9999", r["name"].lower()))

@@ -205,9 +205,19 @@ App.groceriesPanel = {
           <button class="icon-btn gp-stock-close" title="Close">${App.icon(GP_X)}</button>
         </div>
         <div class="gp-rows" id="gp-stock-rows"></div>
+        <div class="gp-add-row gp-stock-addrow">
+          <input class="gp-stock-name" ${listAttr} placeholder="Add to pantry…" spellcheck="false" enterkeyhint="enter">
+          <input class="gp-stock-qty" placeholder="qty" spellcheck="false" enterkeyhint="enter">
+          <span class="gp-stock-pick">
+            <button class="icon-btn" data-where="fridge" title="Fridge">${App.icon(GP_FRIDGE)}</button>
+            <button class="icon-btn" data-where="pantry" title="Dry">${App.icon(GP_PANTRY)}</button>
+            <button class="icon-btn" data-where="freezer" title="Freezer">${App.icon(GP_SNOW)}</button>
+          </span>
+        </div>
       </div>
     `;
     container.querySelector(".gp-stock-close").addEventListener("click", () => this._toggleStock(false));
+    this._wireStockAdd();
     container.querySelectorAll(".gp-sug-toggle").forEach(btn => {
       btn.addEventListener("click", () => {
         const kind = btn.dataset.list;
@@ -343,12 +353,43 @@ App.groceriesPanel = {
     if (res) { this._stock = res.items; this._drawStock(); }
   },
 
+  // "garlic · 2 heads · dry": on top of what's there; no section picked = where it usually lives
+  _wireStockAdd() {
+    const c = this._container;
+    const nameIn = c.querySelector(".gp-stock-name"), qtyIn = c.querySelector(".gp-stock-qty");
+    let where = null;
+    c.querySelectorAll(".gp-stock-pick button").forEach(b => b.addEventListener("click", () => {
+      where = where === b.dataset.where ? null : b.dataset.where;
+      c.querySelectorAll(".gp-stock-pick button").forEach(x => x.classList.toggle("on", x.dataset.where === where));
+    }));
+    const add = async () => {
+      let name = nameIn.value.trim(), qty = qtyIn.value.trim();
+      if (!name) return;
+      if (!qty) [name, qty] = _gpSplitAmount(name);
+      if (!qty) { qtyIn.focus(); return; }
+      nameIn.value = ""; qtyIn.value = ""; nameIn.focus();
+      try {
+        const ings = this._ingredients || [];
+        let match = ings.find(i => i.name.toLowerCase() === name.toLowerCase());
+        if (!match) {
+          match = (await App.api("/api/ingredients", { method: "POST", body: { name, default_unit: "g", resolve: false } })).ingredient;
+          ings.push(match);
+          App.resolveLater(match.id, () => this.refresh());
+        }
+        await App.api(`/api/stock/${this._weekStart}`, { method: "POST", body: { ingredient_id: match.id, text: qty, where } });
+        App.toast(`${name}: ${qty} in the ${where === "freezer" ? "freezer" : where === "fridge" ? "fridge" : where === "pantry" ? "pantry" : "kitchen"}`);
+      } catch (e) { App.toast(`Couldn't add ${name} — try "8 oz" or "1 lb"`); }
+      this._reload();
+    };
+    [nameIn, qtyIn].forEach(i => i.addEventListener("keydown", e => { if (e.key === "Enter" || e.keyCode === 13) { e.preventDefault(); add(); } }));
+  },
+
   _drawStock() {
     const wrap = this._container.querySelector("#gp-stock-rows");
     const items = this._stock || [];
     wrap.innerHTML = "";
     if (!items.length) {
-      wrap.appendChild(App.el(`<div class="gp-empty">Nothing yet — what's bought beyond the week's meals shows up here.</div>`));
+      wrap.appendChild(App.el(`<div class="gp-empty">Nothing yet — add what's in the kitchen below; what's bought beyond the week's meals shows up here too.</div>`));
       return;
     }
     const put = async (item, body) => {
@@ -359,15 +400,20 @@ App.groceriesPanel = {
     const wk = this._weekStart, soon = _gpAddDays(wk, 10);
     const day = (iso) => iso <= wk ? "this week" : "~" + _gpDay(iso);
     const when = (item) => {
-      if (item.use_by && (!item.runs_out || item.use_by < item.runs_out))   // goes off before it's used up
+      // goes off before it's used up -- months away (rice, oil) isn't worth saying
+      if (item.use_by && item.use_by <= _gpAddDays(wk, 90) && (!item.runs_out || item.use_by < item.runs_out))
         return `<span class="gp-stock-when${item.use_by <= soon ? " warn" : ""}" title="Won't keep past this">use by ${day(item.use_by)}</span>`;
       return item.runs_out ? `<span class="gp-stock-when" title="When it has to be bought again">out ${day(item.runs_out)}</span>` : "";
     };
+    // this week's meals take some: what's left after them
+    const left = (item) => item.uses_g > 0.5
+      ? `<span class="gp-stock-left dim num" title="Left after this week's meals">→ ${App.esc(item.left_text || "0")}</span>` : "";
     const row = (item, frozen) => {
       const text = frozen ? item.freezer_text : item.fridge_text;
       const el = App.el(`<div class="gp-row gp-stock-row">
         <span class="gp-row-name">${App.esc(item.name)}</span>
         <input class="gp-row-qty num" value="${App.esc(text)}" placeholder="—" enterkeyhint="done" title="How much there really is">
+        ${frozen ? "" : left(item)}
         ${when(item)}
       </div>`);
       const inp = el.querySelector("input");
@@ -384,6 +430,7 @@ App.groceriesPanel = {
         const el = App.el(`<div class="gp-row gp-stock-row">
           <span class="gp-row-name">${App.esc(item.name)}</span>
           <span class="gp-row-need dim num">${App.esc(total)}</span>
+          ${left(item)}
           ${when(item)}
           <button class="gp-stock-add${item.on_list ? " done" : ""}" ${item.on_list ? "disabled" : ""}>${item.on_list ? "on list" : "+ list"}</button>
         </div>`);
@@ -396,7 +443,7 @@ App.groceriesPanel = {
       });
     }
     const rest = items.filter(i => !i.low);
-    [["fridge", GP_FRIDGE, "Fridge"], ["pantry", GP_PANTRY, "Pantry"]].forEach(([where, icon, label]) => {
+    [["fridge", GP_FRIDGE, "Fridge"], ["pantry", GP_PANTRY, "Dry"]].forEach(([where, icon, label]) => {
       const mine = rest.filter(i => i.where === where && i.fridge_g > 0.5);
       if (!mine.length) return;
       head(icon, label);

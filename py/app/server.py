@@ -785,6 +785,27 @@ class StockBody(BaseModel):
     frozen: Optional[bool] = None
 
 
+class StockAddBody(BaseModel):
+    ingredient_id: str
+    text: Optional[str] = None         # "2 lb"
+    grams: Optional[float] = None
+    where: Optional[str] = None        # "fridge" / "pantry" / "freezer"; None = its usual place
+
+
+@app.post("/api/stock/{week}")
+def add_stock(week: str, body: StockAddBody):
+    """Put something in the pantry by hand (on top of what's there)."""
+    if ingredients.get(body.ingredient_id) is None:
+        raise HTTPException(404, "no such ingredient")
+    grams = body.grams
+    if grams is None:
+        grams = stock.amount_g(ingredients.get(body.ingredient_id), body.text or "")
+    if not grams:
+        raise HTTPException(400, "how much?")
+    stock.add(body.ingredient_id, grams, week, body.where)
+    return {"items": stock.Ledger().on_hand(week)}
+
+
 @app.put("/api/stock/{week}/{ingredient_id}")
 def put_stock(week: str, ingredient_id: str, body: StockBody):
     """A correction: there's actually this much (0 = used up)."""

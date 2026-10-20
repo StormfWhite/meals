@@ -87,4 +87,9 @@ body.offline #topbar::after { content: "offline · saved on this phone"; font-si
   .gp-bulk { font-size: 12px; padding: 1px 8px; }
   .gp-row-price { width: 64px; }
   .gp-stock-row .gp-row-qty { width: 64px; }
+  .gp-stock-qty { width: 64px; }
+  .gp-stock-name, .gp-stock-qty { font-size: 16px; }
+  .gp-stock-pick .icon-btn { width: 34px; height: 34px; }
+  .gp-stock-pick svg { width: 18px; height: 18px; }
+  .gp-stock-left { font-size: 12.5px; }
 }
