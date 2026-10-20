@@ -408,6 +408,9 @@ def suggestions(week_start_iso: str) -> list[dict]:
         out.append({"key": key, "name": name, "shop_list": shop_list,
                     "weeks": st["got"], "of": len(past), "score": round(st["score"], 3)})
     out.sort(key=lambda s: (-s["score"], s["name"].lower()))
+    # one per name: a typed "yogurt" line and the Yogurt ingredient are the same suggestion
+    seen: set = set()
+    out = [s for s in out if not (s["name"].lower() in seen or seen.add(s["name"].lower()))]
     return out
 
 

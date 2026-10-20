@@ -258,6 +258,9 @@ def ingredients_for(q: str = "", meal: Optional[str] = None, meal_name: str = ""
         })
 
     scored.sort(key=lambda s: (-s["score"], s["name"].lower()))
+    # one per name, and never a name the meal already has (two copies of an ingredient)
+    seen = {i["name"].strip().lower() for i in catalog if i["id"] in skip}
+    scored = [s for s in scored if not (s["name"].strip().lower() in seen or seen.add(s["name"].strip().lower()))]
     return scored[:limit]
 
 

@@ -69,6 +69,11 @@ def add(name: str, category: str = "other", default_unit: str = "g",
         manual_nutrients: Optional[dict] = None, fdc_id: Optional[int] = None,
         shop_list: Optional[str] = None) -> dict:
     data = _load()
+    # one ingredient per name: a second "Yogurt" (two adds racing, the phone and the laptop)
+    # would be offered twice everywhere
+    same = next((i for i in data["ingredients"] if i["name"].strip().lower() == name.strip().lower()), None)
+    if same is not None:
+        return same
     ingredient = {
         "id": "i_" + uuid.uuid4().hex[:8],
         "name": name.strip(),
