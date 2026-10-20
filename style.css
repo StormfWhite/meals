@@ -19,6 +19,9 @@
   --meal-breakfast: #c8811a;
   --meal-lunch: #1a9e8c;
   --meal-dinner: #5b5bd6;
+  --fridge: #2f7fd1;
+  --dry: #b5762a;
+  --freezer: #1aa3b8;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -38,6 +41,9 @@
     --meal-breakfast: #e0a44a;
     --meal-lunch: #3fcbb6;
     --meal-dinner: #8f8fef;
+    --fridge: #5ea6f0;
+    --dry: #d9a05b;
+    --freezer: #4fd0e0;
   }
 }
 
@@ -367,20 +373,48 @@ button.mb-tag:hover { color: var(--good); border-color: var(--good); }
 .gp-stock-when { font-size: 10.5px; white-space: nowrap; color: var(--text-dim); }
 .gp-stock-when.warn { color: var(--warn); }
 .gp-stock-left { font-size: 10.5px; white-space: nowrap; }
-.gp-row .gp-stock-move, .gp-row .gp-stock-rm { width: 20px; height: 20px; flex: none; color: var(--text-dim); }
-.gp-row .icon-btn.gp-stock-move { opacity: .8; }  /* says where it is: always shown */
+/* fridge / dry / freezer: their own shape AND colour, everywhere they appear */
+.where-fridge { color: var(--fridge); }
+.where-pantry { color: var(--dry); }
+.where-freezer { color: var(--freezer); }
+.gp-place { display: inline-flex; flex: none; width: 16px; justify-content: center; }
+.gp-place svg { width: 13px; height: 13px; }
+.gp-stock-sub.where-fridge, .gp-stock-sub.where-pantry, .gp-stock-sub.where-freezer { color: inherit; }
+.gp-stock-sub.where-fridge svg { color: var(--fridge); }
+.gp-stock-sub.where-pantry svg { color: var(--dry); }
+.gp-stock-sub.where-freezer svg { color: var(--freezer); }
+.gp-stock-head { width: 100%; text-align: left; padding: 0; cursor: pointer; }
+.gp-stock-head .gp-count .warn { color: var(--warn); }
+.gp-stock-chev { display: inline-flex; color: var(--text-dim); transition: transform .15s; }
+.gp-stock-chev svg { width: 13px; height: 13px; }
+.gp-stock.open .gp-stock-chev { transform: rotate(180deg); }
+.gp-stock-head .gp-count { margin-left: auto; }
+.gp-stock-body { display: flex; flex-direction: column; gap: 7px; }
+.gp-stock-body[hidden] { display: none; }
+.gp-stock-row { cursor: pointer; }
+.gp-stock-amt { font-size: 11.5px; color: var(--text-dim); white-space: nowrap; }
+.gp-stock-edit { cursor: default; background: var(--panel-2); }
+.gp-se-name { flex: 1; min-width: 0; font-size: 12px; padding: 4px 7px; }
+.gp-se-qty { width: 60px; flex: none; font-size: 12px; padding: 4px 6px; }
+.gp-row .icon-btn.gp-se-ok { opacity: 1; color: var(--accent); width: 22px; height: 22px; }
+.gp-stock-edit .gp-stock-pick .icon-btn { opacity: .4; }
+.gp-stock-edit .gp-stock-pick .icon-btn.on { opacity: 1; background: var(--panel); }
+.gp-stock-pick .icon-btn.where-fridge.on { color: var(--fridge); }
+.gp-stock-pick .icon-btn.where-pantry.on { color: var(--dry); }
+.gp-stock-pick .icon-btn.where-freezer.on { color: var(--freezer); }
+.gp-row .gp-stock-rm { width: 20px; height: 20px; flex: none; color: var(--text-dim); }
 .gp-stock-row .gp-row-name { min-width: 56px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gp-stock-row { gap: 4px; flex-wrap: nowrap; }
 .gp-stock-row > :not(.gp-row-name) { flex-shrink: 0; }
 .gp-stock-add { white-space: nowrap; }
-.gp-stock-move svg, .gp-stock-rm svg { width: 12px; height: 12px; }
+.gp-stock-rm svg { width: 12px; height: 12px; }
 .gp-row .gp-stock-rm:hover { opacity: 1; color: var(--warn); }
 .gp-stock-addrow { margin-top: 6px; }
 .gp-stock-name { flex: 1; min-width: 0; font-size: 12px; padding: 5px 8px; }
 .gp-stock-qty { width: 58px; min-width: 0; font-size: 12px; padding: 5px 6px; }
 .gp-stock-pick { display: inline-flex; gap: 1px; }
 .gp-stock-pick .icon-btn { width: 24px; height: 24px; opacity: .45; }
-.gp-stock-pick .icon-btn.on { opacity: 1; color: var(--accent); background: var(--panel); }
+.gp-stock-pick .icon-btn.on { opacity: 1; background: var(--panel); box-shadow: inset 0 0 0 1px currentColor; }
 .gp-stock-pick svg { width: 14px; height: 14px; }
 .gp-stock-add { border: 1px solid var(--border); background: var(--panel); border-radius: 9px; padding: 0 7px; font: inherit;
   font-size: 10.5px; color: var(--accent); cursor: pointer; }

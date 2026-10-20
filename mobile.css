@@ -86,13 +86,22 @@ body.offline #topbar::after { content: "offline · saved on this phone"; font-si
   .gp-stock-badges { font-size: 12.5px; }
   .gp-bulk { font-size: 12px; padding: 1px 8px; }
   .gp-row-price { width: 64px; }
-  .gp-stock-row .gp-row-qty { width: 64px; }
+  .gp-stock-amt { font-size: 14px; }
+  .gp-place { width: 22px; }
+  .gp-place svg { width: 18px; height: 18px; }
+  .gp-se-name, .gp-se-qty { font-size: 16px; padding: 7px 8px; }
+  .gp-se-qty { width: 72px; }
+  .gp-stock-edit .gp-stock-pick svg { width: 19px; height: 19px; }
+  .gp-row .icon-btn.gp-se-ok { display: inline-flex; width: 34px; height: 34px; }
+  .gp-stock-chev svg { width: 17px; height: 17px; }
   .gp-stock-qty { width: 64px; }
   .gp-stock-name, .gp-stock-qty { font-size: 16px; }
   .gp-stock-pick .icon-btn { width: 34px; height: 34px; }
   .gp-stock-pick svg { width: 18px; height: 18px; }
   .gp-stock-left { font-size: 12.5px; }
-  .gp-row .gp-stock-move, .gp-row .gp-stock-rm { display: inline-flex; width: 32px; height: 32px; }
+  .isg-x { padding: 7px; opacity: .55; }
+  .isg-x svg { width: 15px; height: 15px; }
+  .gp-row .gp-stock-rm, .gp-row .gp-stock-pick .icon-btn { display: inline-flex; width: 32px; height: 32px; }
   .gp-row .gp-stock-rm { opacity: .55; }
-  .gp-stock-move svg, .gp-stock-rm svg { width: 17px; height: 17px; }
+  .gp-stock-rm svg { width: 17px; height: 17px; }
 }

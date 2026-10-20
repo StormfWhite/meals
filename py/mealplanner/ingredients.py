@@ -10,6 +10,7 @@ total yet.
 """
 from __future__ import annotations
 
+import datetime
 import re
 import uuid
 from typing import Optional
@@ -87,6 +88,7 @@ def add(name: str, category: str = "other", default_unit: str = "g",
         "manual_nutrients": manual_nutrients,
         "shop_list": shop_list if shop_list in (aisles.GROCERY, aisles.MARKET) else None,
         "shop_list_locked": bool(shop_list),
+        "created": datetime.date.today().isoformat(),     # how long it's had to be used (suggest.py)
     }
     data["ingredients"].append(ingredient)
     _save(data)
@@ -109,7 +111,7 @@ def update(ingredient_id: str, **fields) -> dict:
         raise KeyError(ingredient_id)
     for key in ("name", "fdc_id", "fdc_description", "default_unit", "unit_conversions",
                 "category", "store_section", "manual_nutrients", "shop_list", "freezes", "keep_days", "storage",
-                "nutrient_fill"):
+                "nutrient_fill", "hide_suggest"):
         if key in fields and fields[key] is not None:
             ing[key] = fields[key].strip() if key == "name" else fields[key]
     # Moving something between the two lists by hand is a decision, not a

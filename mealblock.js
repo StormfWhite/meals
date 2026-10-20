@@ -158,6 +158,12 @@ App.mealBlock = {
             .map(r => { const k = ingredientByName(r.name); return k ? k.id : null; })
             .filter(Boolean),
         }),
+        // × on a suggestion: a typo or a one-off goes away (deleted if nothing uses it)
+        onDelete: async (item) => {
+          const res = await App.api(`/api/ingredients/${item.id}/forget`, { method: "POST" });
+          if (res.deleted) host.ingredients.splice(host.ingredients.findIndex(i => i.id === item.id) >>> 0, 1);
+          App.toast(res.deleted ? `${item.name} deleted` : `${item.name} won't be suggested`);
+        },
         onPick: (item) => {
           // The usual amount is shown, never filled in -- a quantity nobody
           // typed must not reach the plan or the grocery list.
@@ -405,8 +411,12 @@ App.mealBlock = {
       }
 
       const rows = [];
-      for (const r of readRows()) {
+      const all = readRows();
+      for (const r of all) {
         if (!r.name) continue;
+        // half a word left behind ("frozen" beside "frozen dragonfruit pieces", no amount): not a line
+        const n = r.name.toLowerCase();
+        if (!r.amount.trim() && all.some(o => o !== r && o.name.toLowerCase().startsWith(n + " "))) continue;
         const amt = _mbParseAmount(r.amount);
         const known = ingredientByName(r.name);
         const unit = (amt && amt.unit) || (known && known.default_unit) || "g";

@@ -18,7 +18,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from mealplanner import (bangers, aisles, board, config, fdc, groceries, household, ingredients,
-                         learning, nutrition, places, prices, recipe_import, recipes, routines, stats, stock,
+                         catalog, learning, nutrition, places, prices, recipe_import, recipes, routines, stats, stock,
                          suggest)
 from mealplanner.paths import ensure_dirs
 
@@ -257,11 +257,31 @@ def create_ingredient(body: IngredientBody):
 
 @app.put("/api/ingredients/{ingredient_id}")
 def put_ingredient(ingredient_id: str, body: IngredientUpdateBody):
-    try:
-        ing = ingredients.update(ingredient_id, **body.model_dump(exclude_none=True))
-    except KeyError:
+    old = ingredients.get(ingredient_id)
+    if old is None:
         raise HTTPException(404, "no such ingredient")
+    # renamed to something already in the catalog ("makgo" -> "mango"): it IS that one
+    if body.name and body.name.strip().lower() != old["name"].strip().lower():
+        same = next((i for i in ingredients.list_ingredients()
+                     if i["id"] != ingredient_id and i["name"].strip().lower() == body.name.strip().lower()), None)
+        if same:
+            return {"ingredient": catalog.merge(ingredient_id, same["id"]), "merged": True}
+    ing = ingredients.update(ingredient_id, **body.model_dump(exclude_none=True))
+    if body.name and body.name.strip().lower() != old["name"].strip().lower() and not ing.get("manual_nutrients"):
+        # a corrected spelling is a different search: match it again (bannana -> banana)
+        try:
+            ing = ingredients.resolve_usda(ingredient_id, force=True) or ing
+        except Exception:
+            pass
     return {"ingredient": ing}
+
+
+@app.post("/api/ingredients/{ingredient_id}/forget")
+def forget_ingredient(ingredient_id: str):
+    """× on a suggestion: deleted if nothing uses it, else just no longer offered."""
+    if ingredients.get(ingredient_id) is None:
+        raise HTTPException(404, "no such ingredient")
+    return catalog.forget(ingredient_id)
 
 
 class ShopListBody(BaseModel):

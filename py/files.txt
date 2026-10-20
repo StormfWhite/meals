@@ -3,6 +3,7 @@ app/server.py
 mealplanner/aisles.py
 mealplanner/bangers.py
 mealplanner/board.py
+mealplanner/catalog.py
 mealplanner/config.py
 mealplanner/fdc.py
 mealplanner/groceries.py

@@ -41,6 +41,7 @@ from typing import Iterable, Optional
 from . import board, ingredients, recipes
 
 HALF_LIFE_DAYS = 60.0
+FADE_DAYS = 70             # not cooked in 10 weeks and not on a list: no longer offered unasked
 # Relative pull of each signal. `name` leads on purpose: "what do I put in
 # meals called roughly this" is the sharpest thing the history knows.
 # `list` sits above it: an ingredient already on the week's shopping list
@@ -202,12 +203,31 @@ def ingredients_for(q: str = "", meal: Optional[str] = None, meal_name: str = ""
     busiest = max(totals.values(), default=0.0) or 1.0
     partner_totals = {i: sum(row.values()) for i, row in partners.items()}
 
+    # when each was last cooked (a saved recipe never planned counts as not cooked)
+    last: dict[str, str] = {}
+    recipe_by_id = {r["id"]: r for r in recipes.list_recipes()}
+    for slot in board.all_slots_history():
+        recipe = recipe_by_id.get(slot["recipe_id"])
+        for item in (slot.get("ingredient_overrides") or (recipe or {}).get("ingredients") or []):
+            i = item.get("ingredient_id")
+            if i and slot["date"] > last.get(i, ""):
+                last[i] = slot["date"]
+    fade_before = (today - datetime.timedelta(days=FADE_DAYS)).isoformat()
+
     scored = []
     for ing in catalog:
         if ing["id"] in skip:
             continue
         bonus = _match_bonus(q, ing["name"])
         if bonus is None:
+            continue
+        typed_it = q.strip().lower() == ing["name"].strip().lower()
+        # × on it (until it's cooked again), or gone quiet: only when typed out in full
+        hidden = ing.get("hide_suggest") and last.get(ing["id"], "") <= ing["hide_suggest"]
+        # last cooked long ago -- or never, and made long ago (no date: an old one, kept)
+        seen = last.get(ing["id"]) or ing.get("created", "9999")
+        quiet = seen < fade_before and ing["id"] not in on_list
+        if (hidden or quiet) and not typed_it:
             continue
         rows = uses.get(ing["id"], [])
         # Square root, not the raw share: something eaten three mornings a

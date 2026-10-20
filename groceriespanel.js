@@ -40,8 +40,12 @@ const GP_PLUS = '<path d="M12 5v14M5 12h14"/>';
 const GP_DOWN = '<path d="m6 9 6 6 6-6"/>';
 const GP_AISLE = '<path d="M4 3v18M20 3v18"/><path d="M4 8h5M4 14h5M15 8h5M15 14h5"/>';
 const GP_SNOW = '<path d="M12 2v20M4.9 7l14.2 10M4.9 17 19.1 7"/><path d="m9 4 3 2 3-2M9 20l3-2 3 2"/>';
-const GP_PANTRY = '<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M4 10h16M10 6.5h4M10 14h4"/>';
+const GP_PANTRY = '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 4v16M9.5 11v2M14.5 11v2"/>';   // the whole pantry: a wide two-door cupboard
 const GP_FRIDGE = '<rect x="5" y="2" width="14" height="20" rx="2"/><path d="M5 10h14M9 5v2M9 13v3"/>';
+// dry goods: a jar with its lid -- nothing like the fridge's tall box
+const GP_DRY = '<path d="M8 2h8v3H8z"/><path d="M7 5h10l1 3v12a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V8z"/><path d="M6 11h12M6 17h12"/>';
+const GP_PLACES = { fridge: [GP_FRIDGE, "Fridge"], pantry: [GP_DRY, "Dry"], freezer: [GP_SNOW, "Freezer"] };
+const gpPlace = (where, cls = "") => `<span class="gp-place where-${where} ${cls}" title="${GP_PLACES[where][1]}">${App.icon(GP_PLACES[where][0])}</span>`;
 const GP_WARN = '<path d="M12 3 2 20h20Z"/><path d="M12 10v4M12 17h.01"/>';
 const GP_USUAL = '<path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"/><path d="M3 21v-5h5"/>';
 const gpPhone = () => window.matchMedia("(max-width: 760px)").matches;
@@ -124,6 +128,8 @@ App.groceriesPanel = {
     // replacing the field being typed in drops a phone's keyboard after every Enter, so the next
     // item couldn't just be typed.
     if (!container.querySelector(".gp-head")) this._frame();
+    const n = container.querySelector(".gp-stock-n"), low = this._stock.filter(i => i.low && !i.on_list).length;
+    if (n) n.innerHTML = this._stock.length ? `${this._stock.length}${low ? ` · <span class="warn">${low} low</span>` : ""}` : "";
 
     container.querySelector('[data-list="grocery"] .gp-head-slot').innerHTML =
       this._sectionHead("grocery", GP_CART, "Groceries", grocery, totals);
@@ -139,7 +145,7 @@ App.groceriesPanel = {
     });
     if (this._stockOpen) this._drawStock();
     const datalist = container.querySelector("#gp-ingredient-catalog");
-    if (datalist) datalist.innerHTML = ingredients.map(i => `<option value="${App.esc(i.name)}">`).join("");
+    if (datalist) datalist.innerHTML = ingredients.filter(i => !i.hide_suggest).map(i => `<option value="${App.esc(i.name)}">`).join("");
 
     const rowsOf = (id) => { const el = container.querySelector(id); el.innerHTML = ""; return el; };
     const groceryRows = rowsOf("#gp-grocery-rows");
@@ -199,24 +205,27 @@ App.groceriesPanel = {
         </div>
         <div class="gp-rows gp-sugs" id="gp-market-sugs"></div>
       </div>
-      <div class="gp-section gp-stock" hidden>
-        <div class="gp-section-head">
+      <div class="gp-section gp-stock${this._stockOpen ? " open" : ""}">
+        <button class="gp-section-head gp-stock-head" title="What's in the kitchen">
           <span class="field-label">${App.icon(GP_PANTRY)} Pantry</span>
-          <button class="icon-btn gp-stock-close" title="Close">${App.icon(GP_X)}</button>
-        </div>
+          <span class="gp-count dim num gp-stock-n"></span>
+          <span class="gp-stock-chev">${App.icon(GP_DOWN)}</span>
+        </button>
+        <div class="gp-stock-body"${this._stockOpen ? "" : " hidden"}>
         <div class="gp-rows" id="gp-stock-rows"></div>
         <div class="gp-add-row gp-stock-addrow">
           <input class="gp-stock-name" ${listAttr} placeholder="Add to pantry…" spellcheck="false" enterkeyhint="enter">
           <input class="gp-stock-qty" placeholder="qty" spellcheck="false" enterkeyhint="enter">
           <span class="gp-stock-pick">
-            <button class="icon-btn" data-where="fridge" title="Fridge">${App.icon(GP_FRIDGE)}</button>
-            <button class="icon-btn" data-where="pantry" title="Dry">${App.icon(GP_PANTRY)}</button>
-            <button class="icon-btn" data-where="freezer" title="Freezer">${App.icon(GP_SNOW)}</button>
+            <button class="icon-btn where-fridge" data-where="fridge" title="Fridge">${App.icon(GP_FRIDGE)}</button>
+            <button class="icon-btn where-pantry" data-where="pantry" title="Dry">${App.icon(GP_DRY)}</button>
+            <button class="icon-btn where-freezer" data-where="freezer" title="Freezer">${App.icon(GP_SNOW)}</button>
           </span>
+        </div>
         </div>
       </div>
     `;
-    container.querySelector(".gp-stock-close").addEventListener("click", () => this._toggleStock(false));
+    container.querySelector(".gp-stock-head").addEventListener("click", () => this._toggleStock());
     this._wireStockAdd();
     container.querySelectorAll(".gp-sug-toggle").forEach(btn => {
       btn.addEventListener("click", () => {
@@ -325,26 +334,29 @@ App.groceriesPanel = {
           <span class="gp-row-name">${App.esc(item.name)}</span>
           <span class="gp-row-need dim num">${App.esc(item.need_text || "")}${till}</span>
         </div>`);
-        row.addEventListener("click", () => this._toggleStock(true));
+        row.addEventListener("click", () => this._toggleStock(true, true));
         wrap.appendChild(row);
       });
     }
   },
 
   // ── Pantry: what's on hand -- running low, fridge, pantry, freezer (stock.py) ──
+  // the Pantry button: open it and bring it into view
   openPantry() {
     this._stockOpen = true;
-    if (this._container && this._container.querySelector(".gp-stock")) this._toggleStock(true);
+    if (this._container && this._container.querySelector(".gp-stock")) this._toggleStock(true, true);
   },
 
-  _toggleStock(open) {
+  // a section of the list like the other two, under the market: one click on its heading opens it
+  _toggleStock(open, scroll = false) {
     this._stockOpen = open === undefined ? !this._stockOpen : open;
     const sec = this._container.querySelector(".gp-stock");
-    sec.hidden = !this._stockOpen;
+    sec.classList.toggle("open", this._stockOpen);
+    sec.querySelector(".gp-stock-body").hidden = !this._stockOpen;
     if (this._stockOpen) {
       this._drawStock();
       this._loadStock();
-      requestAnimationFrame(() => sec.scrollIntoView({ block: "start", behavior: "smooth" }));
+      if (scroll) requestAnimationFrame(() => sec.scrollIntoView({ block: "start", behavior: "smooth" }));
     }
   },
 
@@ -408,61 +420,81 @@ App.groceriesPanel = {
     // this week's meals take some: what's left after them
     const left = (item) => item.uses_g > 0.5 && item.left_text      // "→ 0" says nothing "out this week" doesn't
       ? `<span class="gp-stock-left dim num" title="Left after this week's meals">→ ${App.esc(item.left_text || "0")}</span>` : "";
-    // the section icon moves it on: fridge → dry → freezer → fridge
-    const PLACES = { fridge: [GP_FRIDGE, "Fridge"], pantry: [GP_PANTRY, "Dry"], freezer: [GP_SNOW, "Freezer"] };
-    const NEXT = { fridge: "pantry", pantry: "freezer", freezer: "fridge" };
-    const controls = (el, item, frozen) => {
+    const rmBtn = `<button class="icon-btn gp-stock-rm" title="Remove (used up)">${App.icon(GP_X)}</button>`;
+    const keyOf = (item, frozen) => item.ingredient_id + (frozen ? ":f" : "");
+
+    // one click on a row: name, amount and place, all editable in the row itself
+    const editor = (item, frozen) => {
       const at = frozen ? "freezer" : item.where;
-      el.querySelector(".gp-stock-move").addEventListener("click", async () => {
-        const to = NEXT[at];
-        await App.api(`/api/stock/${this._weekStart}/${item.ingredient_id}/where`, { method: "PUT", body: { to, frozen } });
-        App.toast(`${item.name} → ${PLACES[to][1].toLowerCase()}`);
+      const text = frozen ? item.freezer_text : item.fridge_text;
+      let to = at;
+      const el = App.el(`<div class="gp-row gp-stock-row gp-stock-edit">
+        <input class="gp-se-name" value="${App.esc(item.name)}" spellcheck="false" enterkeyhint="done" title="Name">
+        <input class="gp-se-qty num" value="${App.esc(text)}" placeholder="qty" spellcheck="false" enterkeyhint="done" title="How much there is">
+        <span class="gp-stock-pick">${Object.keys(GP_PLACES).map(w =>
+          `<button class="icon-btn where-${w}${w === at ? " on" : ""}" data-where="${w}" title="${GP_PLACES[w][1]}">${App.icon(GP_PLACES[w][0])}</button>`).join("")}</span>
+        <button class="icon-btn gp-se-ok" title="Save">${App.icon('<path d="M20 6 9 17l-5-5"/>')}</button>
+      </div>`);
+      const nameIn = el.querySelector(".gp-se-name"), qtyIn = el.querySelector(".gp-se-qty");
+      el.querySelectorAll(".gp-stock-pick button").forEach(b => b.addEventListener("click", () => {
+        to = b.dataset.where;
+        el.querySelectorAll(".gp-stock-pick button").forEach(x => x.classList.toggle("on", x === b));
+      }));
+      const save = async () => {
+        this._stockEdit = null;
+        const name = nameIn.value.trim(), qty = qtyIn.value.trim();
+        try {
+          if (qty !== text) await App.api(`/api/stock/${wk}/${item.ingredient_id}`, { method: "PUT", body: { text: qty || "0", frozen } });
+          if (to !== at) await App.api(`/api/stock/${wk}/${item.ingredient_id}/where`, { method: "PUT", body: { to, frozen } });
+          if (name && name !== item.name) {
+            const res = await App.api(`/api/ingredients/${item.ingredient_id}`, { method: "PUT", body: { name } });
+            if (res.merged) App.toast(`Merged into ${res.ingredient.name}`);
+          }
+        } catch (e) { App.toast(`Couldn't save ${item.name}`); }
         this._reload();
+      };
+      const cancel = () => { this._stockEdit = null; this._drawStock(); };
+      el.querySelector(".gp-se-ok").addEventListener("click", save);
+      [nameIn, qtyIn].forEach(i => i.addEventListener("keydown", e => {
+        if (e.key === "Enter" || e.keyCode === 13) { e.preventDefault(); save(); }
+        else if (e.key === "Escape") cancel();
+      }));
+      requestAnimationFrame(() => { qtyIn.focus(); qtyIn.select(); });
+      return el;
+    };
+
+    const row = (item, frozen, extra = "") => {
+      if (this._stockEdit === keyOf(item, frozen)) return editor(item, frozen);
+      const text = frozen ? item.freezer_text : item.fridge_text;
+      const el = App.el(`<div class="gp-row gp-stock-row" title="Click to change the name, amount or place">
+        ${gpPlace(frozen ? "freezer" : item.where)}
+        <span class="gp-row-name">${App.esc(item.name)}</span>
+        <span class="gp-stock-amt num">${App.esc(text || "—")}</span>
+        ${frozen ? "" : left(item)}
+        ${when(item)}
+        ${extra}
+        ${rmBtn}
+      </div>`);
+      el.addEventListener("click", (e) => {
+        if (e.target.closest("button")) return;
+        this._stockEdit = keyOf(item, frozen);
+        this._drawStock();
       });
       el.querySelector(".gp-stock-rm").addEventListener("click", async () => {
         App.toast(`${item.name}: removed`); await put(item, { grams: 0, frozen });
       });
-    };
-    const moveBtn = (item, frozen) => {
-      const [icon, label] = PLACES[frozen ? "freezer" : item.where];
-      return `<button class="icon-btn gp-stock-move" title="${label} — tap to move it">${App.icon(icon)}</button>`;
-    };
-    const rmBtn = `<button class="icon-btn gp-stock-rm" title="Remove (used up)">${App.icon(GP_X)}</button>`;
-    const row = (item, frozen) => {
-      const text = frozen ? item.freezer_text : item.fridge_text;
-      const el = App.el(`<div class="gp-row gp-stock-row">
-        ${moveBtn(item, frozen)}
-        <span class="gp-row-name">${App.esc(item.name)}</span>
-        <input class="gp-row-qty num" value="${App.esc(text)}" placeholder="—" enterkeyhint="done" title="How much there really is">
-        ${frozen ? "" : left(item)}
-        ${when(item)}
-        ${rmBtn}
-      </div>`);
-      const inp = el.querySelector("input");
-      inp.addEventListener("change", () => { if (inp.value !== text) put(item, { text: inp.value || "0", frozen }); });
-      inp.addEventListener("keydown", e => { if (e.key === "Enter") inp.blur(); });
-      controls(el, item, frozen);
       return App.swipeAway(el, async () => { App.toast(`${item.name}: used up`); await put(item, { grams: 0, frozen }); });
     };
+
     // running low first: each one a tap from the list
     const low = items.filter(i => i.low);
     if (low.length) {
       head(GP_WARN, "Running low", "low");
       low.forEach(item => {
-        const total = _gpUs(item.fridge_g + item.freezer_g);
         const frozen = !(item.fridge_g > 0.5);
-        const el = App.el(`<div class="gp-row gp-stock-row">
-          ${moveBtn(item, frozen)}
-          <span class="gp-row-name">${App.esc(item.name)}</span>
-          <span class="gp-row-need dim num">${App.esc(total)}</span>
-          ${left(item)}
-          ${when(item)}
-          <button class="gp-stock-add${item.on_list ? " done" : ""}" ${item.on_list ? "disabled" : ""}>${item.on_list ? "on list" : "+ list"}</button>
-          ${rmBtn}
-        </div>`);
-        controls(el, item, frozen);
-        el.querySelector(".gp-stock-add").addEventListener("click", async () => {
-          await App.api(`/api/groceries/${this._weekStart}/extra`, { method: "POST", body: { ingredient_id: item.ingredient_id, qty: null } });
+        const el = row(item, frozen, `<button class="gp-stock-add${item.on_list ? " done" : ""}" ${item.on_list ? "disabled" : ""}>${item.on_list ? "on list" : "+ list"}</button>`);
+        el.querySelector(".gp-stock-add")?.addEventListener("click", async () => {
+          await App.api(`/api/groceries/${wk}/extra`, { method: "POST", body: { ingredient_id: item.ingredient_id, qty: null } });
           App.toast(`${item.name} on the list`);
           this._reload();
         });
@@ -470,15 +502,15 @@ App.groceriesPanel = {
       });
     }
     const rest = items.filter(i => !i.low);
-    [["fridge", GP_FRIDGE, "Fridge"], ["pantry", GP_PANTRY, "Dry"]].forEach(([where, icon, label]) => {
+    ["fridge", "pantry"].forEach(where => {
       const mine = rest.filter(i => i.where === where && i.fridge_g > 0.5);
       if (!mine.length) return;
-      head(icon, label);
+      head(GP_PLACES[where][0], GP_PLACES[where][1], "where-" + where);
       mine.forEach(i => wrap.appendChild(row(i, false)));
     });
     const frozen = rest.filter(i => i.freezer_g > 0.5);
     if (frozen.length) {
-      head(GP_SNOW, "Freezer");
+      head(GP_SNOW, "Freezer", "where-freezer");
       frozen.forEach(i => wrap.appendChild(row(i, true)));
     }
   },
