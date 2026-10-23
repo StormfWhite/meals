@@ -366,7 +366,7 @@ App.mealBlock = {
         // eaten from a batch put away (batches.py): tap to cook it fresh instead, and back
         const where = served ? served.where : "freezer";
         const btn = App.el(served
-          ? `<button class="mb-tag mb-served where-${where}" title="Its ingredients aren't on the list — tap to cook it fresh instead">${App.icon(GP_PLACES[where][0])}from the ${where} · ${_mbShortDay(served.made)}'s batch${served.left ? ` · ${served.left} left` : ""}</button>`
+          ? `<button class="mb-tag mb-served where-${where}" title="Its ingredients aren't on the list — tap to cook it fresh instead">${App.icon(GP_PLACES[where][0])}from the ${where}${served.from_key ? ` · ${_mbShortDay(served.made)}'s batch` : ""}${served.left ? ` · ${served.left} left` : ""}</button>`
           : `<button class="mb-tag mb-fresh" title="Tap to eat servings put away instead, when there are some">${App.icon(MB_FLAME)}cooking fresh</button>`);
         btn.addEventListener("click", async () => {
           try {

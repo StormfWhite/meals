@@ -159,6 +159,41 @@ def amount_g(ing: dict, text: str) -> Optional[float]:
     return nutrition.qty_to_grams(ing, float(m.group(1)), unit) or nutrition.qty_to_grams(ing, float(m.group(1)), "each")
 
 
+BLOCKS = re.compile(r"^\s*([\d.]+)\s*blocks?\b\s*(?:(?:of|x|×|@|,)\s*)?(.*)$", re.I)
+
+
+def block_g(ing: dict) -> Optional[float]:
+    """How much one frozen block of it is ("frozen in 1 lb blocks"), once it's been said."""
+    return (ing.get("unit_conversions") or {}).get("block")
+
+
+def blocks_text(ing: dict, grams: float) -> Optional[str]:
+    """ "3 blocks" for a freezer amount, when the ingredient is frozen in blocks."""
+    size = block_g(ing)
+    if not size or grams <= 0.5:
+        return None
+    n = round(grams / size * 2) / 2
+    return f"{n:g} block{'' if n == 1 else 's'}"
+
+
+def text_to_g(ing: dict, text: str) -> Optional[float]:
+    """What's typed in the Pantry -> grams. Besides "2 lb" and counts, frozen blocks (Storm
+    2026-10-22: "ingredients can be frozen and whole meal blocks"): "3 blocks of 1 lb" says how
+    big a block is and remembers it on the ingredient (unit "block", so a meal line can say
+    "1 block" too); "3 blocks" afterwards uses that."""
+    m = BLOCKS.match(text or "")
+    if m:
+        size = prices._parse_grams(m.group(2)) if m.group(2).strip() else None
+        if size:
+            conv = dict(ing.get("unit_conversions") or {})
+            if conv.get("block") != size:
+                conv["block"] = size
+                ingredients.update(ing["id"], unit_conversions=conv)
+        size = size or block_g(ing)
+        return float(m.group(1)) * size if size else None
+    return amount_g(ing, text)
+
+
 def add(ingredient_id: str, grams: float, week_start_iso: str, where: Optional[str] = None) -> None:
     """Put some in the pantry by hand: on top of what's already there. `where` is "fridge",
     "pantry" (dry) or "freezer"; fridge/pantry also becomes where that ingredient lives."""
@@ -550,7 +585,8 @@ class Ledger:
                     line["short_g"] += want
             for ing_id, line in lines.items():
                 line["from"] = {w: round(g, 1) for w, g in line["from"].items()}
-                line["from_text"] = {w: us_amount(g) for w, g in line["from"].items()}
+                line["from_text"] = {w: (w == "freezer" and blocks_text(self.ings[ing_id], g)) or us_amount(g)
+                                     for w, g in line["from"].items()}
                 if line["short_g"]:
                     line["list"] = self.list_of(week, ing_id)
                     line["bought"] = bool(items.get(ing_id, {}).get("checked"))
@@ -578,7 +614,7 @@ class Ledger:
             use_by = min((_add_days(l["since"], days) for l in fresh), default=None) if fresh and not freezes else None
             out.append({"ingredient_id": ing_id, "name": ing["name"], "where": storage(ing),
                         "fridge_g": round(fridge, 1), "freezer_g": round(frozen, 1),
-                        "fridge_text": us_amount(fridge), "freezer_text": us_amount(frozen),
+                        "fridge_text": us_amount(fridge), "freezer_text": blocks_text(ing, frozen) or us_amount(frozen),
                         "runs_out": look["runs_out"], "use_by": use_by,
                         # what this week's meals take, and what's left after them
                         "uses_g": round(max(0.0, fridge + frozen - look["left_g"]), 1),

@@ -912,6 +912,23 @@ class MealStockBody(BaseModel):
     n: float
 
 
+class MealStockAddBody(BaseModel):
+    recipe_id: str
+    n: float
+    where: str = "freezer"
+
+
+@app.post("/api/stock/{week}/meals")
+def add_meal_stock(week: str, body: MealStockAddBody):
+    """Whole meal blocks put away by hand -- "4 blocks of chili in the freezer"."""
+    if body.where not in batches.PLACES:
+        raise HTTPException(400, "fridge or freezer")
+    if recipes.get(body.recipe_id) is None:
+        raise HTTPException(404, "no such meal")
+    batches.add(body.recipe_id, body.where, body.n, week)
+    return {"items": stock.Ledger().on_hand(week), "meals": _meals_put_away(week)}
+
+
 @app.put("/api/stock/{week}/meals/{recipe_id}")
 def put_meal_stock(week: str, recipe_id: str, body: MealStockBody):
     """A correction to a meal put away: n servings left there (0 = eaten / thrown out)."""
@@ -941,9 +958,9 @@ def add_stock(week: str, body: StockAddBody):
         raise HTTPException(404, "no such ingredient")
     grams = body.grams
     if grams is None:
-        grams = stock.amount_g(ingredients.get(body.ingredient_id), body.text or "")
+        grams = stock.text_to_g(ingredients.get(body.ingredient_id), body.text or "")
     if not grams:
-        raise HTTPException(400, "how much?")
+        raise HTTPException(400, 'how much? ("3 blocks of 1 lb" the first time it\'s frozen in blocks)')
     stock.add(body.ingredient_id, grams, week, body.where)
     return {"items": stock.Ledger().on_hand(week)}
 
@@ -966,7 +983,8 @@ def put_stock(week: str, ingredient_id: str, body: StockBody):
     """A correction: there's actually this much (0 = used up)."""
     grams = body.grams
     if grams is None:
-        grams = prices._parse_grams(body.text or "") or 0.0
+        ing = ingredients.get(ingredient_id)
+        grams = (stock.text_to_g(ing, body.text or "") if ing else prices._parse_grams(body.text or "")) or 0.0
     stock.correct(ingredient_id, grams, week, body.frozen)
     return {"items": stock.Ledger().on_hand(week)}
 

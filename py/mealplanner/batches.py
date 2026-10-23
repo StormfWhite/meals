@@ -169,6 +169,12 @@ def _expire(lots: dict, date: str) -> None:
             lots.pop(rid)
 
 
+def add(recipe_id: str, where: str, n: float, date: str) -> None:
+    """Meal blocks put away by hand (the Pantry's add box): on top of what's already there."""
+    have = sum(m["n"] for m in shelf().put_away(date) if m["recipe_id"] == recipe_id and m["where"] == where)
+    correct(recipe_id, where, have + n, date)
+
+
 def correct(recipe_id: str, where: str, n: float, date: str) -> None:
     """"There are actually n servings of it in the fridge/freezer" from `date` on (0 = gone)."""
     if where not in PLACES:

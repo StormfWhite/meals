@@ -379,6 +379,17 @@ App.groceriesPanel = {
       try {
         const ings = this._ingredients || [];
         let match = ings.find(i => i.name.toLowerCase() === name.toLowerCase());
+        // a meal's name and a count ("chili 4", "4 blocks"): whole meal blocks put away (batches.py)
+        const meal = (App.plan && App.plan._recipes || []).find(r => r.name.toLowerCase() === name.toLowerCase());
+        const count = qty.match(/^\s*(\d+(?:\.\d+)?)\s*(?:blocks?|servings?|srv)?\s*$/i);
+        if (meal && count && (!match || /block|serv|srv/i.test(qty))) {
+          const at = where === "fridge" ? "fridge" : "freezer";
+          await App.api(`/api/stock/${this._weekStart}/meals`, { method: "POST", body: { recipe_id: meal.id, n: Number(count[1]), where: at } });
+          App.toast(`${meal.name}: ${count[1]} in the ${at}`);
+          if (App.plan && App.plan.refreshSources) App.plan.refreshSources();
+          this._reload();
+          return;
+        }
         if (!match) {
           match = (await App.api("/api/ingredients", { method: "POST", body: { name, default_unit: "g", resolve: false } })).ingredient;
           ings.push(match);
@@ -386,7 +397,7 @@ App.groceriesPanel = {
         }
         await App.api(`/api/stock/${this._weekStart}`, { method: "POST", body: { ingredient_id: match.id, text: qty, where } });
         App.toast(`${name}: ${qty} in the ${where === "freezer" ? "freezer" : where === "fridge" ? "fridge" : where === "pantry" ? "pantry" : "kitchen"}`);
-      } catch (e) { App.toast(`Couldn't add ${name} — try "8 oz" or "1 lb"`); }
+      } catch (e) { App.toast(`Couldn't add ${name} — try "8 oz", "1 lb" or "3 blocks of 1 lb"`); }
       this._reload();
     };
     [nameIn, qtyIn].forEach(i => i.addEventListener("keydown", e => { if (e.key === "Enter" || e.keyCode === 13) { e.preventDefault(); add(); } }));
@@ -509,7 +520,7 @@ App.groceriesPanel = {
         <span class="gp-place where-${m.where}">${App.icon(GP_MEAL)}</span>
         <span class="gp-row-name">${App.esc(m.name)}</span>
         <button class="icon-btn gp-meal-dn" title="One eaten">−</button>
-        <span class="gp-stock-amt num" title="servings">${m.n} srv</span>
+        <span class="gp-stock-amt num" title="${m.where === "freezer" ? "frozen meal blocks" : "servings"}">${m.n} ${m.where === "freezer" ? (m.n === 1 ? "block" : "blocks") : "srv"}</span>
         ${m.where === "fridge" || m.use_by <= soon ? `<span class="gp-stock-when${m.use_by <= soon ? " warn" : ""}" title="Won't keep past this">use by ${day(m.use_by)}</span>` : ""}
         ${rmBtn}
       </div>`);
@@ -841,7 +852,7 @@ App.groceriesPanel = {
 /* An amount typed into the name box, at either end: "grapes 2 lb" → ["grapes", "2 lb"],
  * "2 lb grapes" → same, "3 lemons" → ["lemons", "3"]. Kept as typed, never converted; a name
  * with no number at either end comes back whole. */
-const GP_UNITS = "cups?|c|tbsps?|tablespoons?|tsps?|teaspoons?|g|grams?|kg|oz|ounces?|lbs?|pounds?|ml|l|liters?|cans?|jars?|bags?|boxe?s?|packs?|packages?|bunch(?:es)?|heads?|dozen|doz|cartons?|bottles?|loaf|loaves|gal(?:lons?)?|qt|quarts?|pints?";
+const GP_UNITS = "blocks?|servings?|cups?|c|tbsps?|tablespoons?|tsps?|teaspoons?|g|grams?|kg|oz|ounces?|lbs?|pounds?|ml|l|liters?|cans?|jars?|bags?|boxe?s?|packs?|packages?|bunch(?:es)?|heads?|dozen|doz|cartons?|bottles?|loaf|loaves|gal(?:lons?)?|qt|quarts?|pints?";
 function _gpRange(week) {   // "Oct 25 – Oct 31", via plan.js's own formatter
   return typeof _planRange === "function" ? _planRange(week, _planShift(week, 6)) : week;
 }
