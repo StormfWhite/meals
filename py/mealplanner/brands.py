@@ -7,6 +7,11 @@ per 100 g, for a 35-kcal soda). So when an ingredient's name carries a brand, th
 is looked up: USDA's Branded Foods first (the label, per 100 g), then Open Food Facts (anything
 sold anywhere, crowd-sourced from labels).
 
+Before either of those: the label of the product the Kroger store matched (prices.py keeps it
+with the price), since that's the very thing bought. A brand-named ingredient takes it when the
+brand fits; any other only when its calories agree with the USDA match ("chickpeas" priced as a
+dry bag is not the canned chickpeas the meal means).
+
 A product counts only when its brand's words are all in the name ("olipop", "fage", "trader
 joe's") and the rest of the name fits its description (the flavour: "crisp apple"). Nothing is
 guessed beyond that: no brand in the name, no brand lookup.
@@ -152,6 +157,46 @@ def _food_words(name: str) -> set:
     return {_stem(w) for h in hits for w in _words(h["description"])} | _DESCRIPTIVE
 
 
+SAME_FOOD = (0.6, 1.67)     # a store label vs the USDA match, kcal per 100 g, for an unbranded name
+SAME_KIND = (0.4, 2.5)      # ...for a branded one: Fage 0% is still yogurt, Olipop is not apple crisp
+LOW_KCAL = 40               # under this both are "nearly nothing" (greens, a diet soda): ratios mean little
+
+
+def _close(a: float, b: float, band: tuple) -> bool:
+    if a < LOW_KCAL and b < LOW_KCAL:
+        return True
+    return b > 0 and band[0] <= a / b <= band[1]
+
+
+def _kroger(ing: dict, generic: Optional[dict]) -> Optional[dict]:
+    """The Kroger label of what the store matched for this ingredient, as a hit -- or None."""
+    from . import nutrition, prices
+    for lab in prices.kroger_label_for(ing["id"])[:1]:
+        serving = lab["serving"]
+        grams = serving.get("g") or nutrition.qty_to_grams(ing, serving["qty"], serving["unit"])
+        if not grams:
+            return None
+        per = {k: v * 100.0 / grams for k, v in lab["per_serving"].items()}
+        kcal = per.get("calories_kcal", 0.0)
+        if not 0 <= kcal <= 900 or per.get("protein_g", 0) > 100 or per.get("fiber_g", 0) > 100:
+            return None      # a serving size that can't be right
+        gk = (generic or {}).get("calories_kcal")
+        same = gk is not None and _close(kcal, gk, SAME_FOOD)
+        branded = bool(lab["brand"]) and _fit(ing["name"], lab["brand"], lab["description"]) is not None
+        if not (same or branded):
+            return None
+        listed = list(per)
+        return {"source": "kroger", "id": lab["upc"], "brand": lab["brand"],
+                "description": lab["description"].replace("®", "").replace("™", ""),
+                # USDA's category words drive the whole-food check (gaps.py); Kroger's aisle names don't
+                "food_category": (generic or {}).get("food_category") if same else (lab["categories"] or [""])[0],
+                "per100": {**{k: per.get(k, 0.0) for k in TOP},
+                           "vitamins": {k: v for k, v in per.items() if k not in TOP}},
+                "listed": listed, "portions": {"serving": round(grams, 2)},
+                "same": same or (gk is not None and _close(kcal, gk, SAME_KIND))}
+    return None
+
+
 def find(name: str, hint: Optional[str] = None, generic: str = "") -> Optional[dict]:
     """The product a branded name means, with its label per 100 g -- or None (no brand in the name,
     or nothing that fits). USDA's Branded Foods first, Open Food Facts after. `hint` is the exact
@@ -187,28 +232,35 @@ def store_label(ingredient_id: str) -> Optional[str]:
     return None
 
 
-def bind(ingredient_id: str) -> Optional[dict]:
-    """Look the ingredient up as a product, if its name names one; store the label on it.
-    Returns the updated ingredient, or None when it isn't a branded name."""
+def bind(ingredient_id: str, kroger_only: bool = False) -> Optional[dict]:
+    """Look the ingredient up as a product -- the store's label first, else by the brand its name
+    names; store the label on it. Returns the updated ingredient, or None when nothing fits.
+    `kroger_only` (a fresh price lookup): the store's label or nothing, no searching."""
     from . import ingredients
     ing = ingredients.get(ingredient_id)
     if ing is None:
         return None
-    hit = find(ing["name"], store_label(ingredient_id), ing.get("fdc_description") or "")
+    generic = fdc.get_nutrients(ing["fdc_id"]) if ing.get("fdc_id") else None
+    hit = _kroger(ing, generic)
+    if hit is None and kroger_only:
+        return None
+    if hit is None:
+        hit = find(ing["name"], store_label(ingredient_id), ing.get("fdc_description") or "")
     if hit is None:
         return None
     fields: dict = {"brand": {k: hit[k] for k in ("source", "id", "brand", "description", "food_category",
                                                    "per100", "listed")}}
-    generic = fdc.get_nutrients(ing["fdc_id"]) if ing.get("fdc_id") else None
-    same_kind = bool(generic) and fdc.category_for(generic.get("food_category") or "") == \
-        fdc.category_for(hit["food_category"]) != "other"
+    same_kind = bool(generic) and (hit.get("same") or fdc.category_for(generic.get("food_category") or "")
+                                   == fdc.category_for(hit["food_category"]) != "other")
     portions = dict(hit.get("portions") or {})
     if same_kind:
         fields["unit_conversions"] = {**(ing.get("unit_conversions") or {}), **portions}
     else:
-        # the generic match was some other food (the dessert, for a soda): its numbers and its cup go
+        # the generic match was some other food (the dessert, for a soda): its numbers and its cup
+        # go -- a can measured off an earlier label stays
+        earlier = (ing.get("unit_conversions") or {}) if ing.get("brand") else {}
         fields.update({"fdc_id": None, "fdc_description": None, "nutrient_fill": {},
-                       "unit_conversions": portions})
+                       "unit_conversions": {**earlier, **portions}})
     data = ingredients._load()
     row = next(i for i in data["ingredients"] if i["id"] == ingredient_id)
     block = (row.get("unit_conversions") or {}).get("block")

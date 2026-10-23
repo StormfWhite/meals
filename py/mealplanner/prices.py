@@ -64,7 +64,8 @@ def _store_key(shop: Optional[dict]) -> str:
 def remember(ingredient_id: str, shop: Optional[dict], price: float,
              package_g: Optional[float] = None, label: str = "",
              source: str = "typed", aisle: Optional[dict] = None,
-             options: Optional[list] = None) -> dict:
+             options: Optional[list] = None, nutrition: Optional[dict] = None,
+             with_nutrition: bool = False) -> dict:
     data = _load()
     per_store = data["prices"].setdefault(_store_key(shop), {})
     entry = {
@@ -77,6 +78,8 @@ def remember(ingredient_id: str, shop: Optional[dict], price: float,
     }
     if options is not None:
         entry["options"] = options
+    if with_nutrition:
+        entry["nutrition"] = nutrition      # None too: "Kroger has no label for it", not asked again
     per_store[ingredient_id] = entry
     _save(data)
     return entry
@@ -200,6 +203,56 @@ def _parse_grams(size: str) -> Optional[float]:
     return qty
 
 
+# The Nutrition Facts panel Kroger sends with a product (2026-10-23: "yes use that"). Codes are
+# GS1's; the units come with each value and are sometimes wrong (tofu's iron "in grams"), so every
+# value is converted by its own unit and one in a unit we don't know is left out.
+LABEL_CODES = {"ENER-": "calories_kcal", "PRO-": "protein_g", "PROTPL": "protein_g", "FIBTSW": "fiber_g",
+               "FIBTG": "fiber_g", "K": "potassium_mg", "MG": "magnesium_mg", "CA": "calcium_mg",
+               "FE": "iron_mg", "ZN": "zinc_mg", "VITC": "vitamin_c_mg", "VITA": "vitamin_a_mcg",
+               "VITD": "vitamin_d_mcg", "VITB12": "b12_mcg", "FOLDFE": "folate_mcg", "FOL": "folate_mcg"}
+LABEL_UNIT_G = {"GRM": 1.0, "MGM": 1e-3, "MC": 1e-6, "MCG": 1e-6}
+OURS_PER_G = {"_g": 1.0, "_mg": 1e3, "_mcg": 1e6}
+SERVING_G = {"GRM": 1.0, "MLT": 1.0, "OZA": 29.5735, "FO": 29.5735, "ONZ": 28.3495}   # a drink is ~1 g per ml
+SERVING_UNITS = {"G21": "cup", "G24": "tbsp", "G25": "tsp", "EA": "each"}
+
+
+def _kroger_label(product: dict, package_g: Optional[float]) -> Optional[dict]:
+    """The product's label as {brand, description, upc, categories, serving: {qty, unit, g}, per_serving}.
+    `g` is None when the serving is only in cups/each and the package doesn't say how many --
+    brands.py then weighs it with the ingredient's own cup. None = no usable label."""
+    best = None
+    for panel in product.get("nutritionInformation") or []:
+        vals: dict = {}
+        for n in panel.get("nutrients") or []:
+            ours, qty = LABEL_CODES.get(n.get("code")), n.get("quantity")
+            unit = (n.get("unitOfMeasure") or {}).get("code")
+            if ours is None or qty is None or ours in vals:
+                continue
+            if ours == "calories_kcal":
+                vals[ours] = float(qty) / 4.184 if unit == "KJO" else float(qty)
+            elif unit in LABEL_UNIT_G:
+                suffix = ours[ours.rfind("_"):]
+                vals[ours] = float(qty) * LABEL_UNIT_G[unit] * OURS_PER_G[suffix]
+        if "calories_kcal" in vals and (best is None or len(vals) > len(best[0])):
+            best = (vals, panel)
+    if best is None:
+        return None
+    vals, panel = best
+    size = panel.get("servingSize") or {}
+    qty, unit = size.get("quantity"), (size.get("unitOfMeasure") or {}).get("code")
+    if not qty:
+        return None
+    grams = qty * SERVING_G[unit] if unit in SERVING_G else None
+    per_pack = (panel.get("servingsPerPackage") or {}).get("value")
+    if grams is None and package_g and per_pack:
+        grams = package_g / float(per_pack)
+    return {"brand": product.get("brand") or "", "description": product.get("description") or "",
+            "upc": product.get("upc") or product.get("productId"),
+            "categories": product.get("categories") or [],
+            "serving": {"qty": float(qty), "unit": SERVING_UNITS.get(unit, unit), "g": grams},
+            "per_serving": vals}
+
+
 # Not food -- a search for "hemp seeds" ranked an Epsom-salt soak (Personal Care) next to Hemp
 # Hearts, "cashew butter" found a baby-food pouch (2026-10-18).
 NON_FOOD = {"personal care", "health & beauty", "beauty", "baby", "pet care", "pet", "cleaning products",
@@ -247,12 +300,14 @@ def kroger_price(name: str, location_id: str) -> Optional[dict]:
             continue
         words = {_stem(w) for w in product.get("description", "").split()}
         hits = len(want & words)
+        package_g = _parse_grams(item.get("size", ""))
         ranked.append(((hits < len(want), -hits, rank), {
             "price": round(float(price), 2),
             "label": f"{product.get('description', '')} · {item.get('size', '')}".strip(" ·"),
-            "package_g": _parse_grams(item.get("size", "")),
+            "package_g": package_g,
             **_aisle(product.get("aisleLocations") or []),
             "source": "kroger",
+            "nutrition": _kroger_label(product, package_g),
         }))
     if not ranked:
         return None
@@ -284,7 +339,8 @@ def price_for(ingredient: dict, shop: Optional[dict], allow_network: bool = True
     known = remembered(ingredient["id"], shop)
     fresh_enough = known and (known.get("source") != "kroger"
                               or (time.time() - known.get("updated_at", 0) < LIVE_TTL
-                                  and "aisle_num" in known and "options" in known))   # saved before those were kept
+                                  and "aisle_num" in known and "options" in known
+                                  and "nutrition" in known))   # saved before those were kept
     if known and fresh_enough:
         return _aged(known)
     if not allow_network or not shop or chain_of(shop) != "kroger" or not kroger_configured():
@@ -297,8 +353,27 @@ def price_for(ingredient: dict, shop: Optional[dict], allow_network: bool = True
     entry = remember(ingredient["id"], shop, live["price"], live.get("package_g"),
                      live.get("label", ""), source="kroger",
                      aisle={k: live.get(k) for k in ("aisle", "aisle_num", "aisle_bay")},
-                     options=live.get("options", []))
+                     options=live.get("options", []), nutrition=live.get("nutrition"), with_nutrition=True)
+    if live.get("nutrition"):
+        _bind_label(ingredient)
     return {**entry, "age_days": 0}
+
+
+def _bind_label(ingredient: dict) -> None:
+    """A new label from the store: the ingredient takes it when it passes brands.py's checks."""
+    from . import brands
+    try:
+        brands.bind(ingredient["id"], kroger_only=True)
+    except Exception:
+        pass       # a label is a bonus on a price lookup, never a reason for one to fail
+
+
+def kroger_label_for(ingredient_id: str) -> list[dict]:
+    """Kroger labels of what the stores matched for this ingredient, newest first."""
+    rows = [r[ingredient_id] for r in _load().get("prices", {}).values()
+            if ingredient_id in r and r[ingredient_id].get("nutrition")]
+    rows.sort(key=lambda r: -(r.get("updated_at") or 0))
+    return [{**r["nutrition"], "package_g": r.get("package_g")} for r in rows]
 
 
 def _aged(entry: Optional[dict]) -> Optional[dict]:
