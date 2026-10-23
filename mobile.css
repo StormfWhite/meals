@@ -116,3 +116,11 @@ body.offline #topbar::after { content: "offline · saved on this phone"; font-si
 /* where the line comes from: in front of the name, like a bullet -- not a line of its own */
 @media (max-width: 760px) { .is-day .mb-from { order: -1; margin-right: 2px; } .is-day .mb-from svg { width: 14px; height: 14px; }
   .is-day .mb-row .mb-ing { flex: 1 1 0; } }
+
+/* the day's "low" suggestions (plan.js _paintGaps): a + the size of its icon, what a food adds under its name */
+@media (max-width: 760px) {
+  .dg-buy.icon-btn { width: 26px; height: 24px; }
+  .is-day .dg-row { flex-wrap: wrap; row-gap: 0; }
+  .is-day .dg-name { white-space: normal; min-width: 0; }
+  .is-day .dg-helps { flex: 1 0 100%; flex-wrap: wrap; gap: 0 8px; padding-left: 32px; }
+}

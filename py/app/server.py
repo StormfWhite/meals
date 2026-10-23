@@ -750,7 +750,11 @@ def link_leftover_group(week: str, body: LinkBody):
 # ── nutrition dashboard ──────────────────────────────────────────────────
 
 def _member_view(totals: dict, member: dict) -> dict:
-    return {"member": member, "totals": totals, "status": nutrition.status_report(totals, member["targets"])}
+    """The meals are shared: a member's day is their share of every pot (household.share)."""
+    s = household.share(member)
+    mine = {k: v * s for k, v in totals.items() if k != "vitamins"}
+    mine["vitamins"] = {k: v * s for k, v in (totals.get("vitamins") or {}).items()}
+    return {"member": member, "totals": mine, "status": nutrition.status_report(mine, member["targets"])}
 
 
 @app.get("/api/nutrition/day")

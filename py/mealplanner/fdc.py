@@ -45,8 +45,9 @@ NUTRIENT_IDS = {
 }
 # bumped when what's read out of a USDA record changes: older cached records are read again
 # (2: Atwater kcal for Foundation foods, survey foods' "1 cup" portions; 3: `missing`;
-# 4: potassium/magnesium/vitamin D/B12/folate/zinc for the day's "low" check, gaps.py)
-NORMALIZED_V = 4
+# 4: potassium/magnesium/vitamin D/B12/folate/zinc for the day's "low" check, gaps.py;
+# 5: `missing` covers those too -- Foundation yogurt lists no B12, filled from another record)
+NORMALIZED_V = 5
 OLDEST_USABLE_V = 3   # nutrition still right, just fewer vitamins: served when it can't be fetched again
 VITAMIN_IDS = {
     1162: "vitamin_c_mg",
@@ -267,6 +268,7 @@ def _normalize(food: dict) -> dict:
     # what the record doesn't list at all (not "0") -- filled from another record of the same food
     listed = {(n.get("nutrient") or {}).get("id") or n.get("nutrientId") for n in food.get("foodNutrients", [])}
     out["missing"] = [k for nid, k in NUTRIENT_IDS.items() if nid not in listed and not out[k]]
+    out["missing"] += [k for nid, k in VITAMIN_IDS.items() if nid not in listed and k not in out["vitamins"]]
     out["v"] = NORMALIZED_V
     out["description"] = food.get("description", "")
     out["food_category"] = _category_name(food)

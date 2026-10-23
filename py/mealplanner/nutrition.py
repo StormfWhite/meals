@@ -36,8 +36,12 @@ def nutrients_per_100g(ingredient: dict) -> Optional[dict]:
     by a guess someone typed in before the ingredient was bound to FDC."""
     food = _fdc_nutrients(ingredient.get("fdc_id"))
     if food and ingredient.get("nutrient_fill"):
-        # a gap in the record (Foundation chia lists no fiber) taken from another record of it
-        food = {**food, **{k: v for k, v in ingredient["nutrient_fill"].items() if k in food.get("missing", [])}}
+        # a gap in the record (Foundation chia lists no fiber, Foundation yogurt no B12) taken
+        # from another record of it; vitamins and minerals sit under "vitamins"
+        fill = {k: v for k, v in ingredient["nutrient_fill"].items() if k in food.get("missing", [])}
+        vit = {k: v for k, v in fill.items() if k not in NUTRIENT_KEYS}
+        food = {**food, **{k: v for k, v in fill.items() if k in NUTRIENT_KEYS},
+                "vitamins": {**(food.get("vitamins") or {}), **vit}}
     return food or ingredient.get("manual_nutrients")
 
 

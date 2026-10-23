@@ -20,6 +20,23 @@ DEFAULT_TARGETS = {
 }
 
 
+# Per kg of body weight: protein 1.2 g (above the 0.8 floor, below the 1.6 of hard training),
+# about 32 kcal (a moderately active adult -- only an estimate without height/age), and fiber
+# 14 g per 1000 kcal. Vitamins and minerals don't scale with weight: gaps.NUTRIENTS' adult ones.
+PROTEIN_G_PER_KG = 1.2
+KCAL_PER_KG = 32
+LB = 0.45359237
+
+
+def targets_for_weight(weight_lb: float) -> dict:
+    kg = weight_lb * LB
+    kcal = round(kg * KCAL_PER_KG / 10) * 10
+    from .gaps import NUTRIENTS, TOP_LEVEL   # gaps imports this module
+    return {"calories_kcal": kcal, "protein_g": round(kg * PROTEIN_G_PER_KG),
+            "fiber_g": round(kcal / 1000 * 14),
+            "vitamins": {k: v for k, _, _, v in NUTRIENTS if k not in TOP_LEVEL}}
+
+
 def _load() -> dict:
     return store.load(HOUSEHOLD_FILE, {"members": []})
 
@@ -36,14 +53,16 @@ def get_member(member_id: str) -> Optional[dict]:
     return next((m for m in list_members() if m["id"] == member_id), None)
 
 
-def add_member(name: str, targets: Optional[dict] = None) -> dict:
+def add_member(name: str, targets: Optional[dict] = None, weight_lb: Optional[float] = None) -> dict:
     data = _load()
     member = {
         "id": "m_" + uuid.uuid4().hex[:8],
         "name": name.strip(),
-        "targets": {**DEFAULT_TARGETS, **(targets or {})},
+        "targets": {**DEFAULT_TARGETS, **(targets_for_weight(weight_lb) if weight_lb else {}), **(targets or {})},
         "active": True,
     }
+    if weight_lb:
+        member["weight_lb"] = weight_lb
     data["members"].append(member)
     _save(data)
     return member
@@ -70,6 +89,11 @@ def delete_member(member_id: str) -> bool:
     data["members"] = [m for m in data["members"] if m["id"] != member_id]
     _save(data)
     return len(data["members"]) < before
+
+
+def share(member: dict) -> float:
+    """How much of each shared meal this member eats: their own `share`, else an even split."""
+    return float(member.get("share") or 1.0 / max(1, active_count()))
 
 
 def active_count() -> int:

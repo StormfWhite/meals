@@ -226,6 +226,7 @@ svg.icon { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-w
 .day-gaps { flex: 1 0 100%; min-width: 0; display: flex; flex-direction: column; gap: 2px; padding-top: 4px; border-top: 1px solid var(--border); }
 .dg-lows { display: flex; flex-wrap: wrap; gap: 3px 12px; padding-bottom: 3px; }
 .dg-low { display: inline-flex; align-items: center; gap: 5px; font-size: 10.5px; color: var(--text-dim); }
+.dg-who { font-size: 9.5px; padding: 0 4px; border-radius: 6px; background: var(--border); color: var(--text); }
 .dg-low .num { color: var(--warn); font-weight: 650; }
 .dg-bar { width: 34px; height: 4px; border-radius: 2px; background: var(--border); overflow: hidden; }
 .dg-bar i { display: block; height: 100%; background: var(--warn); }
@@ -238,7 +239,7 @@ svg.icon { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-w
 .dg-mark { color: var(--text-dim); }
 .dg-buy { color: var(--accent); }
 .dg-mark.here { color: var(--good); }
-.dg-name { font-weight: 600; white-space: nowrap; }
+.dg-name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 0 1 auto; }
 .dg-por { color: var(--text-dim); white-space: nowrap; }
 .dg-helps { display: flex; gap: 8px; min-width: 0; overflow: hidden; color: var(--good); font-size: 10.5px; }
 .dg-help { white-space: nowrap; }

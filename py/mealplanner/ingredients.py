@@ -241,7 +241,8 @@ def fill_portions(ingredient_id: str) -> Optional[dict]:
         portions = _kitchen_portions(food)
         if need_portions and portions and "unit_conversions" not in fields:
             fields["unit_conversions"] = portions
-        got = {k: food[k] for k in missing if k not in food.get("missing", []) and food.get(k)}
+        value = lambda k: food.get(k) if k in food else (food.get("vitamins") or {}).get(k)
+        got = {k: value(k) for k in missing if k not in food.get("missing", []) and value(k)}
         if got:
             fields["nutrient_fill"] = {**(ing.get("nutrient_fill") or {}), **fields.get("nutrient_fill", {}), **got}
             missing = [k for k in missing if k not in got]

@@ -417,11 +417,12 @@ App.plan = {
       if (day && day.judged) { chip.hidden = false; chip.className = "day-low ok"; chip.innerHTML = `${App.icon('<path d="M20 6 9 17l-5-5"/>')}`; chip.title = "Nothing low today"; }
       return;
     }
-    const names = day.low.map(l => l.label);
+    const whoText = (l) => l.who && l.who.length ? ` (${l.who.join(", ")})` : "";
+    const names = day.low.map(l => l.label + whoText(l));
     chip.hidden = false;
     chip.className = "day-low";
     chip.innerHTML = `${App.icon(GP_WARN)}<span>${this._isWeekMode() ? `${names.length} low` : `Low: ${App.esc(names.slice(0, 4).join(" · "))}${names.length > 4 ? ` +${names.length - 4}` : ""}`}</span>`;
-    chip.title = day.low.map(l => `${l.label}: ${l.have} of ${l.target} ${l.unit} (${l.pct}%)`).join("\n");
+    chip.title = day.low.map(l => `${l.label}${whoText(l)}: ${l.have} of ${l.target} ${l.unit} (${l.pct}%)`).join("\n");
     const helps = (c) => c.helps.map(h => `<span class="dg-help">+${h.amount}${h.unit === "g" ? "g" : " " + h.unit} ${App.esc(h.label)}</span>`).join("");
     const row = (c, kind) => `
       <div class="dg-row" data-name="${App.esc(c.name)}">
@@ -432,7 +433,7 @@ App.plan = {
       </div>`;
     box.innerHTML = `
       <div class="dg-lows">${day.low.map(l => `
-        <span class="dg-low" title="${l.have} of ${l.target} ${l.unit}"><span>${App.esc(l.label)}</span><span class="dg-bar"><i style="width:${Math.min(100, l.pct)}%"></i></span><span class="num">${l.pct}%</span></span>`).join("")}</div>
+        <span class="dg-low" title="${l.have} of ${l.target} ${l.unit}${App.esc(whoText(l))}"><span>${App.esc(l.label)}${l.who && l.who.length ? ` <span class="dg-who">${App.esc(l.who.join(", "))}</span>` : ""}</span><span class="dg-bar"><i style="width:${Math.min(100, l.pct)}%"></i></span><span class="num">${l.pct}%</span></span>`).join("")}</div>
       ${day.have.length ? `<div class="dg-head">${App.icon(GP_PANTRY)}<span>Already buy</span></div>${day.have.map(c => row(c, "have")).join("")}` : ""}
       ${day.buy.length ? `<div class="dg-head">${App.icon(GP_CART)}<span>Could buy</span></div>${day.buy.map(c => row(c, "buy")).join("")}` : ""}`;
     box.querySelectorAll(".dg-buy").forEach(btn => btn.addEventListener("click", async () => {
