@@ -42,6 +42,10 @@ def nutrients_per_100g(ingredient: dict) -> Optional[dict]:
         vit = {k: v for k, v in fill.items() if k not in NUTRIENT_KEYS}
         food = {**food, **{k: v for k, v in fill.items() if k in NUTRIENT_KEYS},
                 "vitamins": {**(food.get("vitamins") or {}), **vit}}
+    if ingredient.get("brand"):
+        # a name-brand product: its own label, the generic match only filling what that leaves out
+        from . import brands
+        return brands.per100(ingredient, food)
     return food or ingredient.get("manual_nutrients")
 
 

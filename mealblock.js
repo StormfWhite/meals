@@ -62,7 +62,7 @@ App.mealBlock = {
           <button class="icon-btn mb-source" title="Recipe: a link or a cookbook photo">${App.icon(MB_BOOK)}</button>
           <button class="icon-btn mb-banger" title="Add to Bangers">${App.icon(MB_STAR)}</button>
           <button class="icon-btn mb-repeat" title="Repeat this meal every week">${App.icon(MB_REPEAT)}</button>
-          <button class="icon-btn mb-clear" title="Clear this meal">${App.icon('<path d="M18 6 6 18M6 6l12 12"/>')}</button>
+          <button class="icon-btn mb-clear" title="${index ? "Remove this meal" : "Clear this meal"}">${App.icon('<path d="M18 6 6 18M6 6l12 12"/>')}</button>
         </div>
         <div class="mb-link"></div>
         <div class="mb-rows"></div>
@@ -308,12 +308,19 @@ App.mealBlock = {
       focusField(next, ".mb-ing");
     };
 
+    /* One empty line per meal, always at the end (Storm 2026-10-23: "auto remove extra
+     * ingredients slots that are empty and have no more than one empty slot at a time"). The
+     * line being typed in is the exception: emptied on purpose, it stays until focus leaves it,
+     * and while it's there it is the one empty line. */
     const ensureBlankRow = () => {
-      const last = rowsWrap.lastElementChild;
-      const lastIsBlank = last && !last.querySelector(".mb-ing").value.trim()
-        && !last.querySelector(".mb-amt").value.trim() && !last.querySelector(".mb-note").value.trim();
-      if (!lastIsBlank) rowsWrap.appendChild(makeRow(null));
+      const rows = Array.from(rowsWrap.children);
+      const focused = rows.find(r => r.contains(document.activeElement));
+      const last = rows[rows.length - 1];
+      const keep = focused && rowIsBlank(focused) ? focused : (last && rowIsBlank(last) ? last : null);
+      rows.forEach(r => { if (r !== keep && rowIsBlank(r)) r.remove(); });
+      if (!keep) rowsWrap.appendChild(makeRow(null));
     };
+    rowsWrap.addEventListener("focusout", () => setTimeout(ensureBlankRow, 0));
 
     const drawRows = (list) => {
       rowsWrap.innerHTML = "";
@@ -720,7 +727,7 @@ App.mealBlock = {
     el.addEventListener("input", (e) => {
       markDirty();
       if (e.target.classList.contains("mb-ing") || e.target.classList.contains("mb-amt")) {
-        if (e.target.closest(".mb-row") === rowsWrap.lastElementChild) ensureBlankRow();
+        ensureBlankRow();
         schedulePreview();
       }
       if (e.target === nameInput) {
@@ -750,6 +757,8 @@ App.mealBlock = {
       nameInput.value = "";
       markDirty();
       await commit().catch(err => App.toast(err.message));
+      // an extra ("Also") meal goes away entirely -- breakfast, lunch and dinner each keep one block
+      if (index) { el.remove(); host.removeBlock(key); return; }
       matchedRecipe = null;
       ownRecipe = false;
       servInput.value = 1;

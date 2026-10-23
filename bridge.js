@@ -365,7 +365,7 @@ async def _call(method, path, body):
   async function resolveInBackground(path, body) {
     const fdc = py.pyimport("mealplanner.fdc");
     const url = path + (path.includes("?") ? "&" : "?") + "js_fetch=true";
-    for (let round = 0; round < 8; round++) {
+    for (let round = 0; round < 14; round++) {   // generic match + its fill + a brand lookup (brands.py)
       const res = await serial(async () => (await call("POST", url, body)).toJs());
       if (res[0] !== 202) {
         if (res[0] < 300) { pending.push({ method: "POST", path, body }); schedulePush(); }

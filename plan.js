@@ -175,6 +175,7 @@ App.plan = {
         self.refreshSources();
       },
       onStatsChanged: () => self._paintDayTotals(),
+      removeBlock: (key) => { self._blocks = self._blocks.filter(b => b.key !== key); self._paintDayTotals(); },
       listWeek: () => self._listWeek,
       reloadWeek: () => self.render(document.getElementById("body")),
       fillWeek: (fromKey, recipeId, meal, servings) => self._fillWeek(fromKey, recipeId, meal, servings),

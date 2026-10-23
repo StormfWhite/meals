@@ -4,6 +4,7 @@ mealplanner/aisles.py
 mealplanner/bangers.py
 mealplanner/batches.py
 mealplanner/board.py
+mealplanner/brands.py
 mealplanner/catalog.py
 mealplanner/config.py
 mealplanner/fdc.py

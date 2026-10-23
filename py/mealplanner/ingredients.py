@@ -112,7 +112,7 @@ def update(ingredient_id: str, **fields) -> dict:
     old_block = (ing.get("unit_conversions") or {}).get("block")
     for key in ("name", "fdc_id", "fdc_description", "default_unit", "unit_conversions",
                 "category", "store_section", "manual_nutrients", "shop_list", "freezes", "keep_days", "storage",
-                "nutrient_fill", "hide_suggest"):
+                "nutrient_fill", "hide_suggest", "brand"):
         if key in fields and fields[key] is not None:
             ing[key] = fields[key].strip() if key == "name" else fields[key]
     # a block size said in the Pantry ("frozen in 1 lb blocks", stock.text_to_g) outlives a USDA
@@ -273,7 +273,7 @@ def resolve_usda(ingredient_id: str, force: bool = False) -> Optional[dict]:
         if match is not None:
             break
     if match is None:
-        return _resolve_blend(ingredient_id, ing)
+        return _with_brand(ingredient_id) or _resolve_blend(ingredient_id, ing)
 
     fields: dict = {"fdc_id": match["fdc_id"], "fdc_description": match["description"]}
     category = fdc.category_for(match.get("food_category", ""))
@@ -303,7 +303,19 @@ def resolve_usda(ingredient_id: str, force: bool = False) -> Optional[dict]:
     if not updated.get("shop_list_locked"):
         updated = update(ingredient_id, shop_list=aisles.classify(updated["name"], updated["category"]),
                          lock_shop_list=False)
-    return fill_portions(ingredient_id) or updated
+    filled = fill_portions(ingredient_id) or updated
+    return _with_brand(ingredient_id) or filled
+
+
+def _with_brand(ingredient_id: str) -> Optional[dict]:
+    """A name that names a product ("Crisp apple olipop") gets that product's label (brands.py)."""
+    from . import brands, fdc
+    try:
+        return brands.bind(ingredient_id)
+    except fdc.NeedFetch:
+        raise
+    except Exception:
+        return None
 
 
 def humanize_grams(ingredient: dict, grams: float) -> str:

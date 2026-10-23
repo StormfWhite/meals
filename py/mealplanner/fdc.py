@@ -98,16 +98,21 @@ def _get(path: str, params: dict) -> Optional[dict]:
     key = config.get("usda_fdc_api_key")
     if not key:
         return None
-    params = {**params, "api_key": key}
+    return get_json(f"{BASE}{path}", {**params, "api_key": key})
+
+
+def get_json(url: str, params: dict, headers: Optional[dict] = None) -> dict:
+    """One GET, through the page on the phone (JS_RESPONSES / NeedFetch) -- USDA and Open Food
+    Facts (brands.py) alike."""
     if JS_RESPONSES is not None:
-        url = requests.Request("GET", f"{BASE}{path}", params=params).prepare().url
+        url = requests.Request("GET", url, params=params).prepare().url
         if url not in JS_RESPONSES:
             raise NeedFetch(url)
         status, text = JS_RESPONSES[url]
         if status >= 400:
-            raise requests.HTTPError(f"{status} for {path}")
+            raise requests.HTTPError(f"{status} for {url.split('?')[0]}")
         return json.loads(text)
-    resp = requests.get(f"{BASE}{path}", params=params, timeout=15)
+    resp = requests.get(url, params=params, timeout=15, **({"headers": headers} if headers else {}))
     resp.raise_for_status()
     return resp.json()
 
@@ -158,6 +163,33 @@ def search(query: str) -> list[dict]:
             conn.execute("INSERT OR REPLACE INTO fdc_search (query, results, fetched_at) VALUES (?, ?, ?)",
                          (key, json.dumps(results), time.time()))
             conn.commit()
+        return results
+    finally:
+        conn.close()
+
+
+def search_branded(query: str) -> list[dict]:
+    """USDA's Branded Foods (what's printed on the package) for a name, cache-first:
+    [{fdc_id, description, brand, food_category}]. brands.py decides whether one is the thing."""
+    query = query.strip().lower()
+    if not query:
+        return []
+    conn = _connect()
+    try:
+        key = query + "|branded"
+        row = conn.execute("SELECT results, fetched_at FROM fdc_search WHERE query = ?", (key,)).fetchone()
+        if row and time.time() - row[1] < SEARCH_TTL:
+            return json.loads(row[0])
+        data = _get("/foods/search", {"query": query, "pageSize": 25, "dataType": "Branded"})
+        if data is None:
+            return []
+        results = [{"fdc_id": f["fdcId"], "description": f["description"],
+                    "brand": f.get("brandName") or f.get("brandOwner") or "",
+                    "owner": f.get("brandOwner") or "", "food_category": f.get("foodCategory") or ""}
+                   for f in data.get("foods", [])]
+        conn.execute("INSERT OR REPLACE INTO fdc_search (query, results, fetched_at) VALUES (?, ?, ?)",
+                     (key, json.dumps(results), time.time()))
+        conn.commit()
         return results
     finally:
         conn.close()
@@ -242,6 +274,30 @@ def _portions(food: dict) -> dict:
     return out
 
 
+_HOUSEHOLD = re.compile(r"^\s*([\d./]+)\s+([a-z][a-z ]*?)\s*(?:\(|$)", re.I)
+
+
+def _branded_portions(food: dict) -> dict:
+    """A package's serving ("1 Can (355 mL)" = 355): the household unit, and for a drink the
+    ml / fl oz / cup that a meal line might use (as water weighs)."""
+    size, unit = food.get("servingSize"), (food.get("servingSizeUnit") or "").lower()
+    if not size or food.get("dataType") != "Branded":
+        return {}
+    out: dict[str, float] = {"serving": round(float(size), 2)}
+    m = _HOUSEHOLD.match(food.get("householdServingFullText") or "")
+    if m:
+        try:
+            n = eval(m.group(1), {"__builtins__": {}}) if "/" in m.group(1) else float(m.group(1))  # "1/2"
+            word = m.group(2).strip().lower().rstrip("s") or "serving"
+            if n and word not in ("g", "gram", "oz", "ml", "fl oz", "onz", "oza"):
+                out[word] = round(float(size) / n, 2)
+        except (ValueError, SyntaxError, ZeroDivisionError):
+            pass
+    if unit in ("ml", "mlt"):
+        out.update({"ml": 1.0, "fl oz": 29.57, "cup": 236.6})
+    return out
+
+
 def _normalize(food: dict) -> dict:
     out = {k: 0.0 for k in NUTRIENT_IDS.values()}
     out["vitamins"] = {}
@@ -264,14 +320,16 @@ def _normalize(food: dict) -> dict:
             if nid in (2047, 2048) and n.get("amount", n.get("value")) is not None:
                 found[nid] = n.get("amount", n.get("value"))
         out["calories_kcal"] = round(found.get(2048) or found.get(2047) or 0.0, 1)
-    out["portions"] = _portions(food)
+    out["portions"] = _portions(food) or _branded_portions(food)
     # what the record doesn't list at all (not "0") -- filled from another record of the same food
     listed = {(n.get("nutrient") or {}).get("id") or n.get("nutrientId") for n in food.get("foodNutrients", [])}
     out["missing"] = [k for nid, k in NUTRIENT_IDS.items() if nid not in listed and not out[k]]
     out["missing"] += [k for nid, k in VITAMIN_IDS.items() if nid not in listed and k not in out["vitamins"]]
     out["v"] = NORMALIZED_V
     out["description"] = food.get("description", "")
-    out["food_category"] = _category_name(food)
+    out["food_category"] = _category_name(food) or food.get("brandedFoodCategory") or ""
+    if food.get("dataType") == "Branded":
+        out["brand"] = food.get("brandName") or food.get("brandOwner") or ""
     return out
 
 
