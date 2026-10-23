@@ -261,6 +261,13 @@ svg.icon { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-w
 .mb[data-meal="lunch"] .mb-head { color: var(--meal-lunch); }
 .mb[data-meal="dinner"] .mb-head { color: var(--meal-dinner); }
 .mb-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; }
+.mb-who { display: inline-flex; align-items: center; gap: 3px; padding: 1px 5px; border: 1px solid transparent; border-radius: 20px;
+  background: none; color: var(--text-dim); font-size: 10px; font-weight: 600; cursor: pointer; opacity: 0; }
+.mb-who[hidden] { display: none; }
+.mb-who svg { width: 11px; height: 11px; }
+.mb:hover .mb-who, .mb:focus-within .mb-who { opacity: 0.6; }
+.mb-who.on { opacity: 1; color: var(--accent); border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent); }
 .mb-total { margin-left: auto; font-size: 10px; color: var(--text-dim); white-space: nowrap; }
 
 .mb-name-row { position: relative; display: flex; align-items: center; gap: 3px; }

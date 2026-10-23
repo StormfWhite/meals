@@ -96,5 +96,16 @@ def share(member: dict) -> float:
     return float(member.get("share") or 1.0 / max(1, active_count()))
 
 
+def portion(member: dict, eaters: Optional[list] = None) -> float:
+    """How much of one planned meal (its whole pot) this member eats. A meal is everyone's unless
+    its slot names `eaters` (Storm: "some we could designate to joanna or to me like extra
+    meals"); then it's split among just those, by their shares."""
+    active = [m for m in list_members() if m.get("active", True)]
+    eat = [m for m in active if m["id"] in eaters] if eaters else active
+    if member["id"] not in {m["id"] for m in eat}:
+        return 0.0
+    return share(member) / sum(share(m) for m in eat)
+
+
 def active_count() -> int:
     return sum(1 for m in list_members() if m.get("active", True))

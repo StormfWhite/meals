@@ -124,3 +124,5 @@ body.offline #topbar::after { content: "offline · saved on this phone"; font-si
   .is-day .dg-name { white-space: normal; min-width: 0; }
   .is-day .dg-helps { flex: 1 0 100%; flex-wrap: wrap; gap: 0 8px; padding-left: 32px; }
 }
+/* whose meal: no hover on a phone, so the button stays faintly there on a planned meal */
+@media (max-width: 760px) { .mb.filled .mb-who { opacity: 0.45; } .mb .mb-who.on { opacity: 1; } .mb-who svg { width: 14px; height: 14px; } }

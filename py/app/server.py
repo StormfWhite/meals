@@ -592,6 +592,20 @@ def put_slot_store(week: str, slot_key: str, body: SlotStoreBody):
         raise HTTPException(404, "plan the meal first")
 
 
+class SlotEatersBody(BaseModel):
+    member_ids: list[str] = []
+
+
+@app.put("/api/board/{week}/slots/{slot_key}/eaters")
+def put_slot_eaters(week: str, slot_key: str, body: SlotEatersBody):
+    """Whose meal this is: some of the household (one person's extra meal), or [] = everyone."""
+    known = {m["id"] for m in household.list_members()}
+    try:
+        return board.set_slot_extra(week, slot_key, eaters=[i for i in body.member_ids if i in known] or None)
+    except KeyError:
+        raise HTTPException(404, "plan the meal first")
+
+
 @app.put("/api/board/{week}/slots/{slot_key}/fresh")
 def put_slot_fresh(week: str, slot_key: str, body: SlotFreshBody):
     """Cook it fresh even though servings of it are put away -- or go back to eating those."""
@@ -750,11 +764,8 @@ def link_leftover_group(week: str, body: LinkBody):
 # ── nutrition dashboard ──────────────────────────────────────────────────
 
 def _member_view(totals: dict, member: dict) -> dict:
-    """The meals are shared: a member's day is their share of every pot (household.share)."""
-    s = household.share(member)
-    mine = {k: v * s for k, v in totals.items() if k != "vitamins"}
-    mine["vitamins"] = {k: v * s for k, v in (totals.get("vitamins") or {}).items()}
-    return {"member": member, "totals": mine, "status": nutrition.status_report(mine, member["targets"])}
+    """`totals` = what this member eats (nutrition.day_totals with the member)."""
+    return {"member": member, "totals": totals, "status": nutrition.status_report(totals, member["targets"])}
 
 
 @app.get("/api/nutrition/day")
@@ -764,25 +775,32 @@ def nutrition_day(date: str, member_id: Optional[str] = None):
         member = household.get_member(member_id)
         if member is None:
             raise HTTPException(404, "no such household member")
-        return {"date": date, **_member_view(totals, member)}
-    members = [_member_view(totals, m) for m in household.list_members() if m.get("active", True)]
+        return {"date": date, **_member_view(nutrition.day_totals(date, member), member)}
+    members = [_member_view(nutrition.day_totals(date, m), m) for m in household.list_members() if m.get("active", True)]
     return {"date": date, "totals": totals, "members": members}
 
 
 @app.get("/api/nutrition/week")
 def nutrition_week(week: Optional[str] = None, member_id: Optional[str] = None):
-    weekly = nutrition.week_totals(week or board.current_week_start())
+    week = week or board.current_week_start()
+    weekly = nutrition.week_totals(week)
     if member_id:
         member = household.get_member(member_id)
         if member is None:
             raise HTTPException(404, "no such household member")
-        return {**weekly, **_member_view(weekly["total"], member)}
-    members = [_member_view(weekly["total"], m) for m in household.list_members() if m.get("active", True)]
+        return {**weekly, **_member_view(nutrition.week_totals(week, member)["total"], member)}
+    members = [_member_view(nutrition.week_totals(week, m)["total"], m)
+               for m in household.list_members() if m.get("active", True)]
     return {**weekly, "members": members}
 
 
-class GapDay(BaseModel):
+class GapMeal(BaseModel):
     totals: dict = {}
+    eaters: Optional[list[str]] = None
+
+
+class GapDay(BaseModel):
+    meals: list[GapMeal] = []
     ingredient_ids: list[str] = []
 
 

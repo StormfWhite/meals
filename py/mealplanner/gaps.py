@@ -31,7 +31,7 @@ NUTRIENTS = [
     ("potassium_mg", "potassium", "mg", 3400),
     ("magnesium_mg", "magnesium", "mg", 400),
     ("calcium_mg", "calcium", "mg", 1000),
-    ("iron_mg", "iron", "mg", 8),
+    ("iron_mg", "iron", "mg", 14),            # 8 x 1.8: plant iron absorbs worse (NIH: vegetarians need 1.8x)
     ("zinc_mg", "zinc", "mg", 11),
     ("vitamin_c_mg", "vitamin C", "mg", 90),
     ("vitamin_a_mcg", "vitamin A", "mcg", 900),
@@ -78,7 +78,7 @@ def people() -> list[dict]:
     doesn't have falls back to the adult default. No members: one adult eating everything."""
     members = [m for m in household.list_members() if m.get("active", True)]
     if not members:
-        return [{"name": "", "share": 1.0, "targets": _defaults()}]
+        return [{"id": None, "name": "", "share": 1.0, "targets": _defaults(), "member": None}]
     out = []
     for m in members:
         tg, t = _defaults(), m.get("targets") or {}
@@ -86,7 +86,7 @@ def people() -> list[dict]:
             v = t.get(key) if key in TOP_LEVEL else (t.get("vitamins") or {}).get(key)
             if v:
                 tg[key] = float(v)
-        out.append({"name": m["name"], "share": household.share(m), "targets": tg})
+        out.append({"id": m["id"], "name": m["name"], "share": household.share(m), "targets": tg, "member": m})
     return out
 
 
@@ -96,33 +96,42 @@ def _amount(totals: dict, key: str) -> float:
     return float((totals.get("vitamins") or {}).get(key) or 0.0)
 
 
-def lows(totals: dict, ppl: list[dict]) -> Optional[list[dict]]:
+def lows(meals: list[dict], ppl: list[dict]) -> Optional[list[dict]]:
     """The day's low nutrients, worst first; None when too little is planned to say.
 
-    Judged per person on their share of the day: low when anyone's share is under LOW_BELOW of
-    what their share of the calories predicts. `who` names them when it isn't everyone; `pct`
-    and `have`/`target` are the worst-off person's. `short`/`scale` are in whole-pot amounts --
-    what the day's meals would need to add, and one person's full day of it -- so a suggestion
-    (a portion added to a shared meal) is measured on the same footing."""
-    kcal = _amount(totals, "calories_kcal")
-    if kcal < MIN_KCAL:
+    meals = [{"totals": a meal's whole pot, "eaters": member ids or None}]. Each person is
+    judged on what they eat of them (household.portion: their share of a shared meal, all of
+    their own, none of someone else's): low when under LOW_BELOW of what their calories predict.
+    `who` names them when it isn't everyone judged; `pct` and `have`/`target` are the worst-off
+    person's. `short`/`scale` are in whole-pot amounts of a SHARED meal -- what the day's meals
+    would need to add, and one person's full day of it -- the footing a suggestion is measured on."""
+    if sum(_amount(m.get("totals") or {}, "calories_kcal") for m in meals) < MIN_KCAL:
+        return None
+    eats = []
+    for p in ppl:
+        parts = [(m.get("totals") or {}, household.portion(p["member"], m.get("eaters")) if p["member"] else 1.0)
+                 for m in meals]
+        kcal = sum(_amount(t, "calories_kcal") * f for t, f in parts)
+        if kcal >= MIN_KCAL / 2:                     # nothing much planned for this one: not judged
+            eats.append((p, parts, kcal))
+    if not eats:
         return None
     out = []
     for key, label, unit, _ in NUTRIENTS:
-        have, rows = _amount(totals, key), []
-        for p in ppl:
+        rows = []
+        for p, parts, kcal in eats:
             tg, s = p["targets"], p["share"]
-            expected = tg[key] * min(1.0, kcal * s / tg["calories_kcal"])
-            rows.append({"name": p["name"], "ratio": have * s / expected if expected else 1.0,
-                         "have": have * s, "target": tg[key], "short": (expected - have * s) / s,
-                         "scale": tg[key] / s})
+            have = sum(_amount(t, key) * f for t, f in parts)
+            expected = tg[key] * min(1.0, kcal / tg["calories_kcal"])
+            rows.append({"name": p["name"], "ratio": have / expected if expected else 1.0,
+                         "have": have, "target": tg[key], "short": (expected - have) / s, "scale": tg[key] / s})
         low = [r for r in rows if r["ratio"] < LOW_BELOW]
         if not low:
             continue
         worst = min(low, key=lambda r: r["ratio"])
         out.append({"key": key, "label": label, "unit": unit, "have": round(worst["have"], 1),
                     "target": worst["target"], "pct": round(100 * worst["have"] / worst["target"]),
-                    "who": [r["name"] for r in low] if len(low) < len(rows) else [],
+                    "who": [r["name"] for r in low] if len(low) < len(ppl) else [],
                     "ratio": worst["ratio"], "short": max(r["short"] for r in low),
                     "scale": max(r["scale"] for r in low)})
     out.sort(key=lambda l: l["ratio"])
@@ -199,7 +208,7 @@ def _rank(cands: list[dict], low: list[dict]) -> list[dict]:
 
 def for_days(days: dict[str, dict], on_hand: Optional[set] = None,
              today: Optional[datetime.date] = None, per_kind: int = 3) -> dict:
-    """days = {date: {"totals": day totals, "ingredient_ids": [...in that day's meals]}}
+    """days = {date: {"meals": [{"totals", "eaters"}], "ingredient_ids": [...in that day's meals]}}
     -> {"targets", "days": {date: {"judged", "low", "have", "buy"}}}.
     `have` = already bought (`in_stock` when it's in the pantry now), `buy` = whole foods
     nobody has bought yet."""
@@ -215,7 +224,8 @@ def for_days(days: dict[str, dict], on_hand: Optional[set] = None,
                if f["fdc_id"] not in owned_fdc and f["name"].lower() not in owned_names]
     out = {}
     for date, day in days.items():
-        low = lows(day.get("totals") or {}, ppl)
+        meals = day.get("meals") or [{"totals": day.get("totals") or {}}]
+        low = lows(meals, ppl)
         if low is None:
             out[date] = {"judged": False, "low": [], "have": [], "buy": []}
             continue

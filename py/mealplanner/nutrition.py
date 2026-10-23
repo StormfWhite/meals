@@ -157,15 +157,17 @@ def totals_for_slot(recipe: dict, slot: dict, ingredients_by_id: dict) -> dict:
 
 # ── day / week rollups ──────────────────────────────────────────────────
 #
-# There's no per-member assignment of who ate what -- the board is one
-# shared plan for the household. So "a person's nutrition that day" means
-# one serving of whatever's on the board for each scheduled slot, the same
-# food every active member is assumed to share. `servings_used` on a slot
+# The board is one shared plan: a meal's lines are the whole pot, eaten by
+# the household in shares (household.portion) unless its slot names its
+# `eaters` (one person's extra meal). `servings_used` on a slot
 # is about batch/leftover accounting (how much of a big-batch recipe this
 # cook event used), not about splitting nutrition between people, so it's
 # deliberately not a multiplier here.
 
-def day_totals(date_iso: str) -> dict:
+def day_totals(date_iso: str, member: Optional[dict] = None) -> dict:
+    """The day's meals added up: whole pots, or with `member` what that member eats of them
+    (household.portion: their share, or nothing of a meal that's someone else's)."""
+    from . import household
     reup_day = config.load()["reup_day"]
     week_start = board.week_start_for(datetime.date.fromisoformat(date_iso), reup_day).isoformat()
     week = board.get_week(week_start)
@@ -183,17 +185,17 @@ def day_totals(date_iso: str) -> dict:
         if not recipe:
             continue
         per_serving = totals_for_slot(recipe, slot, ing_by_id)["per_serving"]
-        _add_into(totals, per_serving, 1.0)
+        _add_into(totals, per_serving, household.portion(member, slot.get("eaters")) if member else 1.0)
     return totals
 
 
-def week_totals(week_start_iso: str) -> dict:
+def week_totals(week_start_iso: str, member: Optional[dict] = None) -> dict:
     week = board.get_week(week_start_iso)
     totals: dict = {k: 0.0 for k in NUTRIENT_KEYS}
     totals["vitamins"] = {}
     per_day = {}
     for date in week["dates"]:
-        day = day_totals(date)
+        day = day_totals(date, member)
         per_day[date] = day
         _add_into(totals, day, 1.0)
     return {"week_start": week_start_iso, "total": totals, "per_day": per_day}

@@ -59,7 +59,7 @@ App.plan = {
   async _load(body) {
     const today = _planToday();
     const day = await App.api(`/api/board/day/${this._date}`);
-    const [week, recipesRes, ingredientsRes, ob, ol, od, todayDay] = await Promise.all([
+    const [week, recipesRes, ingredientsRes, ob, ol, od, todayDay, membersRes] = await Promise.all([
       App.api(`/api/board?week=${day.week_start}`),
       App.api("/api/recipes"),
       App.api("/api/ingredients"),
@@ -69,7 +69,9 @@ App.plan = {
       // the list is the coming week's wherever the plan has been steered to,
       // so it's anchored to today, not to the week on screen
       this._date === today ? Promise.resolve(day) : App.api(`/api/board/day/${today}`),
+      App.api("/api/household/members").catch(() => ({ members: [] })),
     ]);
+    this._members = (membersRes.members || []).filter(m => m.active !== false);
     // The list is for the week you SHOP for: normally the coming one
     // (reup day is Sunday, so on Saturday the week on screen is the one
     // ending today). But when the plan has been paged forward to a future
@@ -155,6 +157,7 @@ App.plan = {
       recipes: this._recipes,
       ingredients: this._ingredients,
       getWeek: () => self._week,
+      members: () => self._members || [],
       optionsFor: (meal) => self._options[meal] || [],
       optionsListId: (meal) => `plan-opts-${meal}`,
       focusNextMeal: (fromKey) => self._focusNextMeal(fromKey),
@@ -388,7 +391,7 @@ App.plan = {
       });
       v.textContent = `${Math.round(sum.calories_kcal).toLocaleString()} kcal · ${sum.protein_g.toFixed(0)}g P · ${sum.fiber_g.toFixed(0)}g F`;
       v.title = `${Math.round(sum.calories_kcal)} kcal · ${sum.protein_g.toFixed(1)} g protein · ${sum.fiber_g.toFixed(1)} g fiber`;
-      days[date] = { totals: sum, ingredient_ids: [...new Set(mine.flatMap(b => b.knownRows().map(r => r.ingredient_id)))] };
+      days[date] = { meals: mine.map(b => ({ totals: b.totals, eaters: b.eaters() })), ingredient_ids: [...new Set(mine.flatMap(b => b.knownRows().map(r => r.ingredient_id)))] };
     });
     clearTimeout(this._gapsTimer);
     this._gapsTimer = setTimeout(() => this._refreshGaps(days), 400);

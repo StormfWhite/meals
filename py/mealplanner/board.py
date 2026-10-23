@@ -153,13 +153,17 @@ def set_slot(week_start_iso: str, slot_key: str, recipe_id: str, servings_used: 
     for key in ("store", "fresh"):
         if same and existing.get(key):
             week["slots"][slot_key][key] = existing[key]
+    # who eats it belongs to the slot ("Joanna's extra lunch"), whatever goes in it
+    if existing.get("eaters"):
+        week["slots"][slot_key]["eaters"] = existing["eaters"]
     _prune_leftover_groups(week)
     _save(data)
     return get_week(week_start_iso)
 
 
 def set_slot_extra(week_start_iso: str, key: str, **fields) -> dict:
-    """`store` ({"n", "where"} or None) and `fresh` (bool) on a planned slot -- see batches.py.
+    """`store` ({"n", "where"} or None) and `fresh` (bool) on a planned slot -- see batches.py --
+    and `eaters` (member ids; none = the whole household, household.portion).
     A routine's slot is written down first, so the extra has somewhere to live."""
     data = _load()
     week = data["weeks"].setdefault(week_start_iso, _empty_week())

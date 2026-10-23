@@ -30,6 +30,9 @@ const MB_BOOK = '<path d="M2 4h6a4 4 0 0 1 4 4v13a3 3 0 0 0-3-3H2Z"/><path d="M2
 const MB_LINK = '<path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/>';
 const MB_OPEN = '<path d="M15 3h6v6M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>';
 const MB_CAMERA = '<path d="M3 8a2 2 0 0 1 2-2h2l2-3h6l2 3h2a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/><circle cx="12" cy="13" r="4"/>';
+// whose meal: one person / everyone
+const MB_PERSON = '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>';
+const MB_PEOPLE = '<circle cx="9" cy="8" r="3.5"/><path d="M2 20a7 7 0 0 1 14 0"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 13.5a7 7 0 0 1 4 6.5"/>';
 // making it in bulk: stacked containers
 const MB_BULK = '<rect x="4" y="3" width="16" height="6" rx="1.5"/><rect x="4" y="11" width="16" height="4" rx="1.5"/><rect x="4" y="17" width="16" height="4" rx="1.5"/>';
 const MB_FLAME = '<path d="M12 22a7 7 0 0 0 7-7c0-4-3-6-4-10-2 2-3 4-3 6-1-1-2-2-2-4-2 2-5 5-5 8a7 7 0 0 0 7 7Z"/>';
@@ -50,6 +53,7 @@ App.mealBlock = {
         <header class="mb-head">
           ${index ? '<span class="mb-also" title="A second meal at this slot">+</span>' : App.icon(MB_ICONS[meal])}
           <span class="mb-label">${index ? "Also" : MB_LABELS[meal]}</span>
+          <button class="mb-who" hidden></button>
           <span class="mb-total num"></span>
         </header>
         <div class="mb-name-row">
@@ -164,8 +168,35 @@ App.mealBlock = {
       return true;
     };
 
+    /* Whose meal (Storm 2026-10-23: "some we could designate to joanna or to me like extra
+     * meals"): everyone's by default, split evenly; a tap makes it one person's, then the next
+     * person's, then everyone's again. Nutrition counts it for them alone (gaps.py, household.portion). */
+    const whoBtn = el.querySelector(".mb-who");
+    const eaters = () => (slot() && slot().eaters) || null;
+    const drawWho = () => {
+      const people = host.members();
+      const mine = eaters();
+      whoBtn.hidden = people.length < 2 || !slot();
+      const names = mine ? people.filter(m => mine.includes(m.id)).map(m => m.name) : [];
+      whoBtn.classList.toggle("on", names.length > 0);
+      whoBtn.innerHTML = `${App.icon(names.length ? MB_PERSON : MB_PEOPLE)}${names.length ? `<span>${App.esc(names.join(" & "))}</span>` : ""}`;
+      whoBtn.title = names.length ? `${names.join(" & ")}'s — tap for the next person` : "Everyone's, split evenly — tap to make it one person's";
+    };
+    whoBtn.addEventListener("click", async () => {
+      const people = host.members(), mine = eaters();
+      const at = mine && mine.length === 1 ? people.findIndex(m => m.id === mine[0]) : -1;
+      const next = at + 1 < people.length ? [people[at + 1].id] : [];
+      try {
+        host.onWeekChanged(await App.api(`/api/board/${host.getWeek().week_start}/slots/${key}/eaters`,
+          { method: "PUT", body: { member_ids: next } }));
+        drawWho();
+        host.onStatsChanged();
+      } catch (err) { App.toast(err.message); }
+    });
+
     const applySources = (entry) => {
       sources = entry || null;
+      drawWho();
       el.classList.toggle("served", !!(sources && sources.served));
       Array.from(rowsWrap.children).forEach(markDestination);
       drawLink();
@@ -741,6 +772,7 @@ App.mealBlock = {
       redraw: draw,
       applySources,
       get totals() { return totals; },
+      eaters,
       flush: () => commit().catch(() => {}),
     };
   },
