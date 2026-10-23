@@ -1,0 +1,1137 @@
+[
+ {
+  "name": "Eggs",
+  "fdc_id": 171287,
+  "description": "Egg, whole, raw, fresh",
+  "food_category": "Dairy and Egg Products",
+  "portion": "1 large",
+  "grams": 50,
+  "per100": {
+   "calories_kcal": 143.0,
+   "protein_g": 12.56,
+   "fiber_g": 0.0,
+   "vitamins": {
+    "calcium_mg": 56.0,
+    "iron_mg": 1.75,
+    "magnesium_mg": 12.0,
+    "potassium_mg": 138.0,
+    "zinc_mg": 1.29,
+    "vitamin_c_mg": 0.0,
+    "folate_mcg": 47.0,
+    "b12_mcg": 0.89,
+    "vitamin_a_mcg": 160.0,
+    "vitamin_d_mcg": 2.0
+   }
+  },
+  "portions": {
+   "cup (4.86 large eggs)": 243.0,
+   "medium": 44.0,
+   "extra large": 56.0,
+   "small": 38.0,
+   "jumbo": 63.0,
+   "large": 50.0
+  }
+ },
+ {
+  "name": "Tempeh",
+  "fdc_id": 174272,
+  "description": "Tempeh",
+  "food_category": "Legumes and Legume Products",
+  "portion": "3 oz",
+  "grams": 85,
+  "per100": {
+   "calories_kcal": 192.0,
+   "protein_g": 20.29,
+   "fiber_g": 0.0,
+   "vitamins": {
+    "calcium_mg": 111.0,
+    "iron_mg": 2.7,
+    "magnesium_mg": 81.0,
+    "potassium_mg": 412.0,
+    "zinc_mg": 1.14,
+    "vitamin_c_mg": 0.0,
+    "folate_mcg": 24.0,
+    "b12_mcg": 0.08,
+    "vitamin_a_mcg": 0.0,
+    "vitamin_d_mcg": 0.0
+   }
+  },
+  "portions": {
+   "cup": 166.0
+  }
+ },
+ {
+  "name": "Kidney beans",
+  "fdc_id": 175194,
+  "description": "Beans, kidney, red, mature seeds, cooked, boiled, without salt",
+  "food_category": "Legumes and Legume Products",
+  "portion": "1/2 cup cooked",
+  "grams": 89,
+  "per100": {
+   "calories_kcal": 127.0,
+   "protein_g": 8.67,
+   "fiber_g": 7.4,
+   "vitamins": {
+    "calcium_mg": 28.0,
+    "iron_mg": 2.94,
+    "magnesium_mg": 45.0,
+    "potassium_mg": 403.0,
+    "zinc_mg": 1.07,
+    "vitamin_c_mg": 1.2,
+    "folate_mcg": 130.0,
+    "b12_mcg": 0.0,
+    "vitamin_a_mcg": 0.0,
+    "vitamin_d_mcg": 0.0
+   }
+  },
+  "portions": {
+   "tbsp": 11.0,
+   "cup": 177.0
+  }
+ },
+ {
+  "name": "Black beans",
+  "fdc_id": 173735,
+  "description": "Beans, black, mature seeds, cooked, boiled, without salt",
+  "food_category": "Legumes and Legume Products",
+  "portion": "1/2 cup cooked",
+  "grams": 86,
+  "per100": {
+   "calories_kcal": 132.0,
+   "protein_g": 8.86,
+   "fiber_g": 8.7,
+   "vitamins": {
+    "calcium_mg": 27.0,
+    "iron_mg": 2.1,
+    "magnesium_mg": 70.0,
+    "potassium_mg": 355.0,
+    "zinc_mg": 1.12,
+    "vitamin_c_mg": 0.0,
+    "folate_mcg": 149.0,
+    "b12_mcg": 0.0,
+    "vitamin_a_mcg": 0.0,
+    "vitamin_d_mcg": 0.0
+   }
+  },
+  "portions": {
+   "cup": 172.0
+  }
+ },
+ {
+  "name": "Peanuts",
+  "fdc_id": 173806,
+  "description": "Peanuts, all types, dry-roasted, without salt",
+  "food_category": "Legumes and Legume Products",
+  "portion": "1 oz",
+  "grams": 28,
+  "per100": {
+   "calories_kcal": 587.0,
+   "protein_g": 24.35,
+   "fiber_g": 8.4,
+   "vitamins": {
+    "calcium_mg": 58.0,
+    "iron_mg": 1.58,
+    "magnesium_mg": 178.0,
+    "potassium_mg": 634.0,
+    "zinc_mg": 2.77,
+    "vitamin_c_mg": 0.0,
+    "folate_mcg": 97.0,
+    "b12_mcg": 0.0,
+    "vitamin_a_mcg": 0.0,
+    "vitamin_d_mcg": 0.0
+   }
+  },
+  "portions": {
+   "oz": 28.35,
+   "cup": 146.0,
+   "peanut": 1.0
+  }
+ },
+ {
+  "name": "Lentils",
+  "fdc_id": 172421,
+  "description": "Lentils, mature seeds, cooked, boiled, without salt",
+  "food_category": "Legumes and Legume Products",
+  "portion": "1/2 cup cooked",
+  "grams": 99,
+  "per100": {
+   "calories_kcal": 116.0,
+   "protein_g": 9.02,
+   "fiber_g": 7.9,
+   "vitamins": {
+    "calcium_mg": 19.0,
+    "iron_mg": 3.33,
+    "magnesium_mg": 36.0,
+    "potassium_mg": 369.0,
+    "zinc_mg": 1.27,
+    "vitamin_c_mg": 1.5,
+    "folate_mcg": 181.0,
+    "b12_mcg": 0.0,
+    "vitamin_a_mcg": 0.0,
+    "vitamin_d_mcg": 0.0
+   }
+  },
+  "portions": {
+   "cup": 198.0,
+   "tbsp": 12.3
+  }
+ },
+ {
+  "name": "Chickpeas",
+  "fdc_id": 173757,
+  "description": "Chickpeas (garbanzo beans, bengal gram), mature seeds, cooked, boiled, without salt",
+  "food_category": "Legumes and Legume Products",
+  "portion": "1/2 cup cooked",
+  "grams": 82,
+  "per100": {
+   "calories_kcal": 164.0,
+   "protein_g": 8.86,
+   "fiber_g": 7.6,
+   "vitamins": {
+    "calcium_mg": 49.0,
+    "iron_mg": 2.89,
+    "magnesium_mg": 48.0,
+    "potassium_mg": 291.0,
+    "zinc_mg": 1.53,
+    "vitamin_c_mg": 1.3,
+    "folate_mcg": 172.0,
+    "b12_mcg": 0.0,
+    "vitamin_a_mcg": 1.0,
+    "vitamin_d_mcg": 0.0
+   }
+  },
+  "portions": {
+   "cup": 164.0
+  }
+ },
+ {
+  "name": "White beans",
+  "fdc_id": 175203,
+  "description": "Beans, white, mature seeds, cooked, boiled, without salt",
+  "food_category": "Legumes and Legume Products",
+  "portion": "1/2 cup cooked",
+  "grams": 90,
+  "per100": {
+   "calories_kcal": 139.0,
+   "protein_g": 9.73,
+   "fiber_g": 6.3,
+   "vitamins": {
+    "calcium_mg": 90.0,
+    "iron_mg": 3.7,
+    "magnesium_mg": 63.0,
+    "potassium_mg": 561.0,
+    "zinc_mg": 1.38,
+    "vitamin_c_mg": 0.0,
+    "folate_mcg": 81.0,
+    "b12_mcg": 0.0,
+    "vitamin_a_mcg": 0.0,
+    "vitamin_d_mcg": 0.0
+   }
+  },
+  "portions": {
+   "cup": 179.0,
+   "tbsp": 11.2
+  }
+ },
+ {
+  "name": "Firm tofu",
+  "fdc_id": 172475,
+  "description": "Tofu, raw, firm, prepared with calcium sulfate",
+  "food_category": "Legumes and Legume Products",
+  "portion": "1/2 cup",
+  "grams": 126,
+  "per100": {
+   "calories_kcal": 144.0,
+   "protein_g": 17.27,
+   "fiber_g": 2.3,
+   "vitamins": {
+    "calcium_mg": 683.0,
+    "iron_mg": 2.66,
+    "magnesium_mg": 58.0,
+    "potassium_mg": 237.0,
+    "zinc_mg": 1.57,
+    "vitamin_c_mg": 0.2,
+    "folate_mcg": 29.0,
+    "b12_mcg": 0.0,
+    "vitamin_d_mcg": 0.0
+   }
+  },
+  "portions": {
+   "cup": 252.0,
+   "block": 324.0
+  }
+ },
+ {
+  "name": "Edamame",
+  "fdc_id": 168411,
+  "description": "Edamame, frozen, prepared",
+  "food_category": "Vegetables and Vegetable Products",
+  "portion": "1/2 cup",
+  "grams": 78,
+  "per100": {
+   "calories_kcal": 121.0,
+   "protein_g": 11.91,
+   "fiber_g": 5.2,
+   "vitamins": {
+    "calcium_mg": 63.0,
+    "iron_mg": 2.27,
+    "magnesium_mg": 64.0,
+    "potassium_mg": 436.0,
+    "zinc_mg": 1.37,
+    "vitamin_c_mg": 6.1,
+    "folate_mcg": 311.0,
+    "b12_mcg": 0.0,
+    "vitamin_a_mcg": 15.0,
+    "vitamin_d_mcg": 0.0
+   }
+  },
+  "portions": {
+   "cup": 155.0
+  }
+ },
+ {
+  "name": "Greek yogurt",
+  "fdc_id": 330137,
+  "description": "Yogurt, Greek, plain, nonfat",
+  "food_category": "Dairy and Egg Products",
+  "portion": "3/4 cup",
+  "grams": 170,
+  "per100": {
+   "calories_kcal": 61.0,
+   "protein_g": 10.3,
+   "fiber_g": 0.0,
+   "vitamins": {
+    "calcium_mg": 111.0,
+    "iron_mg": 0.07,
+    "magnesium_mg": 10.7,
+    "potassium_mg": 141.0,
+    "zinc_mg": 0.53,
+    "b12_mcg": 0.7,
+    "vitamin_a_mcg": 1.0,
+    "vitamin_d_mcg": 0.0
+   }
+  },
+  "portions": {
+   "container": 156.0,
+   "racc": 170.0
+  }
+ },
+ {
+  "name": "Cottage cheese",
+  "fdc_id": 328841,
+  "description": "Cheese, cottage, lowfat, 2% milkfat",
+  "food_category": "Dairy and Egg Products",
+  "portion": "1/2 cup",
+  "grams": 113,
+  "per100": {
+   "calories_kcal": 84.0,
+   "protein_g": 11.0,
+   "fiber_g": 0.0,
+   "vitamins": {
+    "calcium_mg": 103.0,
+    "iron_mg": 0.13,
+    "magnesium_mg": 8.9,
+    "potassium_mg": 120.0,
+    "zinc_mg": 0.61,
+    "folate_mcg": 10.0,
+    "b12_mcg": 0.42,
+    "vitamin_a_mcg": 69.0
+   }
+  },
+  "portions": {
+   "cup": 220.0,
+   "racc": 55.0
+  }
+ },
+ {
+  "name": "Milk",
+  "fdc_id": 171267,
+  "description": "Milk, reduced fat, fluid, 2% milkfat, with added vitamin A and vitamin D",
+  "food_category": "Dairy and Egg Products",
+  "portion": "1 cup",
+  "grams": 244,
+  "per100": {
+   "calories_kcal": 50.0,
+   "protein_g": 3.3,
+   "fiber_g": 0.0,
+   "vitamins": {
+    "calcium_mg": 120.0,
+    "iron_mg": 0.02,
+    "magnesium_mg": 11.0,
+    "potassium_mg": 140.0,
+    "zinc_mg": 0.48,
+    "vitamin_c_mg": 0.2,
+    "folate_mcg": 5.0,
+    "b12_mcg": 0.53,
+    "vitamin_a_mcg": 55.0,
+    "vitamin_d_mcg": 1.2
+   }
+  },
+  "portions": {
+   "quart": 976.0,
+   "cup": 244.0,
+   "fl oz": 30.5
+  }
+ },
+ {
+  "name": "Almonds",
+  "fdc_id": 170567,
+  "description": "Nuts, almonds",
+  "food_category": "Nut and Seed Products",
+  "portion": "1 oz",
+  "grams": 28,
+  "per100": {
+   "calories_kcal": 579.0,
+   "protein_g": 21.15,
+   "fiber_g": 12.5,
+   "vitamins": {
+    "calcium_mg": 269.0,
+    "iron_mg": 3.71,
+    "magnesium_mg": 270.0,
+    "potassium_mg": 733.0,
+    "zinc_mg": 3.12,
+    "vitamin_c_mg": 0.0,
+    "folate_mcg": 44.0,
+    "b12_mcg": 0.0,
+    "vitamin_a_mcg": 0.0,
+    "vitamin_d_mcg": 0.0
+   }
+  },
+  "portions": {
+   "oz (23 whole kernels)": 28.35,
+   "almond": 1.2,
+   "cup": 143.0
+  }
+ },
+ {
+  "name": "Pumpkin seeds",
+  "fdc_id": 170556,
+  "description": "Seeds, pumpkin and squash seed kernels, dried",
+  "food_category": "Nut and Seed Products",
+  "portion": "1 oz",
+  "grams": 28,
+  "per100": {
+   "calories_kcal": 559.0,
+   "protein_g": 30.23,
+   "fiber_g": 6.0,
+   "vitamins": {
+    "calcium_mg": 46.0,
+    "iron_mg": 8.82,
+    "magnesium_mg": 592.0,
+    "potassium_mg": 809.0,
+    "zinc_mg": 7.81,
+    "vitamin_c_mg": 1.9,
+    "folate_mcg": 58.0,
+    "b12_mcg": 0.0,
+    "vitamin_a_mcg": 1.0,
+    "vitamin_d_mcg": 0.0
+   }
+  },
+  "portions": {
+   "cup": 129.0,
+   "oz": 28.35
+  }
+ },
+ {
+  "name": "Sunflower seeds",
+  "fdc_id": 170562,
+  "description": "Seeds, sunflower seed kernels, dried",
+  "food_category": "Nut and Seed Products",
+  "portion": "1 oz",
+  "grams": 28,
+  "per100": {
+   "calories_kcal": 584.0,
+   "protein_g": 20.78,
+   "fiber_g": 8.6,
+   "vitamins": {
+    "calcium_mg": 78.0,
+    "iron_mg": 5.25,
+    "magnesium_mg": 325.0,
+    "potassium_mg": 645.0,
+    "zinc_mg": 5.0,
+    "vitamin_c_mg": 1.4,
+    "folate_mcg": 227.0,
+    "b12_mcg": 0.0,
+    "vitamin_a_mcg": 3.0,
+    "vitamin_d_mcg": 0.0
+   }
+  },
+  "portions": {
+   "cup": 140.0
+  }
+ },
+ {
+  "name": "Ground flaxseed",
+  "fdc_id": 169414,
+  "description": "Seeds, flaxseed",
+  "food_category": "Nut and Seed Products",
+  "portion": "2 tbsp",
+  "grams": 14,
+  "per100": {
+   "calories_kcal": 534.0,
+   "protein_g": 18.29,
+   "fiber_g": 27.3,
+   "vitamins": {
+    "calcium_mg": 255.0,
+    "iron_mg": 5.73,
+    "magnesium_mg": 392.0,
+    "potassium_mg": 813.0,
+    "zinc_mg": 4.34,
+    "vitamin_c_mg": 0.6,
+    "folate_mcg": 87.0,
+    "b12_mcg": 0.0,
+    "vitamin_a_mcg": 0.0,
+    "vitamin_d_mcg": 0.0
+   }
+  },
+  "portions": {
+   "tsp": 2.5,
+   "tbsp": 7.0,
+   "cup": 168.0
+  }
+ },
+ {
+  "name": "Chia seeds",
+  "fdc_id": 170554,
+  "description": "Seeds, chia seeds, dried",
+  "food_category": "Nut and Seed Products",
+  "portion": "1 tbsp",
+  "grams": 12,
+  "per100": {
+   "calories_kcal": 486.0,
+   "protein_g": 16.54,
+   "fiber_g": 34.4,
+   "vitamins": {
+    "calcium_mg": 631.0,
+    "iron_mg": 7.72,
+    "magnesium_mg": 335.0,
+    "potassium_mg": 407.0,
+    "zinc_mg": 4.58,
+    "vitamin_c_mg": 1.6,
+    "folate_mcg": 49.0,
+    "b12_mcg": 0.0
+   }
+  },
+  "portions": {
+   "oz": 28.35
+  }
+ },
+ {
+  "name": "Spinach",
+  "fdc_id": 2709614,
+  "description": "Spinach, raw",
+  "food_category": "Spinach",
+  "portion": "2 cups",
+  "grams": 60,
+  "per100": {
+   "calories_kcal": 27.0,
+   "protein_g": 2.85,
+   "fiber_g": 1.6,
+   "vitamins": {
+    "calcium_mg": 68.0,
+    "iron_mg": 1.26,
+    "magnesium_mg": 93.0,
+    "potassium_mg": 582,
+    "zinc_mg": 0.45,
+    "vitamin_a_mcg": 283,
+    "vitamin_d_mcg": 0.0,
+    "vitamin_c_mg": 26.5,
+    "folate_mcg": 116,
+    "b12_mcg": 0.0
+   }
+  },
+  "portions": {
+   "leaf": 10.0,
+   "90000": 13.0,
+   "64548": 50.0,
+   "baby leaf": 0.6,
+   "cup": 25.0
+  }
+ },
+ {
+  "name": "Kale",
+  "fdc_id": 168421,
+  "description": "Kale, raw",
+  "food_category": "Vegetables and Vegetable Products",
+  "portion": "2 cups",
+  "grams": 42,
+  "per100": {
+   "calories_kcal": 35.0,
+   "protein_g": 2.92,
+   "fiber_g": 4.1,
+   "vitamins": {
+    "calcium_mg": 254.0,
+    "iron_mg": 1.6,
+    "magnesium_mg": 33.0,
+    "potassium_mg": 348.0,
+    "zinc_mg": 0.39,
+    "vitamin_c_mg": 93.4,
+    "folate_mcg": 62.0,
+    "b12_mcg": 0.0,
+    "vitamin_a_mcg": 241.0,
+    "vitamin_d_mcg": 0.0
+   }
+  },
+  "portions": {
+   "cup": 21.0
+  }
+ },
+ {
+  "name": "Broccoli",
+  "fdc_id": 2709643,
+  "description": "Broccoli, raw",
+  "food_category": "Broccoli",
+  "portion": "1 cup",
+  "grams": 91,
+  "per100": {
+   "calories_kcal": 39.0,
+   "protein_g": 2.57,
+   "fiber_g": 2.4,
+   "vitamins": {
+    "calcium_mg": 46.0,
+    "iron_mg": 0.69,
+    "magnesium_mg": 21.0,
+    "potassium_mg": 303,
+    "zinc_mg": 0.42,
+    "vitamin_a_mcg": 8.0,
+    "vitamin_d_mcg": 0.0,
+    "vitamin_c_mg": 91.3,
+    "folate_mcg": 65.0,
+    "b12_mcg": 0.0
+   }
+  },
+  "portions": {
+   "90000": 45.0,
+   "floweret": 10.0,
+   "piece": 10.0,
+   "cup": 90.0
+  }
+ },
+ {
+  "name": "Brussels sprouts",
+  "fdc_id": 2709772,
+  "description": "Brussels sprouts, raw",
+  "food_category": "Other vegetables and combinations",
+  "portion": "1 cup",
+  "grams": 88,
+  "per100": {
+   "calories_kcal": 43.0,
+   "protein_g": 3.38,
+   "fiber_g": 3.8,
+   "vitamins": {
+    "calcium_mg": 42.0,
+    "iron_mg": 1.4,
+    "magnesium_mg": 23.0,
+    "potassium_mg": 389,
+    "zinc_mg": 0.42,
+    "vitamin_a_mcg": 38.0,
+    "vitamin_d_mcg": 0.0,
+    "vitamin_c_mg": 85.0,
+    "folate_mcg": 61.0,
+    "b12_mcg": 0.0
+   }
+  },
+  "portions": {
+   "90000": 45.0,
+   "sprout": 20.0,
+   "cup": 90.0
+  }
+ },
+ {
+  "name": "Sweet potato",
+  "fdc_id": 168483,
+  "description": "Sweet potato, cooked, baked in skin, flesh, without salt",
+  "food_category": "Vegetables and Vegetable Products",
+  "portion": "1 medium",
+  "grams": 114,
+  "per100": {
+   "calories_kcal": 90.0,
+   "protein_g": 2.01,
+   "fiber_g": 3.3,
+   "vitamins": {
+    "calcium_mg": 38.0,
+    "iron_mg": 0.69,
+    "magnesium_mg": 27.0,
+    "potassium_mg": 475.0,
+    "zinc_mg": 0.32,
+    "vitamin_c_mg": 19.6,
+    "folate_mcg": 6.0,
+    "b12_mcg": 0.0,
+    "vitamin_a_mcg": 961.0,
+    "vitamin_d_mcg": 0.0
+   }
+  },
+  "portions": {
+   "large": 180.0,
+   "small": 60.0,
+   "cup": 200.0,
+   "medium (2\" dia": 114.0
+  }
+ },
+ {
+  "name": "Potato",
+  "fdc_id": 170093,
+  "description": "Potatoes, baked, flesh and skin, without salt",
+  "food_category": "Vegetables and Vegetable Products",
+  "portion": "1 medium",
+  "grams": 173,
+  "per100": {
+   "calories_kcal": 93.0,
+   "protein_g": 2.5,
+   "fiber_g": 2.2,
+   "vitamins": {
+    "calcium_mg": 15.0,
+    "iron_mg": 1.08,
+    "magnesium_mg": 28.0,
+    "potassium_mg": 535.0,
+    "zinc_mg": 0.36,
+    "vitamin_c_mg": 9.6,
+    "folate_mcg": 28.0,
+    "b12_mcg": 0.0,
+    "vitamin_a_mcg": 1.0,
+    "vitamin_d_mcg": 0.0
+   }
+  },
+  "portions": {
+   "nlea serving": 148.0,
+   "potato large": 299.0,
+   "potato medium": 173.0,
+   "potato small": 138.0
+  }
+ },
+ {
+  "name": "Carrots",
+  "fdc_id": 170393,
+  "description": "Carrots, raw",
+  "food_category": "Vegetables and Vegetable Products",
+  "portion": "1 medium",
+  "grams": 61,
+  "per100": {
+   "calories_kcal": 41.0,
+   "protein_g": 0.93,
+   "fiber_g": 2.8,
+   "vitamins": {
+    "calcium_mg": 33.0,
+    "iron_mg": 0.3,
+    "magnesium_mg": 12.0,
+    "potassium_mg": 320.0,
+    "zinc_mg": 0.24,
+    "vitamin_c_mg": 5.9,
+    "folate_mcg": 19.0,
+    "b12_mcg": 0.0,
+    "vitamin_a_mcg": 835.0,
+    "vitamin_d_mcg": 0.0
+   }
+  },
+  "portions": {
+   "cup grated": 110.0,
+   "slice": 3.0,
+   "strip large (3\" long)": 7.0,
+   "small (5-1/2\" long)": 50.0,
+   "medium": 61.0,
+   "large (7-1/4\" to 8-/1/2\" long)": 72.0,
+   "cup chopped": 128.0,
+   "strip medium": 4.0,
+   "cup strips or slices": 122.0
+  }
+ },
+ {
+  "name": "Red bell pepper",
+  "fdc_id": 170108,
+  "description": "Peppers, sweet, red, raw",
+  "food_category": "Vegetables and Vegetable Products",
+  "portion": "1/2 cup",
+  "grams": 75,
+  "per100": {
+   "calories_kcal": 26.0,
+   "protein_g": 0.99,
+   "fiber_g": 2.1,
+   "vitamins": {
+    "calcium_mg": 7.0,
+    "iron_mg": 0.43,
+    "magnesium_mg": 12.0,
+    "potassium_mg": 211.0,
+    "zinc_mg": 0.25,
+    "vitamin_c_mg": 127.7,
+    "folate_mcg": 46.0,
+    "b12_mcg": 0.0,
+    "vitamin_a_mcg": 157.0,
+    "vitamin_d_mcg": 0.0
+   }
+  },
+  "portions": {
+   "large (2-1/4 per pound": 164.0,
+   "tablespoon": 9.3,
+   "cup": 92.0,
+   "ring (3\" dia.": 10.0,
+   "medium (approx 2-3/4\" long": 119.0,
+   "small": 74.0
+  }
+ },
+ {
+  "name": "Tomatoes",
+  "fdc_id": 170457,
+  "description": "Tomatoes, red, ripe, raw, year round average",
+  "food_category": "Vegetables and Vegetable Products",
+  "portion": "1 medium",
+  "grams": 123,
+  "per100": {
+   "calories_kcal": 18.0,
+   "protein_g": 0.88,
+   "fiber_g": 1.2,
+   "vitamins": {
+    "calcium_mg": 10.0,
+    "iron_mg": 0.27,
+    "magnesium_mg": 11.0,
+    "potassium_mg": 237.0,
+    "zinc_mg": 0.17,
+    "vitamin_c_mg": 13.7,
+    "folate_mcg": 15.0,
+    "b12_mcg": 0.0,
+    "vitamin_a_mcg": 42.0,
+    "vitamin_d_mcg": 0.0
+   }
+  },
+  "portions": {
+   "medium whole (2-3/5\" dia)": 123.0,
+   "slice": 20.0,
+   "large whole (3\" dia)": 182.0,
+   "cherry": 17.0,
+   "italian tomato": 62.0,
+   "cup": 180.0,
+   "small whole (2-2/5\" dia)": 91.0,
+   "cup cherry tomatoes": 149.0,
+   "wedge (1/4 of medium tomato)": 31.0,
+   "nlea serving": 148.0,
+   "plum tomato": 62.0
+  }
+ },
+ {
+  "name": "Avocado",
+  "fdc_id": 171705,
+  "description": "Avocados, raw, all commercial varieties",
+  "food_category": "Fruits and Fruit Juices",
+  "portion": "1/2",
+  "grams": 100,
+  "per100": {
+   "calories_kcal": 160.0,
+   "protein_g": 2.0,
+   "fiber_g": 6.7,
+   "vitamins": {
+    "calcium_mg": 12.0,
+    "iron_mg": 0.55,
+    "magnesium_mg": 29.0,
+    "potassium_mg": 485.0,
+    "zinc_mg": 0.64,
+    "vitamin_c_mg": 10.0,
+    "folate_mcg": 81.0,
+    "b12_mcg": 0.0,
+    "vitamin_a_mcg": 7.0,
+    "vitamin_d_mcg": 0.0
+   }
+  },
+  "portions": {
+   "cup": 230.0,
+   "nlea serving": 50.0,
+   "avocado": 201.0
+  }
+ },
+ {
+  "name": "UV mushrooms",
+  "fdc_id": 169376,
+  "description": "Mushroom, white, exposed to ultraviolet light, raw",
+  "food_category": "Vegetables and Vegetable Products",
+  "portion": "1 cup",
+  "grams": 70,
+  "per100": {
+   "calories_kcal": 22.0,
+   "protein_g": 3.09,
+   "fiber_g": 1.0,
+   "vitamins": {
+    "calcium_mg": 3.0,
+    "iron_mg": 0.5,
+    "magnesium_mg": 9.0,
+    "potassium_mg": 318.0,
+    "zinc_mg": 0.52,
+    "vitamin_c_mg": 2.1,
+    "folate_mcg": 17.0,
+    "b12_mcg": 0.0,
+    "vitamin_d_mcg": 26.2
+   }
+  },
+  "portions": {
+   "slice": 6.0,
+   "small": 10.0,
+   "cup whole": 96.0,
+   "large": 23.0,
+   "cup pieces or slices": 70.0,
+   "medium": 18.0
+  }
+ },
+ {
+  "name": "Oranges",
+  "fdc_id": 169097,
+  "description": "Oranges, raw, all commercial varieties",
+  "food_category": "Fruits and Fruit Juices",
+  "portion": "1 medium",
+  "grams": 131,
+  "per100": {
+   "calories_kcal": 47.0,
+   "protein_g": 0.94,
+   "fiber_g": 2.4,
+   "vitamins": {
+    "calcium_mg": 40.0,
+    "iron_mg": 0.1,
+    "magnesium_mg": 10.0,
+    "potassium_mg": 181.0,
+    "zinc_mg": 0.07,
+    "vitamin_c_mg": 53.2,
+    "folate_mcg": 30.0,
+    "b12_mcg": 0.0,
+    "vitamin_a_mcg": 11.0,
+    "vitamin_d_mcg": 0.0
+   }
+  },
+  "portions": {
+   "small (2-3/8\" dia)": 96.0,
+   "large (3-1/16\" dia)": 184.0,
+   "cup": 180.0,
+   "fruit (2-5/8\" dia)": 131.0
+  }
+ },
+ {
+  "name": "Kiwi",
+  "fdc_id": 327046,
+  "description": "Kiwifruit, green, raw",
+  "food_category": "Fruits and Fruit Juices",
+  "portion": "1",
+  "grams": 75,
+  "per100": {
+   "calories_kcal": 58.0,
+   "protein_g": 1.06,
+   "fiber_g": 3.0,
+   "vitamins": {
+    "calcium_mg": 35.0,
+    "iron_mg": 0.24,
+    "magnesium_mg": 15.7,
+    "potassium_mg": 198.0,
+    "zinc_mg": 0.14,
+    "vitamin_c_mg": 74.7,
+    "folate_mcg": 26.0,
+    "vitamin_a_mcg": 4.0
+   }
+  },
+  "portions": {
+   "racc": 140.0
+  }
+ },
+ {
+  "name": "Strawberries",
+  "fdc_id": 2709283,
+  "description": "Strawberries, raw",
+  "food_category": "Strawberries",
+  "portion": "1 cup",
+  "grams": 152,
+  "per100": {
+   "calories_kcal": 36.0,
+   "protein_g": 0.64,
+   "fiber_g": 1.8,
+   "vitamins": {
+    "calcium_mg": 17.0,
+    "iron_mg": 0.26,
+    "magnesium_mg": 13.0,
+    "potassium_mg": 161,
+    "zinc_mg": 0.11,
+    "vitamin_a_mcg": 1.0,
+    "vitamin_d_mcg": 0.0,
+    "vitamin_c_mg": 59.6,
+    "folate_mcg": 8.0,
+    "b12_mcg": 0.0
+   }
+  },
+  "portions": {
+   "90000": 75.0,
+   "fruit": 18.0,
+   "cup": 150.0
+  }
+ },
+ {
+  "name": "Raspberries",
+  "fdc_id": 2709281,
+  "description": "Raspberries, raw",
+  "food_category": "Blueberries and other berries",
+  "portion": "1 cup",
+  "grams": 123,
+  "per100": {
+   "calories_kcal": 57.0,
+   "protein_g": 1.01,
+   "fiber_g": 6.5,
+   "vitamins": {
+    "calcium_mg": 16.0,
+    "iron_mg": 0.45,
+    "magnesium_mg": 19.0,
+    "potassium_mg": 156,
+    "zinc_mg": 0.22,
+    "vitamin_a_mcg": 2.0,
+    "vitamin_d_mcg": 0.0,
+    "vitamin_c_mg": 23.0,
+    "folate_mcg": 21.0,
+    "b12_mcg": 0.0
+   }
+  },
+  "portions": {
+   "90000": 75.0,
+   "cup": 150.0,
+   "berry": 2.0
+  }
+ },
+ {
+  "name": "Bananas",
+  "fdc_id": 173944,
+  "description": "Bananas, raw",
+  "food_category": "Fruits and Fruit Juices",
+  "portion": "1 medium",
+  "grams": 118,
+  "per100": {
+   "calories_kcal": 89.0,
+   "protein_g": 1.09,
+   "fiber_g": 2.6,
+   "vitamins": {
+    "calcium_mg": 5.0,
+    "iron_mg": 0.26,
+    "magnesium_mg": 27.0,
+    "potassium_mg": 358.0,
+    "zinc_mg": 0.15,
+    "vitamin_c_mg": 8.7,
+    "folate_mcg": 20.0,
+    "b12_mcg": 0.0,
+    "vitamin_a_mcg": 3.0,
+    "vitamin_d_mcg": 0.0
+   }
+  },
+  "portions": {
+   "nlea serving": 126.0,
+   "extra large (9\" or longer)": 152.0,
+   "large (8\" to 8-7/8\" long)": 136.0,
+   "cup": 150.0,
+   "small (6\" to 6-7/8\" long)": 101.0,
+   "extra small (less than 6\" long)": 81.0,
+   "medium (7\" to 7-7/8\" long)": 118.0
+  }
+ },
+ {
+  "name": "Cantaloupe",
+  "fdc_id": 746770,
+  "description": "Melons, cantaloupe, raw",
+  "food_category": "Fruits and Fruit Juices",
+  "portion": "1 cup",
+  "grams": 160,
+  "per100": {
+   "calories_kcal": 34.0,
+   "protein_g": 0.82,
+   "fiber_g": 0.8,
+   "vitamins": {
+    "calcium_mg": 9.0,
+    "iron_mg": 0.38,
+    "magnesium_mg": 13.0,
+    "potassium_mg": 157.0,
+    "zinc_mg": 0.44,
+    "vitamin_c_mg": 10.9,
+    "folate_mcg": 14.0,
+    "vitamin_a_mcg": 232.0
+   }
+  },
+  "portions": {
+   "wedge": 69.0,
+   "each": 441.0,
+   "cup": 160.0,
+   "pieces": 13.8,
+   "racc": 140.0
+  }
+ },
+ {
+  "name": "Rolled oats",
+  "fdc_id": 173904,
+  "description": "Cereals, oats, regular and quick, not fortified, dry",
+  "food_category": "Breakfast Cereals",
+  "portion": "1/2 cup dry",
+  "grams": 40,
+  "per100": {
+   "calories_kcal": 379.0,
+   "protein_g": 13.15,
+   "fiber_g": 10.1,
+   "vitamins": {
+    "calcium_mg": 52.0,
+    "iron_mg": 4.25,
+    "magnesium_mg": 138.0,
+    "potassium_mg": 362.0,
+    "zinc_mg": 3.64,
+    "vitamin_c_mg": 0.0,
+    "folate_mcg": 32.0,
+    "b12_mcg": 0.0,
+    "vitamin_a_mcg": 0.0,
+    "vitamin_d_mcg": 0.0
+   }
+  },
+  "portions": {
+   "cup": 81.0
+  }
+ },
+ {
+  "name": "Quinoa",
+  "fdc_id": 168917,
+  "description": "Quinoa, cooked",
+  "food_category": "Cereal Grains and Pasta",
+  "portion": "1 cup cooked",
+  "grams": 185,
+  "per100": {
+   "calories_kcal": 120.0,
+   "protein_g": 4.4,
+   "fiber_g": 2.8,
+   "vitamins": {
+    "calcium_mg": 17.0,
+    "iron_mg": 1.49,
+    "magnesium_mg": 64.0,
+    "potassium_mg": 172.0,
+    "zinc_mg": 1.09,
+    "vitamin_c_mg": 0.0,
+    "folate_mcg": 42.0,
+    "b12_mcg": 0.0,
+    "vitamin_a_mcg": 0.0,
+    "vitamin_d_mcg": 0.0
+   }
+  },
+  "portions": {
+   "cup": 185.0
+  }
+ },
+ {
+  "name": "Brown rice",
+  "fdc_id": 2708414,
+  "description": "Rice, brown, cooked, no added fat",
+  "food_category": "Rice",
+  "portion": "1 cup cooked",
+  "grams": 195,
+  "per100": {
+   "calories_kcal": 123,
+   "protein_g": 2.43,
+   "fiber_g": 1.0,
+   "vitamins": {
+    "calcium_mg": 5.0,
+    "iron_mg": 0.4,
+    "magnesium_mg": 39.0,
+    "potassium_mg": 80.0,
+    "zinc_mg": 0.63,
+    "vitamin_a_mcg": 0.0,
+    "vitamin_d_mcg": 0.0,
+    "vitamin_c_mg": 0.0,
+    "folate_mcg": 5.0,
+    "b12_mcg": 0.0
+   }
+  },
+  "portions": {
+   "cup": 195.0,
+   "90000": 147.0
+  }
+ }
+]

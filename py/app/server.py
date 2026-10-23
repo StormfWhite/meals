@@ -20,7 +20,7 @@ from fastapi.responses import JSONResponse, FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from mealplanner import (bangers, aisles, batches, board, config, fdc, groceries, household, ingredients,
+from mealplanner import (bangers, aisles, batches, board, config, fdc, gaps, groceries, household, ingredients,
                          catalog, learning, nutrition, places, prices, recipe_import, recipes, routines, stats, stock,
                          suggest)
 from mealplanner.paths import DATA_DIR, ensure_dirs
@@ -775,6 +775,42 @@ def nutrition_week(week: Optional[str] = None, member_id: Optional[str] = None):
         return {**weekly, **_member_view(weekly["total"], member)}
     members = [_member_view(weekly["total"], m) for m in household.list_members() if m.get("active", True)]
     return {**weekly, "members": members}
+
+
+class GapDay(BaseModel):
+    totals: dict = {}
+    ingredient_ids: list[str] = []
+
+
+class GapsBody(BaseModel):
+    days: dict[str, GapDay] = {}
+
+
+@app.post("/api/nutrition/gaps")
+def nutrition_gaps(body: GapsBody):
+    """The day foot's "low" check (gaps.py): the page sends each day's summed meals, as it
+    already shows them, and gets back what's low and whole foods that would fill it."""
+    try:
+        here = {r["ingredient_id"] for r in stock.Ledger().on_hand(board.current_week_start())
+                if (r.get("fridge_g") or 0) + (r.get("freezer_g") or 0) > 0}
+    except Exception:
+        here = set()
+    return gaps.for_days({d: v.model_dump() for d, v in body.days.items()}, on_hand=here)
+
+
+class GapBuyBody(BaseModel):
+    name: str
+    week: str
+    market_week: Optional[str] = None
+
+
+@app.post("/api/nutrition/gaps/buy")
+def nutrition_gap_buy(body: GapBuyBody):
+    try:
+        ing = gaps.buy(body.name, body.week, body.market_week)
+    except KeyError:
+        raise HTTPException(404, "not a suggested food")
+    return {"ingredient": ing}
 
 
 class PreviewBody(BaseModel):

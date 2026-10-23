@@ -212,8 +212,40 @@ svg.icon { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-w
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
   margin-top: 3px; padding: 7px 10px;
   background: var(--panel-2); border: 1px solid var(--border); border-radius: 9px;
+  align-self: start;   /* one day's open suggestions don't stretch the other six */
 }
 .day-col-foot .v { font-size: 11px; font-weight: 650; }
+/* what the day is low in (plan.js _paintGaps, gaps.py) */
+.day-low { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; padding: 1px 7px; min-width: 0;
+  font-size: 10.5px; font-weight: 600; color: var(--warn); background: color-mix(in srgb, var(--warn) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--warn) 35%, transparent); border-radius: 20px; cursor: pointer; }
+.day-low span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.day-low svg { width: 11px; height: 11px; flex: none; }
+.day-low[hidden], .day-gaps[hidden] { display: none; }
+.day-low.ok { color: var(--good); background: none; border-color: transparent; cursor: default; }
+.day-gaps { flex: 1 0 100%; min-width: 0; display: flex; flex-direction: column; gap: 2px; padding-top: 4px; border-top: 1px solid var(--border); }
+.dg-lows { display: flex; flex-wrap: wrap; gap: 3px 12px; padding-bottom: 3px; }
+.dg-low { display: inline-flex; align-items: center; gap: 5px; font-size: 10.5px; color: var(--text-dim); }
+.dg-low .num { color: var(--warn); font-weight: 650; }
+.dg-bar { width: 34px; height: 4px; border-radius: 2px; background: var(--border); overflow: hidden; }
+.dg-bar i { display: block; height: 100%; background: var(--warn); }
+.dg-head { display: flex; align-items: center; gap: 5px; margin-top: 3px; font-size: 9.5px; font-weight: 700;
+  letter-spacing: .06em; text-transform: uppercase; color: var(--text-dim); }
+.dg-head svg { width: 11px; height: 11px; }
+.dg-row { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 11px; }
+.dg-buy, .dg-mark { width: 18px; height: 18px; flex: none; display: inline-flex; align-items: center; justify-content: center; }
+.dg-row svg { width: 11px; height: 11px; }
+.dg-mark { color: var(--text-dim); }
+.dg-buy { color: var(--accent); }
+.dg-mark.here { color: var(--good); }
+.dg-name { font-weight: 600; white-space: nowrap; }
+.dg-por { color: var(--text-dim); white-space: nowrap; }
+.dg-helps { display: flex; gap: 8px; min-width: 0; overflow: hidden; color: var(--good); font-size: 10.5px; }
+.dg-help { white-space: nowrap; }
+/* a week column is narrow: the foods stack, what they add goes under the name */
+.is-week .dg-row { flex-wrap: wrap; row-gap: 0; }
+.is-week .dg-helps { flex: 1 0 100%; flex-wrap: wrap; gap: 0 6px; padding-left: 24px; }
+.is-week .day-low { margin-left: 0; }
 
 /* ── one meal (mealblock.js) ─────────────────────────────────────────── */
 .mb {
@@ -290,6 +322,9 @@ button.mb-tag:hover { color: var(--good); border-color: var(--good); }
 .is-day .mb-note { flex-basis: 28px; }
 .is-day .mb-note:focus, .is-day .mb-note.has-note { flex: 0 1 220px; }
 .is-day .mb-stat { flex: 1 1 auto; }
+/* thin lines: a day reads as a list, not a stack of form fields */
+.is-day .mb-rows { gap: 0; }
+.is-day .mb-row input { padding: 1px 5px; }
 .mb-row-x { width: 15px; height: 15px; opacity: 0; flex: none; }
 .is-week .mb-row-x { position: absolute; right: 0; top: 50%; transform: translateY(-50%); background: var(--panel); }
 .mb-row-x svg { width: 10px; height: 10px; }

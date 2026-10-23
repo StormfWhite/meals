@@ -20,6 +20,8 @@ from __future__ import annotations
 import json
 import re
 import sqlite3
+import sys
+import threading
 import time
 from typing import Optional
 
@@ -42,14 +44,23 @@ NUTRIENT_IDS = {
     1079: "fiber_g",
 }
 # bumped when what's read out of a USDA record changes: older cached records are read again
-# (2: Atwater kcal for Foundation foods, survey foods' "1 cup" portions; 3: `missing`)
-NORMALIZED_V = 3
+# (2: Atwater kcal for Foundation foods, survey foods' "1 cup" portions; 3: `missing`;
+# 4: potassium/magnesium/vitamin D/B12/folate/zinc for the day's "low" check, gaps.py)
+NORMALIZED_V = 4
+OLDEST_USABLE_V = 3   # nutrition still right, just fewer vitamins: served when it can't be fetched again
 VITAMIN_IDS = {
     1162: "vitamin_c_mg",
     1106: "vitamin_a_mcg",
     1089: "iron_mg",
     1087: "calcium_mg",
+    1092: "potassium_mg",
+    1090: "magnesium_mg",
+    1114: "vitamin_d_mcg",
+    1178: "b12_mcg",
+    1177: "folate_mcg",
+    1095: "zinc_mg",
 }
+FOLATE_DFE = 1190   # survey foods list folate as DFE only
 
 
 def available() -> bool:
@@ -242,6 +253,8 @@ def _normalize(food: dict) -> dict:
             out[NUTRIENT_IDS[nid]] = amount
         elif nid in VITAMIN_IDS:
             out["vitamins"][VITAMIN_IDS[nid]] = amount
+        elif nid == FOLATE_DFE:
+            out["vitamins"].setdefault("folate_mcg", amount)
     # newer Foundation records give energy only as Atwater kcal (2048 specific, 2047 general), no 1008
     if not out["calories_kcal"]:
         found = {}
@@ -260,6 +273,10 @@ def _normalize(food: dict) -> dict:
     return out
 
 
+_UPGRADE_TRIED: set = set()
+_UPGRADE_LOCK = threading.Lock()   # the server answers in threads: one upgrade at a time, the rest wait for it
+
+
 def get_nutrients(fdc_id: int) -> Optional[dict]:
     """Normalized per-100g nutrients for one FDC food, cache-first, no TTL.
 
@@ -270,22 +287,46 @@ def get_nutrients(fdc_id: int) -> Optional[dict]:
     conn = _connect()
     try:
         row = conn.execute("SELECT data FROM fdc_foods WHERE fdc_id = ?", (fdc_id,)).fetchone()
-        if row:
-            cached = json.loads(row[0])
-            # a survey food read before its "1 cup" portions were understood ({"10205": 180})
-            if cached.get("v") == NORMALIZED_V:
-                return cached
-
-        food = _get(f"/food/{fdc_id}", {})
-        if food is None:
-            return None
-        normalized = _normalize(food)
-        conn.execute("INSERT OR REPLACE INTO fdc_foods (fdc_id, data, fetched_at) VALUES (?, ?, ?)",
-                     (fdc_id, json.dumps(normalized), time.time()))
-        conn.commit()
-        return normalized
+        cached = json.loads(row[0]) if row else None
+        # a survey food read before its "1 cup" portions were understood ({"10205": 180})
+        if cached and cached.get("v") == NORMALIZED_V:
+            return cached
+        usable = cached if cached and cached.get("v", 0) >= OLDEST_USABLE_V else None
+        # an upgrade is asked for once per run, and never on the phone (its HTTP blocks the screen)
+        if usable and sys.platform == "emscripten":
+            return usable
+        if usable:
+            with _UPGRADE_LOCK:
+                if fdc_id in _UPGRADE_TRIED:      # done (or failed) while this one waited
+                    row = conn.execute("SELECT data FROM fdc_foods WHERE fdc_id = ?", (fdc_id,)).fetchone()
+                    return json.loads(row[0]) if row else usable
+                _UPGRADE_TRIED.add(fdc_id)
+                return _fetch(conn, fdc_id, usable)
+        return _fetch(conn, fdc_id, usable)
     finally:
         conn.close()
+
+
+def _fetch(conn, fdc_id: int, usable: Optional[dict]) -> Optional[dict]:
+    """USDA's record, read and cached; `usable` (an older read of it) when that fails."""
+    try:
+        food = _get(f"/food/{fdc_id}", {})
+    except NeedFetch:
+        # the phone, mid-resolve: only a missing record is worth a fetch, not a few more vitamins
+        if usable:
+            return usable
+        raise
+    except Exception:
+        if usable:
+            return usable
+        raise
+    if food is None:
+        return usable
+    normalized = _normalize(food)
+    conn.execute("INSERT OR REPLACE INTO fdc_foods (fdc_id, data, fetched_at) VALUES (?, ?, ?)",
+                 (fdc_id, json.dumps(normalized), time.time()))
+    conn.commit()
+    return normalized
 
 
 # ── picking a match automatically ────────────────────────────────────────

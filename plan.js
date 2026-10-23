@@ -270,6 +270,8 @@ App.plan = {
       cols.appendChild(App.el(`
         <div class="day-col-foot" data-date="${date}" style="grid-column:${ci + 1};grid-row:5;">
           <span class="field-label">Day</span><span class="v num">—</span>
+          <button class="day-low" hidden></button>
+          <div class="day-gaps" hidden></div>
         </div>
       `));
     });
@@ -373,19 +375,90 @@ App.plan = {
   },
 
   _paintDayTotals() {
+    const days = {};
     document.querySelectorAll(".day-col-foot").forEach(foot => {
       const date = foot.dataset.date;
       const mine = this._blocks.filter(b => b.date === date && b.totals);
       const v = foot.querySelector(".v");
-      if (mine.length === 0) { v.textContent = "—"; v.title = ""; return; }
-      const sum = mine.reduce((acc, b) => ({
-        calories_kcal: acc.calories_kcal + b.totals.calories_kcal,
-        protein_g: acc.protein_g + b.totals.protein_g,
-        fiber_g: acc.fiber_g + b.totals.fiber_g,
-      }), { calories_kcal: 0, protein_g: 0, fiber_g: 0 });
+      if (mine.length === 0) { v.textContent = "—"; v.title = ""; this._paintGaps(foot, null); return; }
+      const sum = { calories_kcal: 0, protein_g: 0, fiber_g: 0, vitamins: {} };
+      mine.forEach(b => {
+        for (const k of ["calories_kcal", "protein_g", "fiber_g"]) sum[k] += b.totals[k] || 0;
+        for (const [k, x] of Object.entries(b.totals.vitamins || {})) sum.vitamins[k] = (sum.vitamins[k] || 0) + x;
+      });
       v.textContent = `${Math.round(sum.calories_kcal).toLocaleString()} kcal · ${sum.protein_g.toFixed(0)}g P · ${sum.fiber_g.toFixed(0)}g F`;
       v.title = `${Math.round(sum.calories_kcal)} kcal · ${sum.protein_g.toFixed(1)} g protein · ${sum.fiber_g.toFixed(1)} g fiber`;
+      days[date] = { totals: sum, ingredient_ids: [...new Set(mine.flatMap(b => b.knownRows().map(r => r.ingredient_id)))] };
     });
+    clearTimeout(this._gapsTimer);
+    this._gapsTimer = setTimeout(() => this._refreshGaps(days), 400);
+  },
+
+  /* What the day is low in, and whole foods that would fill it (gaps.py): the foot gets a
+   * "low" chip; tapping it opens the list -- already open on a single day. */
+  async _refreshGaps(days) {
+    if (!Object.keys(days).length) return;
+    const seq = this._gapsSeq = (this._gapsSeq || 0) + 1;
+    let res;
+    try { res = await App.api("/api/nutrition/gaps", { method: "POST", body: { days } }); }
+    catch (e) { return; }
+    if (seq !== this._gapsSeq) return;      // a later edit's answer is on its way
+    document.querySelectorAll(".day-col-foot").forEach(foot => {
+      const d = res.days[foot.dataset.date];
+      if (d) this._paintGaps(foot, d);
+    });
+  },
+
+  _paintGaps(foot, day) {
+    const chip = foot.querySelector(".day-low"), box = foot.querySelector(".day-gaps");
+    if (!chip) return;
+    if (!day || !day.judged || !day.low.length) {
+      chip.hidden = true; box.hidden = true; box.innerHTML = "";
+      if (day && day.judged) { chip.hidden = false; chip.className = "day-low ok"; chip.innerHTML = `${App.icon('<path d="M20 6 9 17l-5-5"/>')}`; chip.title = "Nothing low today"; }
+      return;
+    }
+    const names = day.low.map(l => l.label);
+    chip.hidden = false;
+    chip.className = "day-low";
+    chip.innerHTML = `${App.icon(GP_WARN)}<span>${this._isWeekMode() ? `${names.length} low` : `Low: ${App.esc(names.slice(0, 4).join(" · "))}${names.length > 4 ? ` +${names.length - 4}` : ""}`}</span>`;
+    chip.title = day.low.map(l => `${l.label}: ${l.have} of ${l.target} ${l.unit} (${l.pct}%)`).join("\n");
+    const helps = (c) => c.helps.map(h => `<span class="dg-help">+${h.amount}${h.unit === "g" ? "g" : " " + h.unit} ${App.esc(h.label)}</span>`).join("");
+    const row = (c, kind) => `
+      <div class="dg-row" data-name="${App.esc(c.name)}">
+        ${kind === "buy" ? `<button class="icon-btn dg-buy" title="Add to the list">${App.icon(GP_PLUS)}</button>`
+                         : `<span class="dg-mark${c.in_stock ? " here" : ""}" title="${c.in_stock ? "In the pantry now" : "You've bought it before"}">${App.icon(c.in_stock ? GP_PANTRY : GP_USUAL)}</span>`}
+        <span class="dg-name">${App.esc(c.name)}</span><span class="dg-por num">${App.esc(c.portion)}</span>
+        <span class="dg-helps num">${helps(c)}</span>
+      </div>`;
+    box.innerHTML = `
+      <div class="dg-lows">${day.low.map(l => `
+        <span class="dg-low" title="${l.have} of ${l.target} ${l.unit}"><span>${App.esc(l.label)}</span><span class="dg-bar"><i style="width:${Math.min(100, l.pct)}%"></i></span><span class="num">${l.pct}%</span></span>`).join("")}</div>
+      ${day.have.length ? `<div class="dg-head">${App.icon(GP_PANTRY)}<span>Already buy</span></div>${day.have.map(c => row(c, "have")).join("")}` : ""}
+      ${day.buy.length ? `<div class="dg-head">${App.icon(GP_CART)}<span>Could buy</span></div>${day.buy.map(c => row(c, "buy")).join("")}` : ""}`;
+    box.querySelectorAll(".dg-buy").forEach(btn => btn.addEventListener("click", async () => {
+      const name = btn.closest(".dg-row").dataset.name;
+      btn.disabled = true;
+      try {
+        await App.api("/api/nutrition/gaps/buy", { method: "POST", body: { name, week: this._listWeek, market_week: this._marketWeek } });
+        App.toast(`${name}: on the list`);
+        btn.innerHTML = App.icon('<path d="M20 6 9 17l-5-5"/>');
+        App.groceriesPanel.refresh();
+      } catch (e) { btn.disabled = false; App.toast(`Couldn't add ${name}`); }
+    }));
+    const date = foot.dataset.date;
+    this._gapsOpen = this._gapsOpen || {};
+    const open = this._gapsOpen[date] ?? !this._isWeekMode();
+    box.hidden = !open;
+    foot.classList.toggle("gaps-open", open);
+    if (!chip._wired) {
+      chip._wired = true;
+      chip.addEventListener("click", () => {
+        if (chip.classList.contains("ok")) return;
+        this._gapsOpen[foot.dataset.date] = box.hidden;
+        box.hidden = !box.hidden;
+        foot.classList.toggle("gaps-open", !box.hidden);
+      });
+    }
   },
 
   /* Tab off the end of a meal's lines lands on the next meal's name --

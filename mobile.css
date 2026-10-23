@@ -37,9 +37,11 @@ body.offline #topbar::after { content: "offline · saved on this phone"; font-si
   .plan-cols.one-day { padding: 8px 10px 90px; justify-content: stretch; }
   .is-day .mb-name, .is-day .mb-ing { flex: 1 1 auto; min-width: 0; }
   .is-day .mb-amt { flex: 0 0 76px; }
-  .is-day .mb-row { flex-wrap: wrap; row-gap: 4px; }
-  .is-day .mb-stat { flex: 1 0 100%; font-size: 12px; }
+  /* one thin line per ingredient: stats ride at the end, the × gives way to the swipe */
+  .is-day .mb-row input { padding: 2px 4px; }
+  .is-day .mb-stat { flex: 0 0 auto; font-size: 11px; padding-left: 2px; }
   .is-day .mb-stat:empty { display: none; }
+  .is-day .mb-row-x { display: none; }
   .is-week .plan-cols { -webkit-overflow-scrolling: touch; }
 
   /* the grocery list: a full-screen sheet behind the cart button */
