@@ -27,6 +27,49 @@ App.api = async function (path, options = {}) {
   return res.json();
 };
 
+/* Recipe photos (a cookbook page). Saved as JPEG files beside the plan; on a phone the bridge
+ * answers /api/photos straight from Dropbox. A big camera picture is shrunk first -- a page of
+ * a cookbook reads fine at 1800 px and goes up in a second instead of ten. */
+App.shrinkPhoto = function (file, max = 1800) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const k = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
+      const c = document.createElement("canvas");
+      c.width = Math.round(img.naturalWidth * k);
+      c.height = Math.round(img.naturalHeight * k);
+      c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(url);
+      resolve(c.toDataURL("image/jpeg", 0.82));
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("not a picture this browser can read")); };
+    img.src = url;
+  });
+};
+
+App._photoUrls = {};
+App.photoUrl = function (name) {
+  if (!App._photoUrls[name]) {
+    App._photoUrls[name] = fetch(`/api/photos/${encodeURIComponent(name)}`)
+      .then(r => { if (!r.ok) throw new Error(r.status); return r.blob(); })
+      .then(b => URL.createObjectURL(b))
+      .catch(e => { delete App._photoUrls[name]; throw e; });
+  }
+  return App._photoUrls[name];
+};
+
+// the whole picture, over everything; a tap (or Escape) puts it away
+App.showPhoto = async function (name) {
+  const view = App.el(`<div class="mb-photo-view" title="Close"><img alt=""></div>`);
+  const close = () => { view.remove(); document.removeEventListener("keydown", key, true); };
+  const key = (e) => { if (e.key === "Escape") { e.stopPropagation(); close(); } };
+  view.addEventListener("click", close);
+  document.addEventListener("keydown", key, true);
+  document.body.appendChild(view);
+  try { view.querySelector("img").src = await App.photoUrl(name); } catch (e) { close(); App.toast("That photo isn't here yet"); }
+};
+
 App.toast = function (msg) {
   const el = document.getElementById("toast");
   el.textContent = msg;

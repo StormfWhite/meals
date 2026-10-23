@@ -393,6 +393,36 @@ async def _call(method, path, body):
     } catch (e) { console.warn("notes zip", e); }
   }
 
+  // ---- recipe photos ------------------------------------------------------------------------------
+  // Cookbook pictures are JPEG files in Dropbox /mealplanner/photos (the laptop app's DATA_DIR/photos),
+  // answered here without Python: uploaded straight up, fetched straight down, and kept in the
+  // Cache API (not IndexedDB -- every IndexedDB file is read at boot).
+  async function photo(method, path, body) {
+    const json = (o, status = 200) => new Response(JSON.stringify(o), { status, headers: { "Content-Type": "application/json" } });
+    const keep = (name, blob) => caches.open("meal-photos")
+      .then((c) => c.put("/photo/" + name, new Response(blob, { headers: { "Content-Type": "image/jpeg" } }))).catch(() => {});
+    if (method === "POST") {
+      const b64 = String((JSON.parse(body || "{}").data) || "").split(",").pop();
+      const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+      const name = "p_" + Array.from(crypto.getRandomValues(new Uint8Array(8)), (b) => b.toString(16).padStart(2, "0")).join("") + ".jpg";
+      try { await content("files/upload", { path: `${FOLDER}/photos/${name}`, mode: "add", autorename: false, mute: true }, bytes); }
+      catch (e) { return json({ detail: "Dropbox didn't take it (" + (e.status || e.message) + ")" }, 502); }
+      await keep(name, new Blob([bytes], { type: "image/jpeg" }));
+      return json({ name });
+    }
+    const name = decodeURIComponent(path.split("?")[0].split("/").pop());
+    if (!/^p_[0-9a-f]{8,32}\.jpg$/.test(name)) return json({ detail: "no such photo" }, 404);
+    try {
+      const hit = await caches.open("meal-photos").then((c) => c.match("/photo/" + name));
+      if (hit) return hit;
+    } catch (e) { /* no Cache API: straight from Dropbox */ }
+    try {
+      const blob = await (await content("files/download", { path: `${FOLDER}/photos/${name}` })).blob();
+      await keep(name, blob);
+      return new Response(blob, { status: 200, headers: { "Content-Type": "image/jpeg" } });
+    } catch (e) { return json({ detail: "no such photo" }, e.status === 409 ? 404 : 502); }
+  }
+
   // ---- instant paint ---------------------------------------------------------------------------------
   // Python takes seconds to wake; the plan on screen shouldn't wait for it. Every answer to a GET is
   // kept (IndexedDB, "get:" + path) and, until Python is up, the same request is answered from that
@@ -416,6 +446,7 @@ async def _call(method, path, body):
     if (url.origin !== location.origin || at < 0) return realFetch(input, opts);
     const method = (opts.method || "GET").toUpperCase();
     const path = url.pathname.slice(at) + url.search;
+    if (path.startsWith("/api/photos")) return photo(method, path, typeof opts.body === "string" ? opts.body : "");
     if (!ready && method === "GET") {
       await stale;
       if (!ready && shown[path] !== undefined) {

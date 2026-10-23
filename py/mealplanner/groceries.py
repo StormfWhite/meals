@@ -15,7 +15,7 @@ import re
 import uuid
 from typing import Optional
 
-from . import aisles, board, config, ingredients, learning, nutrition, places, prices, recipes, stock, store
+from . import aisles, batches, board, config, ingredients, learning, nutrition, places, prices, recipes, stock, store
 from .paths import DATA_DIR, GROCERIES_FILE, PRICE_HISTORY_FILE
 
 
@@ -33,8 +33,11 @@ def week_ingredient_needs(week_start_iso: str) -> dict[str, float]:
     ing_by_id = ingredients.by_id()
     seen_groups: set[str] = set()
     needs: dict[str, float] = {}
+    served = batches.shelf().served_in(week_start_iso)    # eaten from a batch put away: nothing to cook
 
-    for slot in week["slots"].values():
+    for key, slot in week["slots"].items():
+        if key in served:
+            continue
         gid = slot.get("leftover_group")
         if gid:
             if gid in seen_groups:
@@ -67,7 +70,10 @@ def week_ingredient_meals(week_start_iso: str) -> tuple[dict[str, list[str]], li
 
     out: dict[str, list[str]] = {}
     order: list[str] = []
+    served = batches.shelf().served_in(week_start_iso)
     for key in sorted(week["slots"], key=when):
+        if key in served:
+            continue
         slot = week["slots"][key]
         recipe = recipes.get(slot.get("recipe_id"))
         if recipe is None:

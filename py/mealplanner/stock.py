@@ -478,6 +478,87 @@ class Ledger:
             best["runs_out"] = look["runs_out"]
         return best
 
+    def slot_sources(self, week: str) -> dict[str, dict]:
+        """Where each planned meal's lines come from (Storm 2026-10-22: the lines should "say they
+        are taking from the pantry or fridge or freezer"). The week's meals are walked in cooking
+        order out of what's on hand at its start -- fridge/pantry before freezer, oldest first,
+        the order the replay cooks in -- so the lines add up to the list beside them. Whatever
+        stock can't cover is on the grocery or market list (`bought` once it's ticked off). A meal
+        eaten from a batch put away (batches.py) says that instead of listing lines."""
+        from . import batches, nutrition, recipes
+        lots = self.state(week)
+        shelf = batches.shelf()
+        served, made = shelf.served_in(week), shelf.made_in(week)
+        items = self.weeks.get(week, {}).get("items", {})
+        rank = {m: i for i, m in enumerate(board.MEALS)}
+        slots = board.get_week(week)["slots"]
+
+        def when(key):
+            d, m, i = board.parse_slot_key(key)
+            return d, rank.get(m, 9), i
+
+        out: dict[str, dict] = {}
+        groups: set = set()
+        for key in sorted(slots, key=when):
+            slot, entry = slots[key], {}
+            out[key] = entry
+            if key in made:
+                lot = made[key]
+                st = slot.get("store") or {}
+                entry["stored"] = {"n": st.get("n"), "where": lot["where"], "left": round(lot["n"], 2)}
+            if key in served:
+                entry["served"] = served[key]
+                continue
+            gid = slot.get("leftover_group")
+            if gid:
+                if gid in groups:
+                    entry["leftovers"] = True
+                    continue
+                groups.add(gid)
+            recipe = recipes.get(slot.get("recipe_id"))
+            if recipe is None:
+                continue
+            lines: dict[str, dict] = {}
+            for item in slot.get("ingredient_overrides") or recipe["ingredients"]:
+                ing_id = item["ingredient_id"]
+                ing = self.ings.get(ing_id)
+                if ing is None:
+                    continue
+                want = nutrition.qty_to_grams(ing, item["qty"], item["unit"]) or 0.0
+                have = sorted(lots.get(ing_id, []), key=lambda l: (l["frozen"], l["since"]))
+                line = lines.setdefault(ing_id, {"from": {}, "short_g": 0.0})
+                if want <= 0:
+                    # no weight to count ("1 bunch"): it's either in the kitchen or it isn't
+                    if have:
+                        where = "freezer" if have[0]["frozen"] else storage(ing)
+                        line["from"].setdefault(where, 0.0)
+                    else:
+                        line["short_g"] = line["short_g"] or 0.001
+                    continue
+                for lot in have:
+                    take = min(lot["g"], want)
+                    if take <= 0:
+                        continue
+                    lot["g"] -= take
+                    want -= take
+                    where = "freezer" if lot["frozen"] else storage(ing)
+                    line["from"][where] = line["from"].get(where, 0.0) + take
+                    if want <= 0.5:
+                        break
+                lots[ing_id] = [l for l in have if l["g"] > 0.5]
+                if want > 0.5:
+                    line["short_g"] += want
+            for ing_id, line in lines.items():
+                line["from"] = {w: round(g, 1) for w, g in line["from"].items()}
+                line["from_text"] = {w: us_amount(g) for w, g in line["from"].items()}
+                if line["short_g"]:
+                    line["list"] = self.list_of(week, ing_id)
+                    line["bought"] = bool(items.get(ing_id, {}).get("checked"))
+                    line["short_text"] = us_amount(line["short_g"])
+                line["short_g"] = round(line["short_g"], 1)
+            entry["lines"] = lines
+        return out
+
     def on_hand(self, week: str) -> list[dict]:
         """Everything on hand at the start of the week, for the Pantry: where it is, how much,
         when it runs out (and whether that's soon), and by when the fresh part should be used."""

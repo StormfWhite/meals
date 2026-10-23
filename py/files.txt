@@ -2,6 +2,7 @@ app/__init__.py
 app/server.py
 mealplanner/aisles.py
 mealplanner/bangers.py
+mealplanner/batches.py
 mealplanner/board.py
 mealplanner/catalog.py
 mealplanner/config.py

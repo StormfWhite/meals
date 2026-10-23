@@ -682,3 +682,68 @@ input.gp-row-name:focus { background: var(--panel); border-color: var(--border);
 .ri-note-t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ri-note .dim { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; }
 .ri-note .dim svg { width: 11px; height: 11px; }
+
+/* ── 2026-10-22: where a recipe came from, where each line comes from, batches put away ── */
+.mb-source { width: 18px; height: 18px; opacity: 0; flex: none; }
+.mb-source svg { width: 11px; height: 11px; }
+.mb:hover .mb-source, .mb:focus-within .mb-source { opacity: 0.7; }
+.mb-source.on { opacity: 1; color: var(--accent); }
+.is-week .mb-source { position: absolute; right: 56px; background: var(--panel); }
+.is-week .mb-source.on { background: transparent; }
+
+.mb-from { display: inline-flex; align-items: center; gap: 1px; flex: none; }
+.mb-from > span { display: inline-flex; }
+.mb-from svg { width: 11px; height: 11px; }
+.mb-from .to-grocery { color: var(--accent); }
+.mb-from .to-market { color: var(--good); }
+.mb-from .bought { color: var(--text-dim); opacity: .7; }
+.mb-row.from-fridge { border-left-color: var(--fridge); }
+.mb-row.from-pantry { border-left-color: var(--dry); }
+.mb-row.from-freezer { border-left-color: var(--freezer); }
+.mb.served .mb-rows { opacity: .45; }
+.mb-link.keep { opacity: 1; }
+.mb-tag.where-fridge svg { color: var(--fridge); }
+.mb-tag.where-freezer svg { color: var(--freezer); }
+button.mb-tag { cursor: pointer; font: inherit; font-size: 10px; }
+
+.mb-foot { display: flex; align-items: center; min-height: 0; }
+.mb-foot:empty { display: none; }
+.mb-bulk { width: 18px; height: 18px; opacity: 0; }
+.mb-bulk svg { width: 11px; height: 11px; }
+.mb.filled:hover .mb-bulk, .mb.filled:focus-within .mb-bulk { opacity: 0.6; }
+.mb-bulk-ed { display: inline-flex; align-items: center; gap: 2px; padding: 2px 4px; border: 1px solid var(--border);
+  border-radius: 9px; background: var(--panel-2); color: var(--text-dim); }
+.mb-bulk-ed > svg { width: 11px; height: 11px; margin-right: 2px; }
+.mb-bulk-ed .icon-btn { width: 20px; height: 20px; font-size: 13px; line-height: 1; }
+.mb-bulk-ed .icon-btn svg { width: 12px; height: 12px; }
+.mb-bulk-n { width: 34px; min-width: 0; padding: 2px 3px; font-size: 11px; text-align: center; }
+.mb-bulk-n::-webkit-outer-spin-button, .mb-bulk-n::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.mb-bulk-ed .gp-stock-pick .icon-btn { width: 20px; height: 20px; }
+.mb-bulk-ed .gp-stock-pick svg { width: 12px; height: 12px; }
+
+.mb-src-menu { min-width: 260px; max-width: min(340px, calc(100vw - 16px)); gap: 6px; padding: 8px; }
+.mb-src-link { display: flex; align-items: center; gap: 4px; color: var(--text-dim); }
+.mb-src-link > svg { width: 13px; height: 13px; flex: none; }
+.mb-src-url { flex: 1; min-width: 0; font-size: 12px; padding: 5px 7px; }
+.mb-src-open { width: 24px; height: 24px; flex: none; color: var(--accent); }
+.mb-src-open[hidden] { display: none; }
+.mb-src-open svg { width: 13px; height: 13px; }
+.mb-src-photos { display: flex; flex-wrap: wrap; gap: 6px; }
+.mb-src-thumb { position: relative; width: 58px; height: 58px; border-radius: 7px; overflow: hidden; background: var(--panel-2);
+  border: 1px solid var(--border); }
+.mb-src-thumb img { width: 100%; height: 100%; object-fit: cover; cursor: zoom-in; display: block; }
+.mb-src-thumb.missing::after { content: "…"; position: absolute; inset: 0; display: grid; place-items: center; color: var(--text-dim); }
+.mb-src-x { position: absolute; top: 1px; right: 1px; width: 18px; height: 18px; border-radius: 50%;
+  background: rgba(0,0,0,.55); color: #fff; opacity: 0; }
+.mb-src-x svg { width: 9px; height: 9px; }
+.mb-src-thumb:hover .mb-src-x { opacity: 1; }
+.mb-src-add { width: 58px; height: 58px; border-radius: 7px; border: 1px dashed var(--border); color: var(--text-dim); cursor: pointer; }
+.mb-src-add svg { width: 18px; height: 18px; }
+.mb-photo-view { position: fixed; inset: 0; z-index: 90; background: rgba(0,0,0,.86); display: grid; place-items: center;
+  padding: 12px; cursor: zoom-out; }
+.mb-photo-view img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 4px; box-shadow: 0 10px 40px rgba(0,0,0,.5); }
+
+/* the pantry's cooked meals: a serving at a time */
+.gp-meal-dn { width: 20px; height: 20px; font-size: 14px; line-height: 1; color: var(--text-dim); }
+/* seven 144px columns: the line's edge colour says it; the icons would eat the ingredient's name */
+.is-week .mb-from { display: none; }

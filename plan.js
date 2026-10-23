@@ -169,12 +169,28 @@ App.plan = {
       onWeekChanged: (week) => {
         self._week = week;
         App.groceriesPanel.refresh();
+        self.refreshSources();
       },
       onStatsChanged: () => self._paintDayTotals(),
       listWeek: () => self._listWeek,
       reloadWeek: () => self.render(document.getElementById("body")),
       fillWeek: (fromKey, recipeId, meal, servings) => self._fillWeek(fromKey, recipeId, meal, servings),
     };
+  },
+
+  /* Where every meal's lines come from -- fridge, dry, freezer, or the list -- and which meals
+   * are eaten from a batch put away (stock.slot_sources, one call for the week). Asked again
+   * after any change to the plan or the list, since a tick or a pantry edit moves it. */
+  refreshSources() {
+    clearTimeout(this._srcTimer);
+    this._srcTimer = setTimeout(async () => {
+      if (!this._week) return;
+      const week = this._week.week_start;
+      let res;
+      try { res = await App.api(`/api/board/${week}/sources`); } catch (e) { return; }
+      if (!this._week || this._week.week_start !== week) return;
+      this._blocks.forEach(b => b.applySources(res.slots[b.key]));
+    }, 350);
   },
 
   /* "Fill the rest of this week" — the same meal in that slot on every
@@ -184,11 +200,12 @@ App.plan = {
   async _fillWeek(fromKey, recipeId, meal, servings) {
     const from = fromKey.split(":")[0];
     let week = this._week;
+    const lines = (week.slots[fromKey] || {}).ingredient_overrides || null;   // the same lines, not the recipe's first ones
     for (const date of this._week.dates) {
       if (date <= from) continue;
       if (Object.keys(week.slots).some(k => k.startsWith(`${date}:${meal}`))) continue;
       week = await App.api(`/api/board/${week.week_start}/slots/${date}:${meal}`, {
-        method: "PUT", body: { recipe_id: recipeId, servings_used: servings },
+        method: "PUT", body: { recipe_id: recipeId, servings_used: servings, ingredient_overrides: lines },
       });
     }
     this._week = week;
@@ -258,6 +275,7 @@ App.plan = {
     });
 
     this._drawNav();
+    this.refreshSources();
     App.groceriesPanel.mount(body.querySelector("#list-panel"), this._listWeek,
       (n) => this._setBadge(n), "Next week", _planRange(this._listWeek, _planShift(this._listWeek, 6)), this._marketWeek);
     this._refreshAllStats();

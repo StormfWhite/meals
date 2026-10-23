@@ -105,3 +105,12 @@ body.offline #topbar::after { content: "offline · saved on this phone"; font-si
   .gp-row .gp-stock-rm { opacity: .55; }
   .gp-stock-rm svg { width: 17px; height: 17px; }
 }
+@media (max-width: 760px) {
+  .mb-src-x { opacity: .9; }                        /* no hover on a phone */
+  .gp-stock-meal .gp-meal-dn { display: inline-flex; width: 34px; height: 30px; }
+  .mb-bulk-ed .icon-btn { width: 32px; height: 32px; }
+  .mb-bulk-n { width: 52px; }
+}
+/* where the line comes from: in front of the name, like a bullet -- not a line of its own */
+@media (max-width: 760px) { .is-day .mb-from { order: -1; margin-right: 2px; } .is-day .mb-from svg { width: 14px; height: 14px; }
+  .is-day .mb-row .mb-ing { flex: 1 1 0; } }

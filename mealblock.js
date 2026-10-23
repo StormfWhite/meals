@@ -25,6 +25,14 @@ const MB_ICONS = {
 };
 const MB_STAR = '<path d="m12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9Z"/>';
 const MB_REPEAT = '<path d="M17 2l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>';
+// where a recipe came from: an open book (a web page or a cookbook photo)
+const MB_BOOK = '<path d="M2 4h6a4 4 0 0 1 4 4v13a3 3 0 0 0-3-3H2Z"/><path d="M22 4h-6a4 4 0 0 0-4 4v13a3 3 0 0 1 3-3h7Z"/>';
+const MB_LINK = '<path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/>';
+const MB_OPEN = '<path d="M15 3h6v6M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>';
+const MB_CAMERA = '<path d="M3 8a2 2 0 0 1 2-2h2l2-3h6l2 3h2a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/><circle cx="12" cy="13" r="4"/>';
+// making it in bulk: stacked containers
+const MB_BULK = '<rect x="4" y="3" width="16" height="6" rx="1.5"/><rect x="4" y="11" width="16" height="4" rx="1.5"/><rect x="4" y="17" width="16" height="4" rx="1.5"/>';
+const MB_FLAME = '<path d="M12 22a7 7 0 0 0 7-7c0-4-3-6-4-10-2 2-3 4-3 6-1-1-2-2-2-4-2 2-5 5-5 8a7 7 0 0 0 7 7Z"/>';
 const MB_WEEKDAYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
 
 App.mealBlock = {
@@ -47,12 +55,14 @@ App.mealBlock = {
         <div class="mb-name-row">
           <input class="mb-name" autocomplete="off" placeholder="${MB_LABELS[meal]}…" spellcheck="false">
           <input class="mb-serv num" type="number" min="0.5" step="0.5" title="Servings used from the batch" value="1">
+          <button class="icon-btn mb-source" title="Recipe: a link or a cookbook photo">${App.icon(MB_BOOK)}</button>
           <button class="icon-btn mb-banger" title="Add to Bangers">${App.icon(MB_STAR)}</button>
           <button class="icon-btn mb-repeat" title="Repeat this meal every week">${App.icon(MB_REPEAT)}</button>
           <button class="icon-btn mb-clear" title="Clear this meal">${App.icon('<path d="M18 6 6 18M6 6l12 12"/>')}</button>
         </div>
         <div class="mb-link"></div>
         <div class="mb-rows"></div>
+        <div class="mb-foot"></div>
       </section>
     `);
 
@@ -66,6 +76,8 @@ App.mealBlock = {
     const servInput = el.querySelector(".mb-serv");
     const rowsWrap = el.querySelector(".mb-rows");
     const linkWrap = el.querySelector(".mb-link");
+    const footWrap = el.querySelector(".mb-foot");
+    let sources = null;      // this slot's entry from /api/board/{week}/sources (stock.slot_sources)
     const totalEl = el.querySelector(".mb-total");
 
     // ── reading the DOM ──────────────────────────────────────────────
@@ -111,11 +123,53 @@ App.mealBlock = {
      * the tooltip. Unknown until the ingredient is in the catalog. */
     const markDestination = (row) => {
       const ing = ingredientByName(row.querySelector(".mb-ing").value);
+      if (paintSource(row, ing)) return;
       const dest = ing ? ing.shop_list : null;
       row.classList.toggle("to-market", dest === "market");
       row.classList.toggle("to-grocery", dest === "grocery");
       row.title = dest === "market" ? "goes on the farmer's market list"
         : dest === "grocery" ? "goes on the grocery list" : "";
+    };
+
+    /* Where the line comes from (Storm 2026-10-22: lines should "say they are taking from the
+     * pantry or fridge or freezer"): an icon before the stats -- fridge, jar, snowflake, or the
+     * cart / basket for what still has to be bought (ticked off = bought). Worked out by the
+     * server walking the week's meals in order out of what's on hand, so the lines add up to
+     * the list. The edge takes the same colour. False = nothing known yet. */
+    const paintSource = (row, ing) => {
+      const old = row.querySelector(".mb-from");
+      if (old) old.remove();
+      row.classList.remove("from-fridge", "from-pantry", "from-freezer");
+      const line = ing && sources && sources.lines ? sources.lines[ing.id] : null;
+      if (!line) return false;
+      const icons = [], says = [];
+      Object.entries(line.from).sort((a, b) => b[1] - a[1]).forEach(([where, g]) => {
+        icons.push(`<span class="where-${where}">${App.icon(GP_PLACES[where][0])}</span>`);
+        const amt = line.from_text[where];
+        says.push(`${amt ? amt + " " : ""}from the ${where === "pantry" ? "pantry" : where}`);
+      });
+      if (line.short_g) {
+        const market = line.list === "market";
+        icons.push(`<span class="${line.bought ? "bought" : market ? "to-market" : "to-grocery"}">${App.icon(market ? GP_BASKET : GP_CART)}</span>`);
+        const amt = line.short_text && line.short_g > 0.01 ? line.short_text + " " : "";
+        says.push(line.bought ? `${amt}bought` : `${amt}on the ${market ? "farmer's market" : "grocery"} list`);
+      }
+      const main = Object.keys(line.from).sort((a, b) => line.from[b] - line.from[a])[0];
+      row.classList.remove("to-market", "to-grocery");
+      if (main) row.classList.add("from-" + main);
+      else row.classList.add(line.list === "market" ? "to-market" : "to-grocery");
+      row.title = says.join(" · ");
+      const badge = App.el(`<span class="mb-from" title="${App.esc(row.title)}">${icons.slice(0, 2).join("")}</span>`);
+      row.insertBefore(badge, row.querySelector(".mb-stat"));
+      return true;
+    };
+
+    const applySources = (entry) => {
+      sources = entry || null;
+      el.classList.toggle("served", !!(sources && sources.served));
+      Array.from(rowsWrap.children).forEach(markDestination);
+      drawLink();
+      drawFoot();
     };
 
     // ── drawing ──────────────────────────────────────────────────────
@@ -304,8 +358,26 @@ App.mealBlock = {
 
     const drawLink = () => {
       linkWrap.innerHTML = "";
+      linkWrap.classList.remove("keep");
       const s = slot();
       if (!s) return;
+      const served = sources && sources.served;
+      if (served || s.fresh) {
+        // eaten from a batch put away (batches.py): tap to cook it fresh instead, and back
+        const where = served ? served.where : "freezer";
+        const btn = App.el(served
+          ? `<button class="mb-tag mb-served where-${where}" title="Its ingredients aren't on the list — tap to cook it fresh instead">${App.icon(GP_PLACES[where][0])}from the ${where} · ${_mbShortDay(served.made)}'s batch${served.left ? ` · ${served.left} left` : ""}</button>`
+          : `<button class="mb-tag mb-fresh" title="Tap to eat servings put away instead, when there are some">${App.icon(MB_FLAME)}cooking fresh</button>`);
+        btn.addEventListener("click", async () => {
+          try {
+            host.onWeekChanged(await App.api(`/api/board/${host.getWeek().week_start}/slots/${key}/fresh`,
+              { method: "PUT", body: { fresh: !!served } }));
+          } catch (err) { App.toast(err.message); }
+        });
+        linkWrap.appendChild(btn);
+        linkWrap.classList.add("keep");
+        return;
+      }
       if (s.leftover_group) {
         linkWrap.innerHTML = `<span class="mb-tag">${App.icon('<path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 1 1 0 10h-2"/><path d="M8 12h8"/>')}leftovers</span>`;
         return;
@@ -324,6 +396,153 @@ App.mealBlock = {
       });
       linkWrap.appendChild(btn);
     };
+
+    /* Making it in bulk (Storm 2026-10-22: "a button at the bottom to click if we are making it
+     * in bulk how many servings we are storing in the fridge or freezer"). The lines above are
+     * what goes in the pot -- the list buys exactly those; the servings put away then feed later
+     * meals of the same name, whose ingredients drop off the list (batches.py). */
+    let bulkOpen = false;
+    const drawFoot = () => {
+      footWrap.innerHTML = "";
+      const s = slot();
+      if (!s) return;
+      const st = s.store;
+      const stored = sources && sources.stored;
+      if (bulkOpen) {
+        let where = st ? st.where : "freezer";
+        const ed = App.el(`<div class="mb-bulk-ed">
+          ${App.icon(MB_BULK)}
+          <button class="icon-btn mb-bulk-dn" title="Fewer">−</button>
+          <input class="mb-bulk-n num" type="number" min="0" step="1" value="${st ? st.n : 4}" title="Servings put away">
+          <button class="icon-btn mb-bulk-up" title="More">+</button>
+          <span class="gp-stock-pick">${["fridge", "freezer"].map(w =>
+            `<button class="icon-btn where-${w}${w === where ? " on" : ""}" data-where="${w}" title="${GP_PLACES[w][1]}">${App.icon(GP_PLACES[w][0])}</button>`).join("")}</span>
+          <button class="icon-btn mb-bulk-ok" title="Save">${App.icon('<path d="M20 6 9 17l-5-5"/>')}</button>
+          ${st ? `<button class="icon-btn mb-bulk-off" title="Not a batch">${App.icon('<path d="M18 6 6 18M6 6l12 12"/>')}</button>` : ""}
+        </div>`);
+        const n = ed.querySelector(".mb-bulk-n");
+        ed.querySelector(".mb-bulk-dn").addEventListener("click", () => { n.value = Math.max(0, (Number(n.value) || 0) - 1); });
+        ed.querySelector(".mb-bulk-up").addEventListener("click", () => { n.value = (Number(n.value) || 0) + 1; });
+        ed.querySelectorAll(".gp-stock-pick button").forEach(b => b.addEventListener("click", () => {
+          where = b.dataset.where;
+          ed.querySelectorAll(".gp-stock-pick button").forEach(x => x.classList.toggle("on", x === b));
+        }));
+        const save = async (count) => {
+          bulkOpen = false;
+          try {
+            host.onWeekChanged(await App.api(`/api/board/${host.getWeek().week_start}/slots/${key}/store`,
+              { method: "PUT", body: { n: count, where } }));
+            App.toast(count ? `${count} serving${count === 1 ? "" : "s"} into the ${where}` : "Not a batch");
+          } catch (err) { App.toast(err.message); drawFoot(); }
+        };
+        ed.querySelector(".mb-bulk-ok").addEventListener("click", () => save(Math.max(0, Number(n.value) || 0)));
+        ed.querySelector(".mb-bulk-off")?.addEventListener("click", () => save(0));
+        n.addEventListener("keydown", (e) => {
+          if (e.key === "Enter" || e.keyCode === 13) { e.preventDefault(); save(Math.max(0, Number(n.value) || 0)); }
+          else if (e.key === "Escape") { e.stopPropagation(); bulkOpen = false; drawFoot(); }
+        });
+        footWrap.appendChild(ed);
+        requestAnimationFrame(() => { n.focus(); n.select(); });
+        return;
+      }
+      const btn = st
+        ? App.el(`<button class="mb-tag mb-bulk-on where-${st.where}" title="Making it in bulk — tap to change">${App.icon(GP_PLACES[st.where][0])}+${st.n} into the ${st.where}${stored && stored.left !== st.n ? ` · ${stored.left} left` : ""}</button>`)
+        : App.el(`<button class="icon-btn mb-bulk" title="Making it in bulk? Servings to put in the fridge or freezer">${App.icon(MB_BULK)}</button>`);
+      btn.addEventListener("click", () => { bulkOpen = true; drawFoot(); });
+      footWrap.appendChild(btn);
+    };
+
+    /* Where the recipe came from (Storm 2026-10-22: "a button for uploading or looking at a real
+     * link to a website recipe or a picture from a cookbook recipe … next to the name"). Kept on
+     * the recipe, so every week that cooks it has it. Pictures are shrunk here, saved as files
+     * beside the plan (they ride Dropbox to the phones). */
+    const srcBtn = el.querySelector(".mb-source");
+    const syncSource = () => {
+      const r = matchedRecipe;
+      const has = !!(r && (r.source_url || (r.photos || []).length));
+      srcBtn.classList.toggle("on", has);
+      srcBtn.title = has ? "The recipe" : "Recipe: a link or a cookbook photo";
+    };
+    const saveRecipe = async (fields) => {
+      const res = await App.api(`/api/recipes/${matchedRecipe.id}`, { method: "PUT", body: fields });
+      const at = host.recipes.findIndex(r => r.id === res.recipe.id);
+      if (at >= 0) host.recipes[at] = res.recipe;
+      matchedRecipe = res.recipe;
+      syncSource();
+      return res.recipe;
+    };
+    const openSource = async () => {
+      if (!nameInput.value.trim()) { App.toast("Name the meal first"); return; }
+      await commit().catch(err => App.toast(err.message));   // makes the recipe if it's new
+      if (!matchedRecipe) { App.toast("Name the meal first"); return; }
+      document.querySelectorAll(".mb-src-menu").forEach(m => m.remove());
+      const menu = App.el(`<div class="mb-menu mb-src-menu">
+        <div class="mb-src-link">
+          ${App.icon(MB_LINK)}
+          <input class="mb-src-url" type="url" placeholder="Paste a recipe link…" spellcheck="false" enterkeyhint="done">
+          <a class="icon-btn mb-src-open" target="_blank" rel="noopener" title="Open the recipe">${App.icon(MB_OPEN)}</a>
+        </div>
+        <div class="mb-src-photos"></div>
+      </div>`);
+      const url = menu.querySelector(".mb-src-url"), open = menu.querySelector(".mb-src-open");
+      const photos = menu.querySelector(".mb-src-photos");
+      const showUrl = () => {
+        const u = matchedRecipe.source_url || "";
+        url.value = u;
+        open.hidden = !u;
+        if (u) open.href = /^https?:\/\//i.test(u) ? u : "https://" + u;
+      };
+      const drawPhotos = () => {
+        photos.innerHTML = "";
+        (matchedRecipe.photos || []).forEach(name => {
+          const t = App.el(`<span class="mb-src-thumb"><img alt=""><button class="icon-btn mb-src-x" title="Remove this photo">${App.icon('<path d="M18 6 6 18M6 6l12 12"/>')}</button></span>`);
+          App.photoUrl(name).then(u => { t.querySelector("img").src = u; }).catch(() => t.classList.add("missing"));
+          t.querySelector("img").addEventListener("click", () => App.showPhoto(name));
+          t.querySelector(".mb-src-x").addEventListener("click", async (e) => {
+            e.stopPropagation();
+            await saveRecipe({ photos: (matchedRecipe.photos || []).filter(p => p !== name) }).catch(err => App.toast(err.message));
+            drawPhotos();
+          });
+          photos.appendChild(t);
+        });
+        const add = App.el(`<label class="icon-btn mb-src-add" title="Add a photo of the recipe">${App.icon(MB_CAMERA)}<input type="file" accept="image/*" hidden></label>`);
+        add.querySelector("input").addEventListener("change", async (e) => {
+          const files = Array.from(e.target.files || []);
+          for (const f of files) {
+            try {
+              App.toast("Saving the photo…");
+              const data = await App.shrinkPhoto(f);
+              const res = await App.api("/api/photos", { method: "POST", body: { data } });
+              await saveRecipe({ photos: [...(matchedRecipe.photos || []), res.name] });
+            } catch (err) { App.toast(`Couldn't save the photo: ${err.message}`); }
+          }
+          drawPhotos();
+        });
+        photos.appendChild(add);
+      };
+      const saveUrl = async () => {
+        const u = url.value.trim();
+        if (u === (matchedRecipe.source_url || "")) return;
+        try { await saveRecipe({ source_url: u }); showUrl(); App.toast(u ? "Link saved" : "Link removed"); }
+        catch (err) { App.toast(err.message); }
+      };
+      url.addEventListener("change", saveUrl);
+      url.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.keyCode === 13) { e.preventDefault(); url.blur(); }
+        if (e.key === "Escape") { e.stopPropagation(); close(); }
+      });
+      showUrl();
+      drawPhotos();
+      document.body.appendChild(menu);
+      const rect = srcBtn.getBoundingClientRect();
+      menu.style.top = `${Math.min(rect.bottom + 4, window.innerHeight - 200)}px`;
+      menu.style.left = `${Math.max(8, Math.min(rect.left - 200, window.innerWidth - menu.offsetWidth - 8))}px`;
+      const close = () => { menu.remove(); document.removeEventListener("mousedown", away); document.removeEventListener("touchstart", away); };
+      const away = (e) => { if (!menu.contains(e.target) && !e.target.closest(".mb-photo-view")) { saveUrl(); close(); } };
+      setTimeout(() => { document.addEventListener("mousedown", away); document.addEventListener("touchstart", away, { passive: true }); }, 0);
+      if (!matchedRecipe.source_url && !(matchedRecipe.photos || []).length) url.focus();
+    };
+    srcBtn.addEventListener("click", (e) => { e.preventDefault(); openSource(); });
 
     // The star is lit when this meal is already a banger for this meal type.
     const bangerFor = () => matchedRecipe && App.bangers.find(meal, matchedRecipe.id);
@@ -353,9 +572,12 @@ App.mealBlock = {
       servInput.value = s ? s.servings_used : 1;
       el.classList.toggle("filled", !!s);
       drawRows(s ? (s.ingredient_overrides || (matchedRecipe ? matchedRecipe.ingredients : [])) : null);
+      bulkOpen = false;
       drawLink();
+      drawFoot();
       drawRepeat();
       syncStar();
+      syncSource();
     };
 
     // ── live stats ───────────────────────────────────────────────────
@@ -455,7 +677,9 @@ App.mealBlock = {
       host.invalidateOptions(meal);
       el.classList.add("filled");
       drawLink();
+      drawFoot();
       drawRepeat();
+      syncSource();
       // Ingredients minted by this commit now have a shopping list -- show
       // where each line is going without waiting for a redraw.
       Array.from(rowsWrap.children).forEach(markDestination);
@@ -475,10 +699,12 @@ App.mealBlock = {
         if (found && (!matchedRecipe || found.id !== matchedRecipe.id)) {
           matchedRecipe = found;
           ownRecipe = false;
-          drawRows(found.ingredients);   // picked a past meal — bring its lines along
+          // picked a past meal — bring along the lines it was last made with, amounts and all
+          drawRows(found.last_ingredients || found.ingredients);
         } else if (!found) {
           matchedRecipe = null;
         }
+        syncSource();
       }
     });
 
@@ -498,6 +724,10 @@ App.mealBlock = {
       servInput.value = 1;
       el.classList.remove("filled");
       linkWrap.innerHTML = "";
+      footWrap.innerHTML = "";
+      sources = null;
+      el.classList.remove("served");
+      syncSource();
       drawRows(null);
     });
 
@@ -509,6 +739,7 @@ App.mealBlock = {
       applyPreview,
       refreshStats,
       redraw: draw,
+      applySources,
       get totals() { return totals; },
       flush: () => commit().catch(() => {}),
     };

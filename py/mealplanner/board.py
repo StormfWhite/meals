@@ -142,13 +142,38 @@ def set_slot(week_start_iso: str, slot_key: str, recipe_id: str, servings_used: 
     data = _load()
     week = data["weeks"].setdefault(week_start_iso, _empty_week())
     existing = week["slots"].get(slot_key, {})
+    same = existing.get("recipe_id") == recipe_id
     week["slots"][slot_key] = {
         "recipe_id": recipe_id,
         "servings_used": servings_used,
-        "leftover_group": existing.get("leftover_group") if existing.get("recipe_id") == recipe_id else None,
+        "leftover_group": existing.get("leftover_group") if same else None,
         "ingredient_overrides": ingredient_overrides,
     }
+    # a batch put away / "cook it fresh" (batches.py) belongs to this meal, not to the slot
+    for key in ("store", "fresh"):
+        if same and existing.get(key):
+            week["slots"][slot_key][key] = existing[key]
     _prune_leftover_groups(week)
+    _save(data)
+    return get_week(week_start_iso)
+
+
+def set_slot_extra(week_start_iso: str, key: str, **fields) -> dict:
+    """`store` ({"n", "where"} or None) and `fresh` (bool) on a planned slot -- see batches.py.
+    A routine's slot is written down first, so the extra has somewhere to live."""
+    data = _load()
+    week = data["weeks"].setdefault(week_start_iso, _empty_week())
+    slot = week["slots"].get(key)
+    if slot is None or _is_tombstone(slot):
+        live = get_week(week_start_iso)["slots"].get(key)
+        if live is None:
+            raise KeyError(key)
+        slot = week["slots"][key] = {k: v for k, v in live.items() if k != "from_routine"}
+    for name, value in fields.items():
+        if value:
+            slot[name] = value
+        else:
+            slot.pop(name, None)
     _save(data)
     return get_week(week_start_iso)
 

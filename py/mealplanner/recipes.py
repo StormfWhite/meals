@@ -1,5 +1,9 @@
 """Recipes: a name, a servings count, and a list of ingredient quantities.
 
+`last_ingredients` is the list the meal was last saved with -- picking the meal again fills
+that in, amounts and all (Storm 2026-10-22). `source_url` / `photos` are where the recipe
+came from: a web page, or pictures of a cookbook page (files in DATA_DIR/photos).
+
 Nutrition is deliberately not a field here -- see nutrition.py's docstring.
 """
 from __future__ import annotations
@@ -52,9 +56,12 @@ def update(recipe_id: str, **fields) -> dict:
     recipe = next((r for r in data["recipes"] if r["id"] == recipe_id), None)
     if recipe is None:
         raise KeyError(recipe_id)
-    for key in ("name", "servings", "ingredients", "tags", "notes", "hide_suggest"):
+    for key in ("name", "servings", "ingredients", "tags", "notes", "hide_suggest",
+                "source_url", "photos", "last_ingredients"):
         if key in fields and fields[key] is not None:
-            recipe[key] = fields[key].strip() if key == "name" else fields[key]
+            recipe[key] = fields[key].strip() if key in ("name", "source_url") else fields[key]
+    if fields.get("ingredients") is not None and fields.get("last_ingredients") is None:
+        recipe["last_ingredients"] = fields["ingredients"]     # the newest list is the one just written
     recipe["updated_at"] = time.time()
     _save(data)
     return recipe

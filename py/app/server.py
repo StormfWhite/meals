@@ -9,6 +9,9 @@ module lands.
 """
 from __future__ import annotations
 
+import base64
+import re
+import uuid
 from pathlib import Path
 from typing import Optional
 
@@ -17,12 +20,13 @@ from fastapi.responses import JSONResponse, FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from mealplanner import (bangers, aisles, board, config, fdc, groceries, household, ingredients,
+from mealplanner import (bangers, aisles, batches, board, config, fdc, groceries, household, ingredients,
                          catalog, learning, nutrition, places, prices, recipe_import, recipes, routines, stats, stock,
                          suggest)
-from mealplanner.paths import ensure_dirs
+from mealplanner.paths import DATA_DIR, ensure_dirs
 
 WEB_DIR = Path(__file__).parent / "web"
+PHOTOS_DIR = DATA_DIR / "photos"
 
 ensure_dirs()
 
@@ -373,6 +377,8 @@ class RecipeUpdateBody(BaseModel):
     tags: Optional[list[str]] = None
     notes: Optional[str] = None
     hide_suggest: Optional[bool] = None  # removed from the meal-name dropdown
+    source_url: Optional[str] = None     # the web page it came from ("" = none)
+    photos: Optional[list[str]] = None   # cookbook pictures: names under /api/photos
 
 
 def _recipe_summary(recipe: dict, ing_by_id: dict) -> dict:
@@ -381,10 +387,29 @@ def _recipe_summary(recipe: dict, ing_by_id: dict) -> dict:
             "unknown_ingredients": totals["unknown_ingredients"]}
 
 
+def _latest_lines() -> dict[str, list]:
+    """recipe_id -> the lines of its most recently dated slot that had any: the "last made with"
+    for meals saved before recipes remembered it (most meals live in their slots' overrides)."""
+    out: dict[str, tuple] = {}
+    for slot in board.all_slots_history():
+        lines = slot.get("ingredient_overrides")
+        if lines and (slot["recipe_id"] not in out or slot["date"] >= out[slot["recipe_id"]][0]):
+            out[slot["recipe_id"]] = (slot["date"], lines)
+    return {rid: lines for rid, (_, lines) in out.items()}
+
+
 @app.get("/api/recipes")
 def get_recipes():
     ing_by_id = ingredients.by_id()
-    return {"recipes": [_recipe_summary(r, ing_by_id) for r in recipes.list_recipes()]}
+    latest = None
+    out = []
+    for r in recipes.list_recipes():
+        if not r.get("last_ingredients"):
+            latest = _latest_lines() if latest is None else latest
+            if r["id"] in latest:
+                r = {**r, "last_ingredients": latest[r["id"]]}
+        out.append(_recipe_summary(r, ing_by_id))
+    return {"recipes": out}
 
 
 @app.post("/api/recipes")
@@ -537,7 +562,83 @@ def put_slot(week: str, slot_key: str, body: SlotBody):
     if recipes.get(body.recipe_id) is None:
         raise HTTPException(404, "no such recipe")
     overrides = [i.model_dump() for i in body.ingredient_overrides] if body.ingredient_overrides else None
-    return board.set_slot(week, slot_key, body.recipe_id, body.servings_used, overrides)
+    out = board.set_slot(week, slot_key, body.recipe_id, body.servings_used, overrides)
+    # the next time this meal is picked it comes back with this list
+    recipe = recipes.get(body.recipe_id)
+    rows = overrides if overrides is not None else recipe["ingredients"]
+    if rows and rows != recipe.get("last_ingredients"):
+        recipes.update(body.recipe_id, last_ingredients=rows)
+    return out
+
+
+class SlotStoreBody(BaseModel):
+    n: float = 0                       # servings put away beyond the meal itself (0 = not a batch)
+    where: str = "freezer"             # "fridge" / "freezer"
+
+
+class SlotFreshBody(BaseModel):
+    fresh: bool
+
+
+@app.put("/api/board/{week}/slots/{slot_key}/store")
+def put_slot_store(week: str, slot_key: str, body: SlotStoreBody):
+    """Making it in bulk: how many extra servings go in the fridge or freezer (batches.py)."""
+    if body.where not in batches.PLACES:
+        raise HTTPException(400, "fridge or freezer")
+    store = {"n": body.n, "where": body.where} if body.n > 0 else None
+    try:
+        return board.set_slot_extra(week, slot_key, store=store)
+    except KeyError:
+        raise HTTPException(404, "plan the meal first")
+
+
+@app.put("/api/board/{week}/slots/{slot_key}/fresh")
+def put_slot_fresh(week: str, slot_key: str, body: SlotFreshBody):
+    """Cook it fresh even though servings of it are put away -- or go back to eating those."""
+    try:
+        return board.set_slot_extra(week, slot_key, fresh=body.fresh)
+    except KeyError:
+        raise HTTPException(404, "plan the meal first")
+
+
+@app.get("/api/board/{week}/sources")
+def get_slot_sources(week: str):
+    """Where each meal's lines come from: fridge / dry / freezer, or the list (stock.slot_sources)."""
+    return {"slots": stock.Ledger().slot_sources(week)}
+
+
+# ── recipe photos (a cookbook page) ──────────────────────────────────────
+# Files under DATA_DIR/photos, so they ride Dropbox to the phones; the phone build answers
+# these two routes itself, straight from Dropbox (~/meals-web/bridge.js).
+
+PHOTO_NAME = re.compile(r"^p_[0-9a-f]{8,32}\.jpg$")
+
+
+class PhotoBody(BaseModel):
+    data: str                          # base64 JPEG (the page shrinks it first)
+    name: Optional[str] = None
+
+
+@app.post("/api/photos")
+def add_photo(body: PhotoBody):
+    name = body.name if body.name and PHOTO_NAME.match(body.name) else f"p_{uuid.uuid4().hex[:16]}.jpg"
+    try:
+        raw = base64.b64decode(body.data.split(",")[-1], validate=False)
+    except ValueError:
+        raise HTTPException(400, "not a picture")
+    if not raw.startswith(b"\xff\xd8"):
+        raise HTTPException(400, "a JPEG, please")
+    PHOTOS_DIR.mkdir(parents=True, exist_ok=True)
+    (PHOTOS_DIR / name).write_bytes(raw)
+    return {"name": name}
+
+
+@app.get("/api/photos/{name}")
+def get_photo(name: str):
+    path = PHOTOS_DIR / name
+    if not PHOTO_NAME.match(name) or not path.exists():
+        raise HTTPException(404, "no such photo")
+    return FileResponse(path, media_type="image/jpeg")
 
 
 # ── bangers (the best meals, per meal type) ──────────────────────────────
@@ -793,10 +894,31 @@ def get_sizes(week: str, ingredient_id: str):
                       for o in stock.Ledger().sizes(week, ingredient_id)]}
 
 
+def _meals_put_away(week: str) -> list[dict]:
+    names = {r["id"]: r["name"] for r in recipes.list_recipes()}
+    return [{**m, "name": names.get(m["recipe_id"], "?")} for m in batches.shelf().put_away(week)
+            if m["recipe_id"] in names]
+
+
 @app.get("/api/stock/{week}")
 def get_stock(week: str):
-    """What's on hand at the start of the week: fridge/pantry and freezer, and when each runs out."""
-    return {"items": stock.Ledger().on_hand(week)}
+    """What's on hand at the start of the week: fridge/pantry and freezer, and when each runs out
+    -- plus cooked meals put away (`meals`, batches.py)."""
+    return {"items": stock.Ledger().on_hand(week), "meals": _meals_put_away(week)}
+
+
+class MealStockBody(BaseModel):
+    where: str
+    n: float
+
+
+@app.put("/api/stock/{week}/meals/{recipe_id}")
+def put_meal_stock(week: str, recipe_id: str, body: MealStockBody):
+    """A correction to a meal put away: n servings left there (0 = eaten / thrown out)."""
+    if body.where not in batches.PLACES:
+        raise HTTPException(400, "fridge or freezer")
+    batches.correct(recipe_id, body.where, body.n, week)
+    return {"items": stock.Ledger().on_hand(week), "meals": _meals_put_away(week)}
 
 
 class StockBody(BaseModel):

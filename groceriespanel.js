@@ -96,6 +96,7 @@ App.groceriesPanel = {
       App.api(`/api/stock/${gw}`).catch(() => ({ items: [] })),
     ]);
     this._stock = stockRes.items;
+    this._meals = stockRes.meals || [];
     const low = this._stock.filter(i => i.low && !i.on_list).length;
     const pb = document.getElementById("pantry-count");
     if (pb) { pb.textContent = low ? String(low) : ""; pb.classList.toggle("on", low > 0); }
@@ -136,13 +137,8 @@ App.groceriesPanel = {
     container.querySelector('[data-list="market"] .gp-head-slot').innerHTML =
       this._sectionHead("market", GP_BASKET, "Farmer's market", market, totals);
     container.querySelectorAll(".gp-stock-badges").forEach(b => b.addEventListener("click", () => this._toggleStock()));
-    // the meal lines whose ingredient comes out of what's on hand get marked (mealblock.js)
-    const onHand = new Set(items.filter(i => i.covered).map(i => i.name.toLowerCase()));
-    document.querySelectorAll(".mb-row").forEach(r => {
-      const on = onHand.has((r.querySelector(".mb-ing") || {}).value?.trim().toLowerCase());
-      r.classList.toggle("on-hand", on);
-      if (on) r.title = "Taken from what's on hand — nothing to buy";
-    });
+    // the meal lines say where each comes from (fridge / dry / freezer / list): ask again
+    if (App.plan && App.plan.refreshSources) App.plan.refreshSources();
     if (this._stockOpen) this._drawStock();
     const datalist = container.querySelector("#gp-ingredient-catalog");
     if (datalist) datalist.innerHTML = ingredients.filter(i => !i.hide_suggest).map(i => `<option value="${App.esc(i.name)}">`).join("");
@@ -362,7 +358,7 @@ App.groceriesPanel = {
 
   async _loadStock() {
     const res = await App.api(`/api/stock/${this._weekStart}`).catch(() => null);
-    if (res) { this._stock = res.items; this._drawStock(); }
+    if (res) { this._stock = res.items; this._meals = res.meals || []; this._drawStock(); }
   },
 
   // "garlic · 2 heads · dry": on top of what's there; no section picked = where it usually lives
@@ -398,9 +394,9 @@ App.groceriesPanel = {
 
   _drawStock() {
     const wrap = this._container.querySelector("#gp-stock-rows");
-    const items = this._stock || [];
+    const items = this._stock || [], meals = this._meals || [];
     wrap.innerHTML = "";
-    if (!items.length) {
+    if (!items.length && !meals.length) {
       wrap.appendChild(App.el(`<div class="gp-empty">Nothing yet — add what's in the kitchen below; what's bought beyond the week's meals shows up here too.</div>`));
       return;
     }
@@ -501,16 +497,40 @@ App.groceriesPanel = {
         wrap.appendChild(el);
       });
     }
+    // cooked meals put away from a batch (batches.py): servings, not grams
+    const mealRow = (m) => {
+      const setN = async (n) => {
+        const res = await App.api(`/api/stock/${wk}/meals/${m.recipe_id}`, { method: "PUT", body: { where: m.where, n } });
+        this._stock = res.items; this._meals = res.meals; this._drawStock();
+        if (App.plan && App.plan.refreshSources) App.plan.refreshSources();
+        this.refresh();
+      };
+      const el = App.el(`<div class="gp-row gp-stock-row gp-stock-meal" title="Cooked ${_gpDay(m.made)} — − when one's eaten">
+        <span class="gp-place where-${m.where}">${App.icon(GP_MEAL)}</span>
+        <span class="gp-row-name">${App.esc(m.name)}</span>
+        <button class="icon-btn gp-meal-dn" title="One eaten">−</button>
+        <span class="gp-stock-amt num" title="servings">${m.n} srv</span>
+        ${m.where === "fridge" || m.use_by <= soon ? `<span class="gp-stock-when${m.use_by <= soon ? " warn" : ""}" title="Won't keep past this">use by ${day(m.use_by)}</span>` : ""}
+        ${rmBtn}
+      </div>`);
+      el.querySelector(".gp-meal-dn").addEventListener("click", () => setN(Math.max(0, m.n - 1)));
+      el.querySelector(".gp-stock-rm").addEventListener("click", () => { App.toast(`${m.name}: gone`); setN(0); });
+      return App.swipeAway(el, () => { App.toast(`${m.name}: gone`); return setN(0); });
+    };
     const rest = items.filter(i => !i.low);
     ["fridge", "pantry"].forEach(where => {
       const mine = rest.filter(i => i.where === where && i.fridge_g > 0.5);
-      if (!mine.length) return;
+      const cooked = meals.filter(m => m.where === where);
+      if (!mine.length && !cooked.length) return;
       head(GP_PLACES[where][0], GP_PLACES[where][1], "where-" + where);
+      cooked.forEach(m => wrap.appendChild(mealRow(m)));
       mine.forEach(i => wrap.appendChild(row(i, false)));
     });
     const frozen = rest.filter(i => i.freezer_g > 0.5);
-    if (frozen.length) {
+    const frozenMeals = meals.filter(m => m.where === "freezer");
+    if (frozen.length || frozenMeals.length) {
       head(GP_SNOW, "Freezer", "where-freezer");
+      frozenMeals.forEach(m => wrap.appendChild(mealRow(m)));
       frozen.forEach(i => wrap.appendChild(row(i, true)));
     }
   },
