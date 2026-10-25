@@ -261,13 +261,14 @@ def bind(ingredient_id: str, kroger_only: bool = False) -> Optional[dict]:
         earlier = (ing.get("unit_conversions") or {}) if ing.get("brand") else {}
         fields.update({"fdc_id": None, "fdc_description": None, "nutrient_fill": {},
                        "unit_conversions": {**earlier, **portions}})
-    data = ingredients._load()
-    row = next(i for i in data["ingredients"] if i["id"] == ingredient_id)
-    block = (row.get("unit_conversions") or {}).get("block")
-    row.update(fields)               # update() skips None, and a dropped match must really go
-    if block:
-        row["unit_conversions"]["block"] = block
-    ingredients._save(data)
+    with ingredients.LOCK:
+        data = ingredients._load()
+        row = next(i for i in data["ingredients"] if i["id"] == ingredient_id)
+        # a block or can size said in the Pantry stays
+        kept = {u: g for u, g in (row.get("unit_conversions") or {}).items() if u in ("block", row.get("pack"))}
+        row.update(fields)               # update() skips None, and a dropped match must really go
+        row["unit_conversions"] = {**(row.get("unit_conversions") or {}), **kept}
+        ingredients._save(data)
     return ingredients.get(ingredient_id)
 
 

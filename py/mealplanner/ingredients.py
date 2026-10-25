@@ -11,7 +11,9 @@ total yet.
 from __future__ import annotations
 
 import datetime
+import functools
 import re
+import threading
 import uuid
 from typing import Optional
 
@@ -30,6 +32,19 @@ KITCHEN_UNITS = {
     "small", "head", "stalk", "sprig", "leaf", "bunch", "fillet", "breast",
     "thigh", "egg", "ear", "fruit", "berry", "wedge", "half", "quart", "pint",
 }
+
+
+# Every read-modify-write of the file holds this: the background USDA resolve and a Pantry add
+# ran at once and the later save wiped the other's change ("4 32 oz cans" lost its can, 2026-10-25).
+LOCK = threading.RLock()
+
+
+def _locked(fn):
+    @functools.wraps(fn)
+    def run(*args, **kwargs):
+        with LOCK:
+            return fn(*args, **kwargs)
+    return run
 
 
 def _load() -> dict:
@@ -66,6 +81,7 @@ def get(ingredient_id: str) -> Optional[dict]:
     return by_id().get(ingredient_id)
 
 
+@_locked
 def add(name: str, category: str = "other", default_unit: str = "g",
         unit_conversions: Optional[dict] = None, store_section: Optional[str] = None,
         manual_nutrients: Optional[dict] = None, fdc_id: Optional[int] = None,
@@ -104,6 +120,7 @@ def add(name: str, category: str = "other", default_unit: str = "g",
     return ingredient
 
 
+@_locked
 def update(ingredient_id: str, **fields) -> dict:
     data = _load()
     ing = next((i for i in data["ingredients"] if i["id"] == ingredient_id), None)
@@ -330,6 +347,7 @@ def humanize_grams(ingredient: dict, grams: float) -> str:
     return f"{count:g} {unit}"
 
 
+@_locked
 def delete(ingredient_id: str) -> bool:
     data = _load()
     before = len(data["ingredients"])
