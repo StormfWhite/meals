@@ -55,7 +55,10 @@ COUNT_UNITS = ("medium", "piece", "egg", "fruit", "large", "small", "clove", "sl
 # the same unit, written out -- a line says "teaspoon", USDA's table says "tsp"
 UNIT_ALIASES = {"teaspoon": "tsp", "teaspoons": "tsp", "tablespoon": "tbsp", "tablespoons": "tbsp",
                 "tbs": "tbsp", "cups": "cup", "c": "cup", "t": "tsp", "ounce": "oz", "ounces": "oz",
-                "pound": "lb", "pounds": "lb", "lbs": "lb", "blocks": "block"}
+                "pound": "lb", "pounds": "lb", "lbs": "lb", "blocks": "block",
+                "cans": "can", "jars": "jar", "bags": "bag", "boxes": "box", "bottles": "bottle",
+                "cartons": "carton", "packages": "package", "pkg": "package", "packs": "package",
+                "pack": "package", "tubs": "tub", "tins": "tin", "pouches": "pouch", "containers": "container"}
 WEIGHTS_G = {"oz": 28.3495, "lb": 453.592, "kg": 1000.0}
 TSP_PER = {"tsp": 1, "tbsp": 3, "cup": 48}    # a cup is 16 tbsp is 48 tsp
 

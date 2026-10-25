@@ -859,7 +859,15 @@ function _gpRange(week) {   // "Oct 25 – Oct 31", via plan.js's own formatter
 
 function _gpSplitAmount(text) {
   const num = "\\d+(?:[./]\\d+)?(?:\\s+\\d+/\\d+)?";
-  let m = text.match(new RegExp(`^(.+?)\\s+(${num}(?:\\s*(?:${GP_UNITS})\\b\\.?)?|${num}\\s*x)$`, "i"));
+  // several of one size: "4 32 oz cans tomatoes", "tomatoes 4 x 32 oz", "4 (15 oz) cans of beans"
+  const size = `\\(?\\s*\\d+(?:\\.\\d+)?\\s*-?\\s*(?:fl\\.?\\s*oz|oz|ounces?|lbs?|pounds?|kg|g|grams?|ml|l)\\.?\\s*\\)?`;
+  const pack = "blocks?|cans?|jars?|bags?|boxe?s?|bottles?|cartons?|packages?|pkgs?|packs?|tubs?|tins?|pouch(?:es)?|containers?";
+  const multi = `\\d+(?:\\.\\d+)?\\s*(?:x|×|\\*)?\\s*${size}(?:\\s*(?:${pack})\\b)?|\\d+(?:\\.\\d+)?\\s*(?:${pack})\\s*(?:of\\s*)?${size}`;
+  let m = text.match(new RegExp(`^(${multi})\\s+(?:of\\s+)?(.+)$`, "i"));
+  if (m) return [m[2], m[1]];
+  m = text.match(new RegExp(`^(.+?)\\s+(${multi})$`, "i"));
+  if (m) return [m[1], m[2]];
+  m = text.match(new RegExp(`^(.+?)\\s+(${num}(?:\\s*(?:${GP_UNITS})\\b\\.?)?|${num}\\s*x)$`, "i"));
   if (m) return [m[1], m[2]];
   m = text.match(new RegExp(`^(${num}(?:\\s*(?:${GP_UNITS})\\b\\.?)?)\\s+(?:of\\s+)?(.+)$`, "i"));
   if (m) return [m[2], m[1]];

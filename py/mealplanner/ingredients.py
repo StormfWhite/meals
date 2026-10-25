@@ -109,16 +109,17 @@ def update(ingredient_id: str, **fields) -> dict:
     ing = next((i for i in data["ingredients"] if i["id"] == ingredient_id), None)
     if ing is None:
         raise KeyError(ingredient_id)
-    old_block = (ing.get("unit_conversions") or {}).get("block")
+    kept = {u: g for u, g in (ing.get("unit_conversions") or {}).items() if u in ("block", ing.get("pack"))}
     for key in ("name", "fdc_id", "fdc_description", "default_unit", "unit_conversions",
                 "category", "store_section", "manual_nutrients", "shop_list", "freezes", "keep_days", "storage",
-                "nutrient_fill", "hide_suggest", "brand"):
+                "nutrient_fill", "hide_suggest", "brand", "pack"):
         if key in fields and fields[key] is not None:
             ing[key] = fields[key].strip() if key == "name" else fields[key]
-    # a block size said in the Pantry ("frozen in 1 lb blocks", stock.text_to_g) outlives a USDA
-    # lookup that started before it and writes its own portions
-    if old_block and fields.get("unit_conversions") is not None and "block" not in ing["unit_conversions"]:
-        ing["unit_conversions"] = {**ing["unit_conversions"], "block": old_block}
+    # a block or can size said in the Pantry ("frozen in 1 lb blocks", "4 32 oz cans",
+    # stock.text_to_g) outlives a USDA lookup that started before it and writes its own portions
+    if kept and fields.get("unit_conversions") is not None:
+        ing["unit_conversions"] = {**ing["unit_conversions"], **{u: g for u, g in kept.items()
+                                                                 if u not in fields["unit_conversions"]}}
     # Moving something between the two lists by hand is a decision, not a
     # guess -- once made it must survive every later re-derivation.
     if fields.get("shop_list") and fields.get("lock_shop_list", True):

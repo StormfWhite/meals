@@ -161,10 +161,59 @@ def amount_g(ing: dict, text: str) -> Optional[float]:
 
 BLOCKS = re.compile(r"^\s*([\d.]+)\s*blocks?\b\s*(?:(?:of|x|×|@|,)\s*)?(.*)$", re.I)
 
+# What things come in (Storm 2026-10-25: "4 32 oz canned tomatoes"). The size said with one is
+# remembered on the ingredient (unit_conversions[word], `pack` = the word) like a block's.
+PACKS = {"can": "can", "cans": "can", "jar": "jar", "jars": "jar", "bag": "bag", "bags": "bag",
+         "box": "box", "boxes": "box", "bottle": "bottle", "bottles": "bottle", "carton": "carton",
+         "cartons": "carton", "package": "package", "packages": "package", "pkg": "package",
+         "pkgs": "package", "pack": "package", "packs": "package", "tub": "tub", "tubs": "tub",
+         "tin": "tin", "tins": "tin", "pouch": "pouch", "pouches": "pouch",
+         "container": "container", "containers": "container"}
+_PACK = "|".join(sorted(PACKS, key=len, reverse=True))
+_SIZE = r"\(?\s*([\d.]+\s*-?\s*(?:fl\.?\s*oz|oz|ounces?|lbs?|pounds?|kg|g|grams?|ml|l|liters?|litres?)\.?)\s*\)?"
+_TIMES = r"(?:x|×|\*|@)"
+# "4 32 oz cans", "4 x 32 oz", "4 (32 oz) cans" / "4 cans of 32 oz", "4 cans, 32 oz each" / "32 oz cans x 4"
+COUNT_SIZE = [
+    (re.compile(rf"^([\d.]+)\s*{_TIMES}?\s*{_SIZE}\s*(?:({_PACK})\b)?\s*(?:each)?$", re.I), 1, 2, 3),
+    (re.compile(rf"^([\d.]+)\s*({_PACK})\b\s*(?:(?:of|x|×|@|,|at)\s*)?{_SIZE}\s*(?:each)?$", re.I), 1, 3, 2),
+    (re.compile(rf"^{_SIZE}\s*(?:({_PACK})\b)?\s*{_TIMES}\s*([\d.]+)$", re.I), 3, 1, 2),
+]
+
+
+def size_g(text: str) -> Optional[float]:
+    """One package's size -> grams: weights, and liquids at a gram a millilitre."""
+    t = re.sub(r"(\d)\s*-\s*", r"\1 ", (text or "").strip().lower())
+    m = re.match(r"^([\d.]+)\s*(fl\.?\s*oz|ml|l|liters?|litres?)\b", t)
+    if m:
+        unit = m.group(2)
+        return float(m.group(1)) * (29.5735 if unit.startswith("fl") else 1.0 if unit == "ml" else 1000.0)
+    return prices._parse_grams(t)
+
+
+def amount_g(ing: dict, text: str) -> Optional[float]:
+    """What's typed in the Pantry's add box -> grams: "2 lb", "8 oz", or a count ("3", "2 heads")
+    weighed by the ingredient's own unit table."""
+    g = size_g(text)
+    if g:
+        return g
+    m = re.match(r"^\s*([\d.]+)\s*([a-z]*)", (text or "").lower())
+    if not m:
+        return None
+    from . import nutrition
+    word = m.group(2)
+    unit = PACKS.get(word) or word.rstrip("s") or "each"
+    return nutrition.qty_to_grams(ing, float(m.group(1)), unit) or nutrition.qty_to_grams(ing, float(m.group(1)), "each")
+
 
 def block_g(ing: dict) -> Optional[float]:
     """How much one frozen block of it is ("frozen in 1 lb blocks"), once it's been said."""
     return (ing.get("unit_conversions") or {}).get("block")
+
+
+def _count_text(n: float, word: str) -> str:
+    n = round(n * 2) / 2
+    plural = "es" if word in ("box", "pouch") else "s"
+    return f"{n:g} {word}{'' if n == 1 else plural}"
 
 
 def blocks_text(ing: dict, grams: float) -> Optional[str]:
@@ -172,25 +221,59 @@ def blocks_text(ing: dict, grams: float) -> Optional[str]:
     size = block_g(ing)
     if not size or grams <= 0.5:
         return None
-    n = round(grams / size * 2) / 2
-    return f"{n:g} block{'' if n == 1 else 's'}"
+    return _count_text(grams / size, "block")
+
+
+def pack_text(ing: dict, grams: float) -> Optional[str]:
+    """ "4 cans" for what's in the kitchen, when the Pantry was told what it comes in."""
+    word = ing.get("pack")
+    size = (ing.get("unit_conversions") or {}).get(word) if word else None
+    if not size or grams <= 0.5:
+        return None
+    return _count_text(grams / size, word)
+
+
+def _remember(ing: dict, unit: str, size: float) -> None:
+    conv = dict(ing.get("unit_conversions") or {})
+    fields = {}
+    if conv.get(unit) != size:
+        conv[unit] = size
+        fields["unit_conversions"] = conv
+    if unit != "block" and ing.get("pack") != unit:
+        fields["pack"] = unit
+    if fields:
+        ing.update(fields)
+        ingredients.update(ing["id"], **fields)
 
 
 def text_to_g(ing: dict, text: str) -> Optional[float]:
     """What's typed in the Pantry -> grams. Besides "2 lb" and counts, frozen blocks (Storm
     2026-10-22: "ingredients can be frozen and whole meal blocks"): "3 blocks of 1 lb" says how
     big a block is and remembers it on the ingredient (unit "block", so a meal line can say
-    "1 block" too); "3 blocks" afterwards uses that."""
-    m = BLOCKS.match(text or "")
+    "1 block" too); "3 blocks" afterwards uses that. Several of one size multiply: "4 32 oz cans",
+    "4 x 32 oz", "4 jars of 16 oz" -- a can/jar/bag... size is remembered the same way."""
+    text = (text or "").strip()
+    m = BLOCKS.match(text)
     if m:
-        size = prices._parse_grams(m.group(2)) if m.group(2).strip() else None
+        size = size_g(m.group(2)) if m.group(2).strip() else None
         if size:
-            conv = dict(ing.get("unit_conversions") or {})
-            if conv.get("block") != size:
-                conv["block"] = size
-                ingredients.update(ing["id"], unit_conversions=conv)
+            _remember(ing, "block", size)
         size = size or block_g(ing)
         return float(m.group(1)) * size if size else None
+    for rx, n_at, size_at, pack_at in COUNT_SIZE:
+        m = rx.match(text)
+        if not m:
+            continue
+        size = size_g(m.group(size_at))
+        try:
+            n = float(m.group(n_at))
+        except ValueError:
+            continue
+        if not size:
+            continue
+        if m.group(pack_at):
+            _remember(ing, PACKS[m.group(pack_at).lower()], size)
+        return n * size
     return amount_g(ing, text)
 
 
@@ -614,7 +697,7 @@ class Ledger:
             use_by = min((_add_days(l["since"], days) for l in fresh), default=None) if fresh and not freezes else None
             out.append({"ingredient_id": ing_id, "name": ing["name"], "where": storage(ing),
                         "fridge_g": round(fridge, 1), "freezer_g": round(frozen, 1),
-                        "fridge_text": us_amount(fridge), "freezer_text": blocks_text(ing, frozen) or us_amount(frozen),
+                        "fridge_text": pack_text(ing, fridge) or us_amount(fridge), "freezer_text": blocks_text(ing, frozen) or pack_text(ing, frozen) or us_amount(frozen),
                         "runs_out": look["runs_out"], "use_by": use_by,
                         # what this week's meals take, and what's left after them
                         "uses_g": round(max(0.0, fridge + frozen - look["left_g"]), 1),
