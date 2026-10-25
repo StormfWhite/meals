@@ -145,20 +145,6 @@ def correct(ingredient_id: str, grams: float, week_start_iso: str, frozen: Optio
     store.save(STOCK_FILE, data)
 
 
-def amount_g(ing: dict, text: str) -> Optional[float]:
-    """What's typed in the Pantry's add box -> grams: "2 lb", "8 oz", or a count ("3", "2 heads")
-    weighed by the ingredient's own unit table."""
-    g = prices._parse_grams(text)
-    if g:
-        return g
-    m = re.match(r"^\s*([\d.]+)\s*([a-z]*)", (text or "").lower())
-    if not m:
-        return None
-    from . import nutrition
-    unit = m.group(2).rstrip("s") or "each"
-    return nutrition.qty_to_grams(ing, float(m.group(1)), unit) or nutrition.qty_to_grams(ing, float(m.group(1)), "each")
-
-
 BLOCKS = re.compile(r"^\s*([\d.]+)\s*blocks?\b\s*(?:(?:of|x|×|@|,)\s*)?(.*)$", re.I)
 
 # What things come in (Storm 2026-10-25: "4 32 oz canned tomatoes"). The size said with one is
@@ -201,6 +187,8 @@ def amount_g(ing: dict, text: str) -> Optional[float]:
         return None
     from . import nutrition
     word = m.group(2)
+    if not word and (ing.get("pack_size") or {}).get("g"):
+        return float(m.group(1)) * ing["pack_size"]["g"]      # "3" after "4 x 32 oz" = three of those
     unit = PACKS.get(word) or word.rstrip("s") or "each"
     return nutrition.qty_to_grams(ing, float(m.group(1)), unit) or nutrition.qty_to_grams(ing, float(m.group(1)), "each")
 
@@ -224,23 +212,37 @@ def blocks_text(ing: dict, grams: float) -> Optional[str]:
     return _count_text(grams / size, "block")
 
 
+def size_text(text: str) -> str:
+    """ "32oz" / "32-oz" / "(32 ounces)" -> "32 oz", the way the row shows it."""
+    m = re.match(r"^\(?\s*([\d.]+)\s*-?\s*(fl\.?\s*oz|oz|ounces?|lbs?|pounds?|kg|g|grams?|ml|l|liters?|litres?)",
+                 (text or "").strip().lower())
+    if not m:
+        return (text or "").strip()
+    unit = m.group(2)
+    unit = ("fl oz" if unit.startswith("fl") else "oz" if unit.startswith("o") else "lb" if unit[0] in "lp"
+            and unit not in ("l", "liter", "liters", "litre", "litres") else "l" if unit.startswith("l")
+            else "g" if unit.startswith("g") else unit)
+    return f"{float(m.group(1)):g} {unit}"
+
+
 def pack_text(ing: dict, grams: float) -> Optional[str]:
-    """ "4 cans" for what's in the kitchen, when the Pantry was told what it comes in."""
-    word = ing.get("pack")
-    size = (ing.get("unit_conversions") or {}).get(word) if word else None
-    if not size or grams <= 0.5:
+    """ "4 × 32 oz" for what's in the kitchen, once it was put in as several of one size."""
+    size = ing.get("pack_size") or {}
+    if not size.get("g") or grams <= 0.5:
         return None
-    return _count_text(grams / size, word)
+    return f"{round(grams / size['g'] * 2) / 2:g} × {size['text']}"
 
 
-def _remember(ing: dict, unit: str, size: float) -> None:
+def _remember(ing: dict, unit: Optional[str], size: float, text: Optional[str] = None) -> None:
     conv = dict(ing.get("unit_conversions") or {})
     fields = {}
-    if conv.get(unit) != size:
+    if unit and conv.get(unit) != size:
         conv[unit] = size
         fields["unit_conversions"] = conv
-    if unit != "block" and ing.get("pack") != unit:
+    if unit and unit != "block" and ing.get("pack") != unit:
         fields["pack"] = unit
+    if text and ing.get("pack_size") != {"g": size, "text": text}:
+        fields["pack_size"] = {"g": size, "text": text}
     if fields:
         ing.update(fields)
         ingredients.update(ing["id"], **fields)
@@ -251,7 +253,8 @@ def text_to_g(ing: dict, text: str) -> Optional[float]:
     2026-10-22: "ingredients can be frozen and whole meal blocks"): "3 blocks of 1 lb" says how
     big a block is and remembers it on the ingredient (unit "block", so a meal line can say
     "1 block" too); "3 blocks" afterwards uses that. Several of one size multiply: "4 32 oz cans",
-    "4 x 32 oz", "4 jars of 16 oz" -- a can/jar/bag... size is remembered the same way."""
+    "4 x 32 oz", "4 jars of 16 oz" (Storm 2026-10-25) -- the size is remembered and the row reads
+    "4 × 32 oz", the way it was said."""
     text = (text or "").strip()
     m = BLOCKS.match(text)
     if m:
@@ -271,8 +274,7 @@ def text_to_g(ing: dict, text: str) -> Optional[float]:
             continue
         if not size:
             continue
-        if m.group(pack_at):
-            _remember(ing, PACKS[m.group(pack_at).lower()], size)
+        _remember(ing, PACKS.get((m.group(pack_at) or "").lower()), size, size_text(m.group(size_at)))
         return n * size
     return amount_g(ing, text)
 
