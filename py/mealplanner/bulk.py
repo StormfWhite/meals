@@ -186,6 +186,9 @@ def make(name: str, lines: list[dict], yield_text: str, where: str, date: str) -
     if not name.strip() or not lines:
         raise ValueError("a name and what goes in")
     by_id = ingredients.by_id()
+    bare = next((l for l in lines if l["qty"] <= 0), None)
+    if bare:    # it would go in as nothing, nutrition and all
+        raise ValueError(f"how much {(by_id.get(bare['ingredient_id']) or {}).get('name', 'of a line')}?")
     input_g = lines_grams(lines, by_id)
     y = parse_yield(yield_text, input_g)
     if not y["yield_g"]:

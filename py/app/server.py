@@ -907,9 +907,12 @@ def _bulk_preview(rows: list[dict], yield_text: str) -> dict:
 
 
 def _bulk_view() -> dict:
-    """Everything made in bulk: what's on hand of it now (the Pantry's week), what one unit of
-    it carries, and the pot it last came from (to make it again)."""
-    week = groceries.list_week()
+    """Everything made in bulk: what's on hand of it now, what one unit of it carries, and the
+    pot it last came from (to make it again)."""
+    # THIS week, not the list week: the list week's start is days ahead, and by then the replay
+    # has already moved a fridge pot past its 5 days into the freezer -- a pot just put in the
+    # fridge read "freezer" (Storm 2026-10-26)
+    week = board.current_week_start()
     by_id = ingredients.by_id()
     ledger = stock.Ledger()
     lots = ledger.state(week)

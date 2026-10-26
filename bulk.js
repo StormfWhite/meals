@@ -44,15 +44,15 @@ App.bulk = {
         <span class="bk-pot">${App.icon(BK_POT)}</span>
         <input class="bk-name" placeholder="What's being made — black beans, stock, sauce…" spellcheck="false" autocomplete="off" value="${App.esc(d.name)}">
         <input class="bk-date num" type="date" value="${d.date}" title="Made on">
+        <span class="gp-stock-pick bk-where">
+          <button class="icon-btn where-fridge" data-where="fridge" title="The whole pot goes in the fridge">${App.icon(GP_FRIDGE)}</button>
+          <button class="icon-btn where-pantry" data-where="pantry" title="The whole pot goes on the dry shelf">${App.icon(GP_DRY)}</button>
+          <button class="icon-btn where-freezer" data-where="freezer" title="The whole pot goes in the freezer">${App.icon(GP_SNOW)}</button>
+        </span>
       </div>
       <div class="bk-rows"></div>
       <div class="bk-foot">
         <input class="bk-yield" placeholder="makes — 8 cups · 3 lb · 6 blocks of 1 lb" title="How much it makes. Blank = the weight of what goes in" spellcheck="false" value="${App.esc(d.yield_text)}">
-        <span class="gp-stock-pick bk-where">
-          <button class="icon-btn where-fridge" data-where="fridge" title="Fridge">${App.icon(GP_FRIDGE)}</button>
-          <button class="icon-btn where-pantry" data-where="pantry" title="Dry">${App.icon(GP_DRY)}</button>
-          <button class="icon-btn where-freezer" data-where="freezer" title="Freezer">${App.icon(GP_SNOW)}</button>
-        </span>
         <button class="btn-primary bk-go" title="Make it — into the ${d.where}, its ingredients out of the kitchen">${App.icon(BK_CHECK)}</button>
       </div>
       <div class="bk-sum dim num"></div>`;
@@ -220,6 +220,10 @@ App.bulk = {
     const rows = this._readRows();
     if (!name) { App.toast("What's being made?"); box.querySelector(".bk-name").focus(); return; }
     if (!rows.length) { App.toast("What goes in?"); box.querySelector(".bk-ing").focus(); return; }
+    // a line with no amount would go in as 0 and take its nutrition with it (Storm 2026-10-26:
+    // "why does it say the gruyere cheese is 0")
+    const bare = rows.find(r => !(r.qty > 0));
+    if (bare) { App.toast(`How much ${bare.name}?`); bare.el.querySelector(".bk-amt").focus(); return; }
     const go = box.querySelector(".bk-go");
     go.disabled = true;
     try {
