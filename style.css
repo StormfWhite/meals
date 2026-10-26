@@ -790,3 +790,80 @@ button.mb-tag { cursor: pointer; font: inherit; font-size: 10px; }
 .gp-meal-dn { width: 20px; height: 20px; font-size: 14px; line-height: 1; color: var(--text-dim); }
 /* seven 144px columns: the line's edge colour says it; the icons would eat the ingredient's name */
 .is-week .mb-from { display: none; }
+
+/* ── Bulk (bulk.js): the pot being made | everything made in bulk ── */
+.mb-from .to-make { color: var(--warn); }
+.gp-stock-add svg { width: 13px; height: 13px; vertical-align: -2px; }
+.bk { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 14px; padding: 14px; align-items: start; max-width: 1180px; width: 100%; margin: 0 auto; }
+.bk-make, .bk-side { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); }
+.bk-make { padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; position: sticky; top: 0; }
+.bk-head { display: flex; align-items: center; gap: 6px; }
+.bk-pot { display: inline-flex; color: var(--accent); flex: none; }
+.bk-pot svg { width: 18px; height: 18px; }
+.bk-name { flex: 1; min-width: 0; font-weight: 650; font-size: 14px; padding: 5px 8px; }
+.bk-date { flex: none; width: 128px; font-size: 12px; padding: 4px 6px; }
+.bk-rows { display: flex; flex-direction: column; gap: 1px; padding: 2px 0 2px 24px; }
+.bk-rows .mb-amt { flex: 0 0 72px; }
+.bk-rows .mb-stat { min-width: 64px; font-size: 10.5px; }
+.bk-foot { display: flex; align-items: center; gap: 6px; padding-left: 24px; }
+.bk-yield { flex: 1; min-width: 0; font-size: 12px; padding: 5px 8px; }
+.bk-where { display: inline-flex; gap: 1px; }
+.bk-where .icon-btn { width: 28px; height: 28px; opacity: .45; }
+.bk-where .icon-btn.on { opacity: 1; background: var(--panel-2); }
+.bk-go { display: inline-flex; align-items: center; padding: 6px 12px; }
+.bk-go svg { width: 16px; height: 16px; stroke-width: 2.4; }
+.bk-go:disabled { opacity: .5; }
+.bk-sum { padding-left: 24px; font-size: 11.5px; min-height: 16px; }
+.bk-per { color: var(--text); font-weight: 650; margin-left: 4px; }
+.bk-side { display: flex; flex-direction: column; padding: 4px 0; }
+.bk-items { display: flex; flex-direction: column; }
+.bk-items .gp-empty { padding: 10px 12px; }
+.bk-item { padding: 7px 12px; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 1px; }
+.bk-item.gone .bk-item-name { color: var(--text-dim); }
+.bk-item-top { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.bk-item-name { font-weight: 650; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bk-have { display: inline-flex; align-items: center; gap: 3px; font-size: 11.5px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.bk-have svg { width: 12px; height: 12px; }
+.bk-item-top .icon-btn { width: 24px; height: 24px; }
+.bk-item-top .icon-btn svg { width: 14px; height: 14px; }
+.bk-item-stat { font-size: 11.5px; }
+.bk-item-stat .warn { color: var(--warn); }
+.bk-item-lines { font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bk-log { display: flex; flex-direction: column; padding: 8px 12px 4px; gap: 1px; }
+.bk-log:empty { display: none; }
+.bk-log .field-label { margin-bottom: 3px; }
+.bk-made { display: flex; align-items: center; gap: 6px; font-size: 12px; min-width: 0; }
+.bk-made.undone { opacity: .5; }
+.bk-made.undone .bk-made-name { text-decoration: line-through; }
+.bk-made-day { flex: none; width: 74px; font-size: 11px; }
+.bk-made-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bk-made .icon-btn { width: 22px; height: 22px; }
+.bk-made .icon-btn svg { width: 12px; height: 12px; }
+@media (max-width: 760px) {
+  .bk { grid-template-columns: 1fr; padding: 8px 10px 40px; gap: 10px; }
+  .bk-make { position: static; }
+  .bk-rows, .bk-foot, .bk-sum { padding-left: 0; }
+  .bk-rows .mb-row-x { display: none; }
+  .bk-date { width: 118px; }
+}
+
+/* Pantry photo (pantry_scan.py): what it found, checked before it goes in */
+.gp-stock-cam { cursor: pointer; }
+.gp-scan { display: flex; flex-direction: column; gap: 2px; margin-top: 6px; padding: 6px; border: 1px solid var(--border); border-radius: 9px; background: var(--panel-2); }
+.gp-scan[hidden] { display: none; }
+.gp-scan-wait { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-dim); padding: 4px; }
+.gp-scan-wait .spin { width: 14px; height: 14px; }
+.gp-scan-head { display: flex; align-items: center; gap: 6px; padding: 0 2px 4px; }
+.gp-scan-head .field-label { flex: 1; display: inline-flex; align-items: center; gap: 4px; }
+.gp-scan-head .field-label svg { width: 12px; height: 12px; }
+.gp-scan-head .icon-btn { width: 24px; height: 24px; }
+.gp-scan-go { display: inline-flex; align-items: center; gap: 3px; padding: 3px 10px; font-size: 12px; }
+.gp-scan-go svg { width: 13px; height: 13px; stroke-width: 2.4; }
+.gp-scan-go:disabled { opacity: .45; }
+.gp-scan-row { flex-wrap: nowrap; gap: 4px; padding: 2px; }
+.gp-scan-row.off .gp-se-name, .gp-scan-row.off .gp-se-qty { opacity: .45; }
+.gp-scan-row.failed .gp-se-qty { border-color: var(--warn); }
+.gp-scan-row .gp-se-qty { width: 84px; }
+.gp-scan-row .gp-se-qty.guess { font-style: italic; color: var(--text-dim); }
+.gp-row .icon-btn.gp-scan-at { opacity: 1; width: 22px; height: 22px; }
+.gp-row .icon-btn.gp-scan-at svg { width: 13px; height: 13px; }

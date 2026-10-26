@@ -33,7 +33,11 @@ def _fdc_nutrients(fdc_id: Optional[int]) -> Optional[dict]:
 def nutrients_per_100g(ingredient: dict) -> Optional[dict]:
     """USDA data wins when it's available; a manually-typed estimate is the
     fallback, not the other way around -- real data should never be shadowed
-    by a guess someone typed in before the ingredient was bound to FDC."""
+    by a guess someone typed in before the ingredient was bound to FDC.
+    Something made in bulk is what went into its pot (bulk.py), never a lookup."""
+    if ingredient.get("made"):
+        from . import bulk
+        return bulk.per100(ingredient)
     food = _fdc_nutrients(ingredient.get("fdc_id"))
     if food and ingredient.get("nutrient_fill"):
         # a gap in the record (Foundation chia lists no fiber, Foundation yogurt no B12) taken
@@ -71,6 +75,9 @@ def qty_to_grams(ingredient: dict, qty: float, unit: str) -> Optional[float]:
         return qty * WEIGHTS_G[unit]
     conversions = {UNIT_ALIASES.get(u, u): g for u, g in (ingredient.get("unit_conversions") or {}).items()}
     grams_per_unit = conversions.get(unit)
+    if grams_per_unit is None and unit.endswith("s"):
+        # "3 cloves", "2 slices", "2 bunches": the table says it in the singular
+        grams_per_unit = conversions.get(unit[:-1]) or (conversions.get(unit[:-2]) if unit.endswith("es") else None)
     if grams_per_unit is None and unit in TSP_PER:
         # only "1 tbsp" is known: a teaspoon is a third of it, a cup sixteen of them
         known = next(((u, g) for u, g in conversions.items() if u in TSP_PER), None)

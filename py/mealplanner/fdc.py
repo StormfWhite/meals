@@ -400,6 +400,10 @@ def _fetch(conn, fdc_id: int, usable: Optional[dict]) -> Optional[dict]:
 MIN_MATCH_SCORE = 0.45
 
 
+DRY_WORDS = {"dried", "dry", "uncooked"}
+COOKED = re.compile(r"\b(from dried|cooked|boiled|canned|from canned|prepared)\b")
+
+
 def _match_score(query: str, result: dict) -> float:
     """How well one search hit answers `query`, 0..1."""
     desc = (result.get("description") or "").lower()
@@ -420,7 +424,9 @@ def _match_score(query: str, result: dict) -> float:
             return w[:-2]
         return w[:-1] if w.endswith("s") and not w.endswith("ss") and len(w) > 3 else w
     words = lambda t: {stem(w) for w in re.split(r"[^a-z]+", t) if w}
-    if head == q:
+    # singular/plural is the same food: "onion" IS "Onions, raw" -- matched only as a prefix it lost
+    # to "Fried onion rings", which has the bare word in it (Storm's Onion, found 2026-10-25)
+    if head == q or (words(head) == words(q) and words(q)):
         score = 1.0
     elif q in head.split():
         score = 0.8
@@ -436,6 +442,12 @@ def _match_score(query: str, result: dict) -> float:
     # every word asked for is in it: "greek yogurt" is "Yogurt, Greek, plain"
     if len(q.split()) > 1 and words(q) <= words(desc):
         score = max(score, 0.62)
+    # "dried black beans" is the bag of dry beans. USDA says that "Beans, black, mature seeds, raw";
+    # its "from dried" means COOKED from dry (half the calories by weight). Only legumes' "mature
+    # seeds" stands in for the dry state -- "dried cranberries" must never become raw cranberries.
+    dry = words(q) & DRY_WORDS
+    if dry and "mature seeds" in desc and (words(q) - DRY_WORDS) and (words(q) - DRY_WORDS) <= words(desc):
+        score = max(score, 0.62)
 
     # "raw" is the right default for an ingredient going into a recipe;
     # every extra qualifier is a more specific food than was asked for.
@@ -444,6 +456,8 @@ def _match_score(query: str, result: dict) -> float:
     score -= 0.03 * len(qualifiers)
     if result.get("data_type") == "Foundation":
         score += 0.05
+    if dry and COOKED.search(desc):
+        score -= 0.3
     return max(0.0, min(1.2, score))
 
 

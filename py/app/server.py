@@ -20,8 +20,9 @@ from fastapi.responses import JSONResponse, FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from mealplanner import (bangers, aisles, batches, board, config, fdc, gaps, groceries, household, ingredients,
-                         catalog, learning, nutrition, places, prices, recipe_import, recipes, routines, stats, stock,
+from mealplanner import (bangers, aisles, batches, board, bulk, config, fdc, gaps, groceries, household, ingredients,
+                         catalog, learning, nutrition, pantry_scan, places, prices, recipe_import, recipes, routines,
+                         stats, stock,
                          suggest)
 from mealplanner.paths import DATA_DIR, ensure_dirs
 
@@ -858,6 +859,112 @@ def preview_nutrition_batch(body: PreviewBatchBody):
     return {"blocks": nutrition.preview_batch(blocks, ingredients.by_id())}
 
 
+# ── bulk makes (bulk.py) ─────────────────────────────────────────────────
+
+class BulkRow(BaseModel):
+    ingredient_id: str
+    qty: float = 0
+    unit: str = "each"
+
+
+class BulkPreviewBody(BaseModel):
+    rows: list[BulkRow] = []
+    yield_text: str = ""
+
+
+class BulkMakeBody(BulkPreviewBody):
+    name: str
+    where: str = "freezer"
+    date: str
+
+
+class BulkUndoBody(BaseModel):
+    undone: bool = True
+
+
+def _per_unit(per100: Optional[dict], unit: Optional[dict]) -> Optional[dict]:
+    if not per100 or not unit or not unit.get("g"):
+        return None
+    k = unit["g"] / 100.0
+    return {"word": unit["word"], **{key: per100.get(key, 0.0) * k for key in nutrition.NUTRIENT_KEYS}}
+
+
+def _bulk_preview(rows: list[dict], yield_text: str) -> dict:
+    by_id = ingredients.by_id()
+    totals = nutrition.preview_totals(rows, by_id)
+    input_g = bulk.lines_grams(rows, by_id)
+    y = bulk.parse_yield(yield_text, input_g)
+    per100 = None
+    if y["yield_g"]:
+        k = 100.0 / y["yield_g"]
+        per100 = {key: totals["total"].get(key, 0.0) * k for key in nutrition.NUTRIENT_KEYS}
+    return {**totals, "input_g": round(input_g, 1), "input_text": stock.us_amount(input_g),
+            "yield_g": round(y["yield_g"] or 0, 1), "yield_text_g": stock.us_amount(y["yield_g"] or 0),
+            "unit": y["unit"], "per100": per100, "per_unit": _per_unit(per100, y["unit"])}
+
+
+def _bulk_view() -> dict:
+    """Everything made in bulk: what's on hand of it now (the Pantry's week), what one unit of
+    it carries, and the pot it last came from (to make it again)."""
+    week = groceries.list_week()
+    by_id = ingredients.by_id()
+    ledger = stock.Ledger()
+    lots = ledger.state(week)
+    names = {i: ing["name"] for i, ing in by_id.items()}
+    items = []
+    for ing in by_id.values():
+        if not ing.get("made"):
+            continue
+        last = bulk.latest(ing["id"])
+        if last is None:
+            continue
+        mine = lots.get(ing["id"], [])
+        have = {}
+        for where in ("fridge", "pantry", "freezer"):
+            g = sum(l["g"] for l in mine if l["frozen"] == (where == "freezer")
+                    and (where == "freezer" or stock.storage(ing) == where))
+            if g > 0.5:
+                have[where] = {"g": round(g, 1), "text": stock.made_text(ing, g) or stock.us_amount(g)}
+        per100 = nutrition.nutrients_per_100g(ing)
+        items.append({"ingredient_id": ing["id"], "name": ing["name"], "have": have,
+                      "per100": per100, "per_unit": _per_unit(per100, last.get("unit")),
+                      "unknown": [names.get(i, "?") for i in (per100 or {}).get("unknown", [])],
+                      "last": {**last, "lines": [{**l, "name": names.get(l["ingredient_id"], "?")}
+                                                 for l in last["lines"]]}})
+    items.sort(key=lambda r: (not r["have"], r["name"].lower()))
+    makes = [{**m, "name": names.get(m["ingredient_id"], "?")} for m in bulk.recent()]
+    return {"week": week, "items": items, "makes": makes}
+
+
+@app.get("/api/bulk")
+def get_bulk():
+    return _bulk_view()
+
+
+@app.post("/api/bulk/preview")
+def preview_bulk(body: BulkPreviewBody):
+    return _bulk_preview([r.model_dump() for r in body.rows], body.yield_text)
+
+
+@app.post("/api/bulk")
+def make_bulk(body: BulkMakeBody):
+    """Make it: into the fridge / dry shelf / freezer, its lines out of what's on hand."""
+    try:
+        made = bulk.make(body.name, [r.model_dump() for r in body.rows], body.yield_text, body.where, body.date)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {**_bulk_view(), "made": made}
+
+
+@app.post("/api/bulk/{make_id}/undo")
+def undo_bulk(make_id: str, body: BulkUndoBody):
+    try:
+        bulk.set_undone(make_id, body.undone)
+    except KeyError:
+        raise HTTPException(404, "no such make")
+    return _bulk_view()
+
+
 # ── groceries ────────────────────────────────────────────────────────────
 
 class GroceryItemBody(BaseModel):
@@ -1021,6 +1128,22 @@ def add_stock(week: str, body: StockAddBody):
         raise HTTPException(400, 'how much? ("3 blocks of 1 lb" the first time it\'s frozen in blocks)')
     stock.add(body.ingredient_id, grams, week, body.where)
     return {"items": stock.Ledger().on_hand(week)}
+
+
+class StockScanBody(BaseModel):
+    image: str                         # a data: URL (App.shrinkPhoto)
+    where: Optional[str] = None        # the place picked in the Pantry; None = the model's guess
+
+
+@app.post("/api/stock/{week}/scan")
+def scan_stock(week: str, body: StockScanBody):
+    """A photo of the fridge / pantry / freezer -> rows to check and add (pantry_scan.py). Nothing
+    is added here. The phone never reaches this: its bridge hands the photo to the laptop."""
+    try:
+        image, mime = pantry_scan.decode_image(body.image)
+        return pantry_scan.scan(image, body.where, mime)
+    except (ValueError, RuntimeError) as e:
+        raise HTTPException(502, str(e))
 
 
 class StockMoveBody(BaseModel):

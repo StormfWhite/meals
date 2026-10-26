@@ -152,7 +152,11 @@ App.mealBlock = {
         const amt = line.from_text[where];
         says.push(`${amt ? amt + " " : ""}from the ${where === "pantry" ? "pantry" : where}`);
       });
-      if (line.short_g) {
+      if (line.short_g && line.list === "make") {
+        // made in bulk (bulk.js): not bought -- there isn't enough of the pot left
+        icons.push(`<span class="to-make">${App.icon(GP_POT)}</span>`);
+        says.push(`${line.short_text ? line.short_text + " " : ""}more to make in bulk`);
+      } else if (line.short_g) {
         const market = line.list === "market";
         icons.push(`<span class="${line.bought ? "bought" : market ? "to-market" : "to-grocery"}">${App.icon(market ? GP_BASKET : GP_CART)}</span>`);
         const amt = line.short_text && line.short_g > 0.01 ? line.short_text + " " : "";
@@ -161,7 +165,7 @@ App.mealBlock = {
       const main = Object.keys(line.from).sort((a, b) => line.from[b] - line.from[a])[0];
       row.classList.remove("to-market", "to-grocery");
       if (main) row.classList.add("from-" + main);
-      else row.classList.add(line.list === "market" ? "to-market" : "to-grocery");
+      else if (line.list !== "make") row.classList.add(line.list === "market" ? "to-market" : "to-grocery");
       row.title = says.join(" · ");
       const badge = App.el(`<span class="mb-from" title="${App.esc(row.title)}">${icons.slice(0, 2).join("")}</span>`);
       row.insertBefore(badge, row.querySelector(".mb-stat"));

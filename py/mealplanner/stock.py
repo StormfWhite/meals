@@ -160,7 +160,8 @@ _SIZE = r"\(?\s*([\d.]+\s*-?\s*(?:fl\.?\s*oz|oz|ounces?|lbs?|pounds?|kg|g|grams?
 _TIMES = r"(?:x|×|\*|@)"
 # "4 32 oz cans", "4 x 32 oz", "4 (32 oz) cans" / "4 cans of 32 oz", "4 cans, 32 oz each" / "32 oz cans x 4"
 COUNT_SIZE = [
-    (re.compile(rf"^([\d.]+)\s*{_TIMES}?\s*{_SIZE}\s*(?:({_PACK})\b)?\s*(?:each)?$", re.I), 1, 2, 3),
+    # the count needs a space or a times sign after it: "32 oz" is one size, never 3 × "2 oz"
+    (re.compile(rf"^([\d.]+)(?:\s*{_TIMES}\s*|\s+){_SIZE}\s*(?:({_PACK})\b)?\s*(?:each)?$", re.I), 1, 2, 3),
     (re.compile(rf"^([\d.]+)\s*({_PACK})\b\s*(?:(?:of|x|×|@|,|at)\s*)?{_SIZE}\s*(?:each)?$", re.I), 1, 3, 2),
     (re.compile(rf"^{_SIZE}\s*(?:({_PACK})\b)?\s*{_TIMES}\s*([\d.]+)$", re.I), 3, 1, 2),
 ]
@@ -174,6 +175,20 @@ def size_g(text: str) -> Optional[float]:
         unit = m.group(2)
         return float(m.group(1)) * (29.5735 if unit.startswith("fl") else 1.0 if unit == "ml" else 1000.0)
     return prices._parse_grams(t)
+
+
+def typed_g(text: str) -> Optional[float]:
+    """An amount typed on the list -> grams: "2 lb", and several of one size ("4 x 32 oz",
+    "4*32 oz", "32 oz × 4") multiplied. Nothing is remembered on the ingredient here."""
+    t = (text or "").strip()
+    for rx, n_at, size_at, _ in COUNT_SIZE:
+        m = rx.match(t)
+        if m and size_g(m.group(size_at)):
+            try:
+                return float(m.group(n_at)) * size_g(m.group(size_at))
+            except ValueError:
+                pass
+    return size_g(t)
 
 
 def amount_g(ing: dict, text: str) -> Optional[float]:
@@ -225,8 +240,21 @@ def size_text(text: str) -> str:
     return f"{float(m.group(1)):g} {unit}"
 
 
+def made_text(ing: dict, grams: float) -> Optional[str]:
+    """ "5.5 cups" of something made in bulk, in the units its pot was said to make (bulk.py)."""
+    unit = (ing.get("made") or {}).get("unit") or {}
+    if not unit.get("g") or grams <= 0.5:
+        return None
+    n = round(grams / unit["g"] * 4) / 4 if grams / unit["g"] < 10 else round(grams / unit["g"])
+    word = unit["word"]
+    plural = "" if n == 1 or word in ("fl oz", "oz", "ml", "l", "qt", "pt", "c") else "es" if word in ("box", "pouch") else "s"
+    return f"{n:g} {word}{plural}"
+
+
 def pack_text(ing: dict, grams: float) -> Optional[str]:
     """ "4 × 32 oz" for what's in the kitchen, once it was put in as several of one size."""
+    if ing.get("made"):
+        return made_text(ing, grams)
     size = ing.get("pack_size") or {}
     if not size.get("g") or grams <= 0.5:
         return None
@@ -341,12 +369,21 @@ class Ledger:
         self._planned: dict[str, bool] = {}
         self._usual: Optional[dict[str, float]] = None
         self._states: dict[str, dict] = {}
+        self._make_short: dict[str, dict[str, float]] = {}
+
+    def make_short(self, week: str) -> dict[str, float]:
+        """What the week's bulk makes (bulk.py) needed beyond what was on hand -- on the list."""
+        self.state(week)
+        return self._make_short.get(week, {})
 
     # what the plan cooks
     def needs(self, week: str) -> dict[str, float]:
         if week not in self._needs:
             raw = self._g.week_ingredient_needs(week)
-            self._needs[week] = {i: learning.seeded_quantity(i, g) for i, g in raw.items()}
+            need = {i: learning.seeded_quantity(i, g) for i, g in raw.items()}
+            for i, g in self.make_short(week).items():
+                need[i] = need.get(i, 0.0) + g
+            self._needs[week] = need
             self._planned[week] = bool(board.get_week(week)["slots"])
         return self._needs[week]
 
@@ -429,12 +466,12 @@ class Ledger:
         # an amount typed on the row replaces the math; one typed when adding ("garlic 8 oz")
         # is bought on top of what the meals need
         typed = st.get("qty_text")
-        typed_g = prices._parse_grams(typed) if typed else None
-        extra_g = (ex or {}).get("qty_g", 0.0) + (prices._parse_grams((ex or {}).get("qty_text") or "") or 0.0)
+        typed_amt = typed_g(typed) if typed else None
+        extra_g = (ex or {}).get("qty_g", 0.0) + (typed_g((ex or {}).get("qty_text") or "") or 0.0)
         need = self.needs(week).get(ing_id, 0.0)
-        want = typed_g or max(0.0, need - on_hand_g) + extra_g
+        want = typed_amt or max(0.0, need - on_hand_g) + extra_g
         pkg = self.best_package(week, ing_id, want) or {}
-        out = plan_buy(need, on_hand_g, extra_g, typed_g, pkg.get("package_g"), ex is not None)
+        out = plan_buy(need, on_hand_g, extra_g, typed_amt, pkg.get("package_g"), ex is not None)
         out["package"] = pkg or None
         return out
 
@@ -513,7 +550,16 @@ class Ledger:
                 lots.pop(ing_id, None)
 
     def _correct(self, week: str, lots: dict) -> None:
-        for c in sorted((c for c in self.corrections if c["week"] == week), key=lambda c: c["at"]):
+        """The week's corrections and bulk makes, in the order they were made."""
+        from . import bulk
+        events = [("fix", c) for c in self.corrections if c["week"] == week]
+        if week >= STOCK_START:
+            events += [("make", m) for m in bulk.in_week(week)]
+        short = self._make_short.setdefault(week, {})
+        for kind, c in sorted(events, key=lambda e: e[1].get("at", 0)):
+            if kind == "make":
+                self._make(c, lots, short)
+                continue
             have = lots.get(c["id"], [])
             part = [l for l in have if c.get("frozen") is None or l["frozen"] == c["frozen"]]
             rest = [l for l in have if l not in part]
@@ -528,6 +574,31 @@ class Ledger:
             lots[c["id"]] = rest + part
             if not lots[c["id"]]:
                 lots.pop(c["id"])
+
+    def _make(self, m: dict, lots: dict, short: dict) -> None:
+        """A bulk make: its lines out of what's there (oldest first, freezer last), the shortfall
+        noted for the list, and the pot into the fridge / dry shelf / freezer."""
+        from . import nutrition
+        for item in m["lines"]:
+            ing = self.ings.get(item["ingredient_id"])
+            if not ing:
+                continue
+            want = nutrition.qty_to_grams(ing, item["qty"], item["unit"]) or 0.0
+            have = sorted(lots.get(ing["id"], []), key=lambda l: (l["frozen"], l["since"]))
+            for lot in have:
+                take = min(lot["g"], want)
+                lot["g"] -= take
+                want -= take
+                if want <= 0.5:
+                    break
+            if have:
+                lots[ing["id"]] = [l for l in have if l["g"] > 0.5]
+                if not lots[ing["id"]]:
+                    lots.pop(ing["id"])
+            if want > 0.5:
+                short[ing["id"]] = short.get(ing["id"], 0.0) + want
+        lots.setdefault(m["ingredient_id"], []).append(
+            {"g": float(m["yield_g"]), "since": m["date"], "frozen": m["where"] == "freezer"})
 
     # looking ahead from the list week
     def outlook(self, week: str, ing_id: str, buy_g: float) -> dict:
@@ -670,10 +741,10 @@ class Ledger:
                     line["short_g"] += want
             for ing_id, line in lines.items():
                 line["from"] = {w: round(g, 1) for w, g in line["from"].items()}
-                line["from_text"] = {w: (w == "freezer" and blocks_text(self.ings[ing_id], g)) or us_amount(g)
+                line["from_text"] = {w: (w == "freezer" and blocks_text(self.ings[ing_id], g)) or made_text(self.ings[ing_id], g) or us_amount(g)
                                      for w, g in line["from"].items()}
                 if line["short_g"]:
-                    line["list"] = self.list_of(week, ing_id)
+                    line["list"] = "make" if self.ings[ing_id].get("made") else self.list_of(week, ing_id)
                     line["bought"] = bool(items.get(ing_id, {}).get("checked"))
                     line["short_text"] = us_amount(line["short_g"])
                 line["short_g"] = round(line["short_g"], 1)
@@ -705,6 +776,7 @@ class Ledger:
                         "uses_g": round(max(0.0, fridge + frozen - look["left_g"]), 1),
                         "left_text": us_amount(look["left_g"]),
                         "low": bool(look["runs_out"] and look["runs_out"] <= soon),
-                        "on_list": ing_id in listed, "keep_days": days, "freezes": freezes})
+                        "on_list": ing_id in listed, "keep_days": days, "freezes": freezes,
+                        "made": bool(ing.get("made"))})
         out.sort(key=lambda r: (r["runs_out"] or "9999", r["name"].lower()))
         return out

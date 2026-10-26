@@ -423,6 +423,29 @@ async def _call(method, path, body):
     } catch (e) { return json({ detail: "no such photo" }, e.status === 409 ? 404 : 502); }
   }
 
+  // ---- pantry photos ------------------------------------------------------------------------------
+  // The model that reads a photo of the fridge runs on the laptop (StudyCode's model_manager, on
+  // jorm's GPU), so the photo goes to it through Dropbox: /mealplanner/scan-in/<id>.json, and the
+  // laptop (mealplanner/scan_relay.py, started by a systemd path unit) answers in scan-out/<id>.json.
+  async function scanPhoto(body) {
+    const json = (o, status = 200) => new Response(JSON.stringify(o), { status, headers: { "Content-Type": "application/json" } });
+    const id = "s_" + Array.from(crypto.getRandomValues(new Uint8Array(8)), (b) => b.toString(16).padStart(2, "0")).join("");
+    const req = { ...JSON.parse(body || "{}"), id, at: Date.now() };
+    try { await content("files/upload", { path: `${FOLDER}/scan-in/${id}.json`, mode: "add", autorename: false, mute: true }, new TextEncoder().encode(JSON.stringify(req))); }
+    catch (e) { return json({ detail: "Couldn't send the photo (" + (e.status || e.message) + ")" }, 502); }
+    const until = Date.now() + 4 * 60 * 1000;
+    while (Date.now() < until) {
+      await sleep(4000);
+      let o;
+      try { o = await (await content("files/download", { path: `${FOLDER}/scan-out/${id}.json` })).json(); }
+      catch (e) { if (e.status === 409) continue; await sleep(4000); continue; }   // 409 = not answered yet
+      rpc("files/delete_v2", { path: `${FOLDER}/scan-out/${id}.json` }).catch(() => {});
+      return o.ok ? json(o.result) : json({ detail: o.error || "the photo couldn't be read" }, 502);
+    }
+    rpc("files/delete_v2", { path: `${FOLDER}/scan-in/${id}.json` }).catch(() => {});
+    return json({ detail: "The laptop didn't answer — it reads the photos, so it has to be on" }, 504);
+  }
+
   // ---- instant paint ---------------------------------------------------------------------------------
   // Python takes seconds to wake; the plan on screen shouldn't wait for it. Every answer to a GET is
   // kept (IndexedDB, "get:" + path) and, until Python is up, the same request is answered from that
@@ -447,6 +470,7 @@ async def _call(method, path, body):
     const method = (opts.method || "GET").toUpperCase();
     const path = url.pathname.slice(at) + url.search;
     if (path.startsWith("/api/photos")) return photo(method, path, typeof opts.body === "string" ? opts.body : "");
+    if (method === "POST" && /^\/api\/stock\/[^/]+\/scan/.test(path)) return scanPhoto(typeof opts.body === "string" ? opts.body : "");
     if (!ready && method === "GET") {
       await stale;
       if (!ready && shown[path] !== undefined) {

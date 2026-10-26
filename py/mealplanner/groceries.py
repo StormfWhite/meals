@@ -15,7 +15,7 @@ import re
 import uuid
 from typing import Optional
 
-from . import aisles, batches, board, config, ingredients, learning, nutrition, places, prices, recipes, stock, store
+from . import aisles, batches, board, bulk, config, ingredients, learning, nutrition, places, prices, recipes, stock, store
 from .paths import DATA_DIR, GROCERIES_FILE, PRICE_HISTORY_FILE
 
 
@@ -127,12 +127,27 @@ def get_week_groceries(week_start_iso: str, with_prices: bool = True,
     ledger = stock.Ledger()
     on_hand = ledger.state(week_start_iso)
     meals_of, cooked = week_ingredient_meals(week_start_iso)
+    # a bulk make's lines the kitchen didn't have (bulk.py) -- grouped under what's being made
+    for ing_id, grams in ledger.make_short(week_start_iso).items():
+        grams_by_id[ing_id] = grams_by_id.get(ing_id, 0.0) + grams
+    for m in bulk.in_week(week_start_iso):
+        made = ing_by_id.get(m["ingredient_id"])
+        name = made["name"] if made else "bulk"
+        for item in m["lines"]:
+            if item["ingredient_id"] in ledger.make_short(week_start_iso):
+                names = meals_of.setdefault(item["ingredient_id"], [])
+                if name not in names:
+                    names.append(name)
+                if name not in cooked:
+                    cooked.append(name)
     meal_order = {name: i for i, name in enumerate(cooked)}
     out = []
     for ing_id, grams in grams_by_id.items():
         ing = ing_by_id.get(ing_id)
         if ing is None:
             continue
+        if ing.get("made") and ing_id not in extra_ids:
+            continue                          # made at home in bulk, never bought (bulk.py)
         s = saved.get(ing_id, {})
         # Swiped off: stays off until the plan needs MORE of it than it did then.
         if s.get("removed_g") is not None and grams <= s["removed_g"] + 0.5:

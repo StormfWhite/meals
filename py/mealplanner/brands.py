@@ -47,6 +47,9 @@ OFF_KEYS = {
 TOP = ("calories_kcal", "protein_g", "fiber_g")
 
 
+NO_BRAND = {"", "na", "none", "unbranded", "generic", "unknown", "notapplicable", "nobrand"}
+
+
 def _words(text: str) -> list[str]:
     text = (text or "").lower().replace("’", "'").replace("'s", "s").replace("'", "")
     return [w for w in re.split(r"[^a-z0-9]+", text) if w and w not in _STOP]
@@ -59,10 +62,15 @@ def _stem(w: str) -> str:
 def _fit(name: str, brand: str, description: str) -> Optional[float]:
     """None when the brand isn't in the name; else how much of the rest of the name the product's
     description covers (1.0 = all of it, or nothing left to cover)."""
+    if re.sub(r"[^a-z]", "", (brand or "").lower()) in NO_BRAND:
+        return None
     name_w = [_stem(w) for w in _words(name)]
     brand_w = [_stem(w) for w in _words(brand)]
     joined = "".join(name_w)
-    if not brand_w or not (set(brand_w) <= set(name_w) or "".join(brand_w) in joined):
+    # run-together ("olipop" in "crispappleolipop") only for a real word's worth of letters: "N/A"
+    # is just "n", which is in nearly every name ("dried black beans" -> a black bean burger, 2026-10-25)
+    run_together = len("".join(brand_w)) >= 4 and "".join(brand_w) in joined
+    if not brand_w or not (set(brand_w) <= set(name_w) or run_together):
         return None
     rest = [w for w in name_w if w not in brand_w and w not in "".join(brand_w)]
     if not rest:

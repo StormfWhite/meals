@@ -44,6 +44,9 @@ const GP_PANTRY = '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12
 const GP_FRIDGE = '<rect x="5" y="2" width="14" height="20" rx="2"/><path d="M5 10h14M9 5v2M9 13v3"/>';
 // dry goods: a jar with its lid -- nothing like the fridge's tall box
 const GP_DRY = '<path d="M8 2h8v3H8z"/><path d="M7 5h10l1 3v12a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V8z"/><path d="M6 11h12M6 17h12"/>';
+const GP_CAMERA = '<path d="M3 8a2 2 0 0 1 2-2h2l2-3h6l2 3h2a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/><circle cx="12" cy="13" r="4"/>';
+const GP_CHECK = '<path d="M20 6 9 17l-5-5"/>';
+const GP_POT = '<path d="M4 10h16v7a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3Z"/><path d="M2 10h20"/><path d="M9 6c0-1 1-1 1-2M14 6c0-1 1-1 1-2"/>';   // made in bulk (bulk.js)
 const GP_PLACES = { fridge: [GP_FRIDGE, "Fridge"], pantry: [GP_DRY, "Dry"], freezer: [GP_SNOW, "Freezer"] };
 const gpPlace = (where, cls = "") => `<span class="gp-place where-${where} ${cls}" title="${GP_PLACES[where][1]}">${App.icon(GP_PLACES[where][0])}</span>`;
 const GP_WARN = '<path d="M12 3 2 20h20Z"/><path d="M12 10v4M12 17h.01"/>';
@@ -217,7 +220,9 @@ App.groceriesPanel = {
             <button class="icon-btn where-pantry" data-where="pantry" title="Dry">${App.icon(GP_DRY)}</button>
             <button class="icon-btn where-freezer" data-where="freezer" title="Freezer">${App.icon(GP_SNOW)}</button>
           </span>
+          <label class="icon-btn gp-stock-cam" title="Photo of the fridge, pantry or freezer — fills in what's there to check and add">${App.icon(GP_CAMERA)}<input type="file" accept="image/*" hidden></label>
         </div>
+        <div class="gp-scan" hidden></div>
         </div>
       </div>
     `;
@@ -376,6 +381,33 @@ App.groceriesPanel = {
       if (!qty) [name, qty] = _gpSplitAmount(name);
       if (!qty) { qtyIn.focus(); return; }
       nameIn.value = ""; qtyIn.value = ""; nameIn.focus();
+      await this._addStock(name, qty, where);
+      this._reload();
+    };
+    [nameIn, qtyIn].forEach(i => i.addEventListener("keydown", e => { if (e.key === "Enter" || e.keyCode === 13) { e.preventDefault(); add(); } }));
+    // a photo: what's in it comes back as rows to check (pantry_scan.py), never straight in
+    c.querySelector(".gp-stock-cam input").addEventListener("change", async (e) => {
+      const file = (e.target.files || [])[0];
+      e.target.value = "";
+      if (!file) return;
+      this._scan = { reading: true, where };
+      this._drawScan();
+      try {
+        const image = await App.shrinkPhoto(file);
+        const res = await App.api(`/api/stock/${this._weekStart}/scan`, { method: "POST", body: { image, where } });
+        this._scan = { where: res.where, rows: res.items.map(r => ({ ...r, on: true })) };
+        if (!res.items.length) { this._scan = null; App.toast("Nothing in that photo to add"); }
+      } catch (err) {
+        this._scan = null;
+        App.toast(`Couldn't read the photo — ${err.message}`);
+      }
+      this._drawScan();
+    });
+    this._drawScan();
+  },
+
+  /* One item into the Pantry -- typed in the add row or ticked from a photo. True = it's in. */
+  async _addStock(name, qty, where, quiet = false) {
       try {
         const ings = this._ingredients || [];
         let match = ings.find(i => i.name.toLowerCase() === name.toLowerCase());
@@ -396,15 +428,70 @@ App.groceriesPanel = {
           App.resolveLater(match.id, () => this.refresh());
         }
         await App.api(`/api/stock/${this._weekStart}`, { method: "POST", body: { ingredient_id: match.id, text: qty, where } });
-        App.toast(`${name}: ${qty} in the ${where === "freezer" ? "freezer" : where === "fridge" ? "fridge" : where === "pantry" ? "pantry" : "kitchen"}`);
-      } catch (e) { App.toast(`Couldn't add ${name} — try "8 oz", "1 lb" or "3 blocks of 1 lb"`); }
+        if (!quiet) App.toast(`${name}: ${qty} in the ${where === "freezer" ? "freezer" : where === "fridge" ? "fridge" : where === "pantry" ? "pantry" : "kitchen"}`);
+        return true;
+      } catch (e) {
+        if (!quiet) App.toast(`Couldn't add ${name} — try "8 oz", "1 lb" or "3 blocks of 1 lb"`);
+        return false;
+      }
+  },
+
+  /* What a photo found, to check before it goes in: tick, fix a name or an amount, tap the place
+   * icon to move it, then ✓ adds the ticked ones. A row that can't be added stays, marked. */
+  _drawScan() {
+    const box = this._container && this._container.querySelector(".gp-scan");
+    if (!box) return;
+    const sc = this._scan;
+    box.hidden = !sc;
+    if (!sc) { box.innerHTML = ""; return; }
+    if (sc.reading) {
+      box.innerHTML = `<div class="gp-scan-wait"><div class="spin"></div>Reading the photo…</div>`;
+      return;
+    }
+    const n = sc.rows.filter(r => r.on).length;
+    box.innerHTML = `<div class="gp-scan-head">
+        <span class="field-label">${App.icon(GP_CAMERA)} From the photo</span>
+        <button class="icon-btn gp-scan-x" title="Discard">${App.icon(GP_X)}</button>
+        <button class="btn-primary gp-scan-go" title="Add the ticked ones" ${n ? "" : "disabled"}>${App.icon(GP_CHECK)} ${n}</button>
+      </div>`;
+    const order = ["fridge", "pantry", "freezer"];
+    sc.rows.forEach((r) => {
+      const at = r.where || sc.where;
+      const el = App.el(`<div class="gp-row gp-scan-row${r.on ? "" : " off"}${r.failed ? " failed" : ""}">
+        <label class="check"><input type="checkbox" class="gp-scan-chk" ${r.on ? "checked" : ""}><span class="box">${App.icon(GP_CHECK)}</span></label>
+        <input class="gp-se-name" value="${App.esc(r.name)}" spellcheck="false" title="${r.ingredient_id ? "Already in the catalog" : "New ingredient"}">
+        <input class="gp-se-qty num" value="${App.esc(r.qty)}" spellcheck="false" title="${r.estimated ? "Size guessed — the label wasn't readable" : "Amount"}">
+        <button class="icon-btn gp-scan-at ${at ? "where-" + at : ""}" title="${at ? GP_PLACES[at][1] + " — tap to move" : "Its usual place — tap to pick"}">${App.icon(at ? GP_PLACES[at][0] : GP_PANTRY)}</button>
+      </div>`);
+      if (r.estimated) el.querySelector(".gp-se-qty").classList.add("guess");
+      el.querySelector(".gp-scan-chk").addEventListener("change", (e) => { r.on = e.target.checked; this._drawScan(); });
+      el.querySelector(".gp-se-name").addEventListener("input", (e) => { r.name = e.target.value; r.ingredient_id = null; });
+      el.querySelector(".gp-se-qty").addEventListener("input", (e) => { r.qty = e.target.value; r.estimated = false; });
+      el.querySelector(".gp-scan-at").addEventListener("click", () => {
+        r.where = order[(order.indexOf(at) + 1) % order.length];
+        this._drawScan();
+      });
+      box.appendChild(el);
+    });
+    box.querySelector(".gp-scan-x").addEventListener("click", () => { this._scan = null; this._drawScan(); });
+    box.querySelector(".gp-scan-go").addEventListener("click", async (e) => {
+      e.currentTarget.disabled = true;
+      let added = 0;
+      for (const r of sc.rows.filter(x => x.on && x.name.trim())) {
+        if (await this._addStock(r.name.trim(), r.qty.trim() || "1", r.where || sc.where, true)) { r.added = true; added++; }
+        else r.failed = true;
+      }
+      sc.rows = sc.rows.filter(r => !r.added && r.on);
+      if (!sc.rows.length) this._scan = null;
+      App.toast(`${added} added${sc.rows.length ? ` · ${sc.rows.length} need an amount it can weigh` : ""}`);
+      this._drawScan();
       this._reload();
-    };
-    [nameIn, qtyIn].forEach(i => i.addEventListener("keydown", e => { if (e.key === "Enter" || e.keyCode === 13) { e.preventDefault(); add(); } }));
+    });
   },
 
   _drawStock() {
     const wrap = this._container.querySelector("#gp-stock-rows");
+    if (!wrap) return;                    // the plan was left while the stock was loading
     const items = this._stock || [], meals = this._meals || [];
     wrap.innerHTML = "";
     if (!items.length && !meals.length) {
@@ -499,6 +586,13 @@ App.groceriesPanel = {
       head(GP_WARN, "Running low", "low");
       low.forEach(item => {
         const frozen = !(item.fridge_g > 0.5);
+        if (item.made) {
+          // made at home in bulk: never bought -- the pot icon opens Bulk to make it again
+          const el = row(item, frozen, `<button class="gp-stock-add" title="Make more">${App.icon(GP_POT)}</button>`);
+          el.querySelector(".gp-stock-add").addEventListener("click", (e) => { e.stopPropagation(); App.setView("bulk"); });
+          wrap.appendChild(el);
+          return;
+        }
         const el = row(item, frozen, `<button class="gp-stock-add${item.on_list ? " done" : ""}" ${item.on_list ? "disabled" : ""}>${item.on_list ? "on list" : "+ list"}</button>`);
         el.querySelector(".gp-stock-add")?.addEventListener("click", async () => {
           await App.api(`/api/groceries/${wk}/extra`, { method: "POST", body: { ingredient_id: item.ingredient_id, qty: null } });
@@ -862,7 +956,8 @@ function _gpSplitAmount(text) {
   // several of one size: "4 32 oz cans tomatoes", "tomatoes 4 x 32 oz", "4 (15 oz) cans of beans"
   const size = `\\(?\\s*\\d+(?:\\.\\d+)?\\s*-?\\s*(?:fl\\.?\\s*oz|oz|ounces?|lbs?|pounds?|kg|g|grams?|ml|l)\\.?\\s*\\)?`;
   const pack = "blocks?|cans?|jars?|bags?|boxe?s?|bottles?|cartons?|packages?|pkgs?|packs?|tubs?|tins?|pouch(?:es)?|containers?";
-  const multi = `\\d+(?:\\.\\d+)?\\s*(?:x|×|\\*)?\\s*${size}(?:\\s*(?:${pack})\\b)?|\\d+(?:\\.\\d+)?\\s*(?:${pack})\\s*(?:of\\s*)?${size}`;
+  // a space or x / × / * after the count: "32 oz" is one size, never 3 × "2 oz"
+  const multi = `\\d+(?:\\.\\d+)?(?:\\s*(?:x|×|\\*)\\s*|\\s+)${size}(?:\\s*(?:${pack})\\b)?|\\d+(?:\\.\\d+)?\\s*(?:${pack})\\s*(?:of\\s*)?${size}`;
   let m = text.match(new RegExp(`^(${multi})\\s+(?:of\\s+)?(.+)$`, "i"));
   if (m) return [m[2], m[1]];
   m = text.match(new RegExp(`^(.+?)\\s+(${multi})$`, "i"));

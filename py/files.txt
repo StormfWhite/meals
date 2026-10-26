@@ -1,10 +1,12 @@
 app/__init__.py
 app/server.py
 mealplanner/aisles.py
+mealplanner/_ai_worker.py
 mealplanner/bangers.py
 mealplanner/batches.py
 mealplanner/board.py
 mealplanner/brands.py
+mealplanner/bulk.py
 mealplanner/catalog.py
 mealplanner/config.py
 mealplanner/fdc.py
@@ -15,12 +17,14 @@ mealplanner/ingredients.py
 mealplanner/__init__.py
 mealplanner/learning.py
 mealplanner/nutrition.py
+mealplanner/pantry_scan.py
 mealplanner/paths.py
 mealplanner/places.py
 mealplanner/prices.py
 mealplanner/recipe_import.py
 mealplanner/recipes.py
 mealplanner/routines.py
+mealplanner/scan_relay.py
 mealplanner/stats.py
 mealplanner/stock.py
 mealplanner/store.py

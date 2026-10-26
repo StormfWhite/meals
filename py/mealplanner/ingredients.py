@@ -129,7 +129,7 @@ def update(ingredient_id: str, **fields) -> dict:
     kept = {u: g for u, g in (ing.get("unit_conversions") or {}).items() if u in ("block", ing.get("pack"))}
     for key in ("name", "fdc_id", "fdc_description", "default_unit", "unit_conversions",
                 "category", "store_section", "manual_nutrients", "shop_list", "freezes", "keep_days", "storage",
-                "nutrient_fill", "hide_suggest", "brand", "pack", "pack_size"):
+                "nutrient_fill", "hide_suggest", "brand", "pack", "pack_size", "made"):
         if key in fields and fields[key] is not None:
             ing[key] = fields[key].strip() if key == "name" else fields[key]
     # a block or can size said in the Pantry ("frozen in 1 lb blocks", "4 32 oz cans",
@@ -283,6 +283,8 @@ def resolve_usda(ingredient_id: str, force: bool = False) -> Optional[dict]:
     ing = get(ingredient_id)
     if ing is None:
         raise KeyError(ingredient_id)
+    if ing.get("made"):
+        return ing          # a bulk make: its nutrition is what went into the pot (bulk.py)
     if (ing.get("fdc_id") or (ing.get("fdc_description") or "").startswith("Equal parts")) and not force:
         return ing
     match = None
