@@ -36,10 +36,6 @@ PLACES = ("fridge", "pantry", "freezer")
 FRIDGE_KEEP_DAYS = 5          # cooked food in the fridge; past it the replay freezes it
 PANTRY_KEEP_DAYS = 60         # a dry make (granola, spice mix)
 
-CUPS_PER = {"cup": 1.0, "c": 1.0, "qt": 4.0, "quart": 4.0, "pint": 2.0, "pt": 2.0, "gal": 16.0,
-            "gallon": 16.0, "l": 4.22675, "liter": 4.22675, "litre": 4.22675, "ml": 0.00422675,
-            "fl oz": 0.125, "tbsp": 1 / 16, "tablespoon": 1 / 16}
-
 
 def _stock_file():
     from . import stock
@@ -113,8 +109,8 @@ def parse_yield(text: str, input_g: float) -> dict:
     out["unit"] = {"word": unit, "g": g_each, "n": n}
     if g_each:
         out["conversions"][unit] = g_each
-        if unit in CUPS_PER:                     # a volume: cups (and so tsp/tbsp) follow from it
-            out["conversions"]["cup"] = input_g / (n * CUPS_PER[unit])
+        if unit in nutrition.TSP_PER:            # a volume: cups (and so every other volume) follow from it
+            out["conversions"]["cup"] = input_g / (n * nutrition.TSP_PER[unit] / nutrition.TSP_PER["cup"])
     return out
 
 

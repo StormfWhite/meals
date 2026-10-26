@@ -177,9 +177,10 @@ def size_g(text: str) -> Optional[float]:
     return prices._parse_grams(t)
 
 
-def typed_g(text: str) -> Optional[float]:
-    """An amount typed on the list -> grams: "2 lb", and several of one size ("4 x 32 oz",
-    "4*32 oz", "32 oz × 4") multiplied. Nothing is remembered on the ingredient here."""
+def typed_g(text: str, ing: Optional[dict] = None) -> Optional[float]:
+    """An amount typed on the list -> grams: "2 lb", several of one size ("4 x 32 oz", "4*32 oz",
+    "32 oz × 4") multiplied, and with the ingredient anything it can weigh ("6 bananas", "2 cups").
+    Nothing is remembered on the ingredient here."""
     t = (text or "").strip()
     for rx, n_at, size_at, _ in COUNT_SIZE:
         m = rx.match(t)
@@ -188,24 +189,32 @@ def typed_g(text: str) -> Optional[float]:
                 return float(m.group(n_at)) * size_g(m.group(size_at))
             except ValueError:
                 pass
+    if ing is not None:
+        from . import nutrition
+        g = nutrition.text_to_grams(ing, t)
+        if g:
+            return g
     return size_g(t)
 
 
 def amount_g(ing: dict, text: str) -> Optional[float]:
-    """What's typed in the Pantry's add box -> grams: "2 lb", "8 oz", or a count ("3", "2 heads")
-    weighed by the ingredient's own unit table."""
-    g = size_g(text)
-    if g:
-        return g
-    m = re.match(r"^\s*([\d.]+)\s*([a-z]*)", (text or "").lower())
-    if not m:
-        return None
+    """What's typed in the Pantry's add box -> grams, however it's said (nutrition.parse_amount):
+    "2 lb", "1/2 cup", "1 banana", "a dozen", "3 cloves", "2 cans". A bare number after "4 x 32 oz"
+    is that many of that size. Nothing it can weigh -> None (the box asks again), never a guess."""
     from . import nutrition
-    word = m.group(2)
-    if not word and (ing.get("pack_size") or {}).get("g"):
-        return float(m.group(1)) * ing["pack_size"]["g"]      # "3" after "4 x 32 oz" = three of those
-    unit = PACKS.get(word) or word.rstrip("s") or "each"
-    return nutrition.qty_to_grams(ing, float(m.group(1)), unit) or nutrition.qty_to_grams(ing, float(m.group(1)), "each")
+    got = nutrition.parse_amount(text)
+    if got:
+        qty, word = got
+        if not word and qty >= 20:
+            return qty                                   # a bare "200" is grams, never 200 bananas (or packs)
+        if not word and (ing.get("pack_size") or {}).get("g"):
+            return qty * ing["pack_size"]["g"]          # "3" after "4 x 32 oz" = three of those
+        if not word and nutrition.count_grams(ing) is None:
+            return None
+        g = nutrition.qty_to_grams(ing, qty, PACKS.get(word) or word)
+        if g:
+            return g
+    return size_g(text)                                  # ml / l / fl oz at a gram a millilitre
 
 
 def block_g(ing: dict) -> Optional[float]:
@@ -466,8 +475,9 @@ class Ledger:
         # an amount typed on the row replaces the math; one typed when adding ("garlic 8 oz")
         # is bought on top of what the meals need
         typed = st.get("qty_text")
-        typed_amt = typed_g(typed) if typed else None
-        extra_g = (ex or {}).get("qty_g", 0.0) + (typed_g((ex or {}).get("qty_text") or "") or 0.0)
+        ing = self.ings.get(ing_id)
+        typed_amt = typed_g(typed, ing) if typed else None
+        extra_g = (ex or {}).get("qty_g", 0.0) + (typed_g((ex or {}).get("qty_text") or "", ing) or 0.0)
         need = self.needs(week).get(ing_id, 0.0)
         want = typed_amt or max(0.0, need - on_hand_g) + extra_g
         pkg = self.best_package(week, ing_id, want) or {}

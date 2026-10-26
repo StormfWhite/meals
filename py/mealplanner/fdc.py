@@ -426,8 +426,10 @@ def _match_score(query: str, result: dict) -> float:
     words = lambda t: {stem(w) for w in re.split(r"[^a-z]+", t) if w}
     # singular/plural is the same food: "onion" IS "Onions, raw" -- matched only as a prefix it lost
     # to "Fried onion rings", which has the bare word in it (Storm's Onion, found 2026-10-25)
-    if head == q or (words(head) == words(q) and words(q)):
+    if head == q:
         score = 1.0
+    elif words(head) == words(q) and words(q):
+        score = 0.95          # just a little under the exact name: "Banana, raw" before "Bananas, overripe, raw"
     elif q in head.split():
         score = 0.8
     elif head.startswith(q) or q.startswith(head):

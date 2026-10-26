@@ -92,7 +92,7 @@ App.bulk = {
     const ing = item && item.ingredient_id ? this._ingredients.find(i => i.id === item.ingredient_id) : null;
     const row = App.el(`<div class="mb-row bk-row">
       <input class="mb-ing bk-ing" placeholder="ingredient" spellcheck="false" autocomplete="off" enterkeyhint="enter" value="${App.esc(item ? (item.name || (ing ? ing.name : "")) : "")}">
-      <input class="mb-amt bk-amt num" placeholder="amt" spellcheck="false" enterkeyhint="enter" value="${item ? App.esc(_mbFormatAmount(item.qty, item.unit === "each" ? "" : item.unit)) : ""}">
+      <input class="mb-amt bk-amt num" placeholder="amt" spellcheck="false" enterkeyhint="enter" value="${item ? App.esc(_mbFormatAmount(item.qty, item.unit)) : ""}">
       <span class="mb-stat num"></span>
       <button class="icon-btn mb-row-x" title="Remove line" tabindex="-1">${App.icon(GP_X)}</button>
     </div>`);
@@ -153,7 +153,7 @@ App.bulk = {
       const name = el.querySelector(".bk-ing").value.trim();
       const amt = _mbParseAmount(el.querySelector(".bk-amt").value) || { qty: 0, unit: "" };
       const ing = this._ingredients.find(i => i.name.toLowerCase() === name.toLowerCase());
-      return { el, name, qty: amt.qty, unit: amt.unit || "each", ingredient_id: ing ? ing.id : null };
+      return { el, name, qty: amt.qty, unit: _mbUnit(amt, ing), ingredient_id: ing ? ing.id : null };
     }).filter(r => r.name);
   },
 
@@ -254,7 +254,7 @@ App.bulk = {
       const pu = it.per_unit, p = it.per100;
       const stat = pu ? `1 ${App.esc(pu.word)} · ${Math.round(pu.calories_kcal)} kcal · ${pu.protein_g.toFixed(1)} g P`
         : p ? `100 g · ${Math.round(p.calories_kcal)} kcal · ${p.protein_g.toFixed(1)} g P` : "nutrition unknown";
-      const lines = it.last.lines.map(l => `${App.esc(l.name)} ${App.esc(_mbFormatAmount(l.qty, l.unit === "each" ? "" : l.unit))}`).join(" · ");
+      const lines = it.last.lines.map(l => `${App.esc(l.name)} ${App.esc(_mbFormatAmount(l.qty, l.unit))}`).join(" · ");
       const el = App.el(`<div class="bk-item${Object.keys(it.have).length ? "" : " gone"}">
         <div class="bk-item-top">
           <span class="bk-item-name">${App.esc(it.name)}</span>

@@ -145,10 +145,37 @@ def update(ingredient_id: str, **fields) -> dict:
     return ing
 
 
+def _portion_unit(name: str, food: str) -> Optional[str]:
+    """One of USDA's portion names -> the unit a line would say, or None. Besides the plain ones
+    ("cup", "clove"): "medium (7\" to 7-7/8\" long)" is "medium", "slice or wedge" is "slice",
+    "fruit (2-3/8\" dia)" is "fruit", "whole" stays, and a portion named after the food itself
+    ("banana" in Banana, raw; "avocado") is ONE of it -- "each". "nlea serving", codes: None."""
+    from .nutrition import _stem
+    u = re.sub(r"\s*\(.*$", "", (name or "").lower()).strip()
+    if not u or u.startswith("extra ") or u[0].isdigit():
+        return None
+    if u in KITCHEN_UNITS:
+        return u
+    w0 = u.split()[0]
+    if w0 == "whole":
+        return "whole"
+    if food and (_stem(w0) == food or _stem(u) == food):
+        return "each"
+    return w0 if w0 in KITCHEN_UNITS else None
+
+
 def _kitchen_portions(nutrients: dict) -> dict:
-    """USDA's portion table, filtered to units anyone would actually write
-    on a meal line -- "1 clove" survives, "1 package (15 oz)" doesn't."""
-    return {u: g for u, g in (nutrients.get("portions") or {}).items() if u in KITCHEN_UNITS}
+    """USDA's portion table, as units anyone would actually write on a meal line -- "1 clove"
+    and "1 medium" survive, "1 package (15 oz)" doesn't. First listed wins (USDA orders them)."""
+    from .nutrition import _stem
+    head = (nutrients.get("description") or "").split(",")[0].strip().lower()
+    food = _stem(head.split()[-1]) if head else ""
+    out: dict = {}
+    for name, g in (nutrients.get("portions") or {}).items():
+        unit = _portion_unit(name, food)
+        if unit and unit not in out and g:
+            out[unit] = g
+    return out
 
 
 # words on a package that say nothing about what the food is
@@ -269,6 +296,44 @@ def fill_portions(ingredient_id: str) -> Optional[dict]:
     return update(ingredient_id, **fields) if fields else ing
 
 
+MIN_COUNT_G = 15
+
+
+def fill_count(ingredient_id: str) -> Optional[dict]:
+    """What ONE of it weighs, when nothing says yet ("1 banana" weighed a 6 g slice): from its own
+    USDA record read again (whole-item portions used to be dropped), else from the closest record
+    of the same food (Banana, raw -> Bananas, raw's "medium"). Only adds units; nothing it has
+    changes. No record says (spinach): left alone -- a bare count then has no weight."""
+    from . import fdc, nutrition
+    ing = get(ingredient_id)
+    if not ing or ing.get("made") or not ing.get("fdc_id") or nutrition.count_grams(ing) is not None:
+        return ing
+    have = ing.get("unit_conversions") or {}
+    counts = set(nutrition.COUNT_UNITS) | {"large", "small"}
+    # one grape (7 g), one split pea (3 g): a bare "1" of those means a bunch or a bag, so it's
+    # better unweighed (the Pantry then asks) than weighed as a single tiny piece
+    pick = lambda portions: {u: g for u, g in portions.items() if u in counts and u not in have and g >= MIN_COUNT_G}
+    found = pick(_kitchen_portions(fdc.get_nutrients(ing["fdc_id"]) or {}))
+    if not any(u in nutrition.COUNT_UNITS for u in found):
+        want = (ing.get("fdc_description") or "").split(",")[0].strip().lower()
+        mine = set(re.split(r"[^a-z]+", (ing.get("fdc_description") or "").lower()))
+        seen: dict = {}
+        for query in dict.fromkeys([want] + _usda_queries(ing["name"])):
+            for other in fdc.ranked_matches(query, limit=8):
+                if nutrition._stem(other["description"].lower().split(",")[0].strip().split()[-1]) \
+                        == nutrition._stem(want.split()[-1]) if want else False:
+                    seen.setdefault(other["fdc_id"], other)
+        extra = lambda o: len(set(re.split(r"[^a-z]+", o["description"].lower())) - mine - {""})
+        for other in sorted(seen.values(), key=lambda o: (extra(o), -o["score"])):
+            got = pick(_kitchen_portions(fdc.get_nutrients(other["fdc_id"]) or {}))
+            if any(u in nutrition.COUNT_UNITS for u in got):
+                found = got
+                break
+    if not any(u in nutrition.COUNT_UNITS for u in found):
+        return ing
+    return update(ingredient_id, unit_conversions={**have, **found})
+
+
 def resolve_usda(ingredient_id: str, force: bool = False) -> Optional[dict]:
     """Bind an ingredient to the USDA food it most likely means, and take
     that food's category and portion table with it.
@@ -324,6 +389,7 @@ def resolve_usda(ingredient_id: str, force: bool = False) -> Optional[dict]:
         updated = update(ingredient_id, shop_list=aisles.classify(updated["name"], updated["category"]),
                          lock_shop_list=False)
     filled = fill_portions(ingredient_id) or updated
+    filled = fill_count(ingredient_id) or filled
     return _with_brand(ingredient_id) or filled
 
 

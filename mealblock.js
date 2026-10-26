@@ -116,7 +116,7 @@ App.mealBlock = {
       if (!ing) return null;
       const amt = _mbParseAmount(r.amount);
       if (!amt || !amt.qty) return null;
-      return { ingredient_id: ing.id, qty: amt.qty, unit: amt.unit || ing.default_unit || "g" };
+      return { ingredient_id: ing.id, qty: amt.qty, unit: _mbUnit(amt, ing) };
     };
 
     const knownRows = () => readRows().map(priceable).filter(Boolean);
@@ -683,7 +683,7 @@ App.mealBlock = {
         if (!r.amount.trim() && all.some(o => o !== r && o.name.toLowerCase().startsWith(n + " "))) continue;
         const amt = _mbParseAmount(r.amount);
         const known = ingredientByName(r.name);
-        const unit = (amt && amt.unit) || (known && known.default_unit) || "g";
+        const unit = _mbUnit(amt, known);
         const ingredient_id = await App.resolveIngredientId(r.name, unit, host.ingredients);
         rows.push({ ingredient_id, qty: amt ? amt.qty : 0, unit, note: r.note });
       }
@@ -791,22 +791,67 @@ App.mealBlock = {
   },
 };
 
-/* "2", "2.5", "1/2", "2 1/2", each optionally followed by a unit word:
- * one field instead of a qty box plus a unit box, because a day column is
- * only so wide and "1 1/2 cups" is how a list actually gets written. */
+/* An amount as it gets written -> {qty, unit}: "2", "1/2", "2 1/2 cups", "½ cup", "1½ tbsp",
+ * "half a cup", "a dozen", "2 dozen eggs", "2 cups of spinach", "2-3", "1 banana". One field
+ * instead of a qty box plus a unit box, because a day column is only so wide and "1 1/2 cups" is
+ * how a list actually gets written. The same reading as nutrition.parse_amount on the server, which
+ * also knows "banana" / "medium" / "cloves" are counts of the food. null = no amount in it. */
+const _MB_FRAC = { "½": .5, "⅓": 1 / 3, "⅔": 2 / 3, "¼": .25, "¾": .75, "⅛": .125, "⅜": .375, "⅝": .625, "⅞": .875 };
+const _MB_WORDS = { "half a dozen": 6, "half dozen": 6, "a couple": 2, "a few": 3, "half an": .5, "half a": .5,
+  "a half": .5, "a quarter": .25, "a dozen": 12, "couple": 2, "few": 3, "half": .5, "quarter": .25, "dozen": 12,
+  "a": 1, "an": 1, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10 };
 function _mbParseAmount(text) {
-  const t = String(text || "").trim();
+  let t = String(text || "").trim().toLowerCase();
+  for (const [ch, v] of Object.entries(_MB_FRAC)) t = t.split(ch).join(` ${v} `);
+  t = t.replace(/\s+/g, " ").trim();
   if (!t) return null;
-  const m = t.match(/^(\d*\.?\d+)?\s*(?:(\d+)\s*\/\s*(\d+))?\s*([a-zA-Z][a-zA-Z.%-]*(?:\s+[a-zA-Z][a-zA-Z.%-]*)?)?$/);
-  if (!m || (!m[1] && !m[2])) return null;
-  let qty = m[1] ? parseFloat(m[1]) : 0;
-  if (m[2] && m[3] && Number(m[3])) qty += Number(m[2]) / Number(m[3]);
-  return { qty, unit: (m[4] || "").trim() };
+  let qty = null, rest = "", m;
+  if ((m = t.match(/^(\d+(?:\.\d+)?|\.\d+)\s*(?:-|to)\s*(\d+(?:\.\d+)?)\b\s*(.*)$/))) {
+    qty = (parseFloat(m[1]) + parseFloat(m[2])) / 2; rest = m[3];
+  } else if ((m = t.match(/^(\d+)\s+(\d+)\s*\/\s*(\d+)\b/))) {
+    if (!Number(m[3])) return null;
+    qty = Number(m[1]) + Number(m[2]) / Number(m[3]); rest = t.slice(m[0].length);
+  } else if ((m = t.match(/^(\d+)\s*\/\s*(\d+)\b/))) {
+    if (!Number(m[2])) return null;
+    qty = Number(m[1]) / Number(m[2]); rest = t.slice(m[0].length);
+  } else if ((m = t.match(/^(\d+(?:\.\d+)?)\s+(0?\.\d+)(?!\d)/))) {
+    qty = parseFloat(m[1]) + parseFloat(m[2]); rest = t.slice(m[0].length);
+  } else if ((m = t.match(/^(\d+(?:\.\d+)?|\.\d+)/))) {
+    qty = parseFloat(m[1]); rest = t.slice(m[0].length);
+  } else {
+    const w = Object.keys(_MB_WORDS).find(k => t === k || t.startsWith(k + " "));
+    if (!w) return null;
+    qty = _MB_WORDS[w]; rest = t.slice(w.length);
+  }
+  rest = rest.trim();
+  if ((m = rest.match(/^(?:and )?(?:a half|half)\b\s*(.*)$/))) { qty += .5; rest = m[1]; }
+  if ((m = rest.match(/^dozen\b\s*(.*)$/))) { qty *= 12; rest = m[1]; }
+  rest = rest.replace(/^(?:x|×|\*)\s*/, "").replace(/^(?:a|an)\s+/, "");
+  let unit = rest.split(/\s+of\b|,|\(/)[0].trim().replace(/^\.+|\.+$/g, "");
+  if (/^(fl|fluid)\b/.test(unit)) unit = "fl oz";
+  else if (unit) {
+    const two = unit.split(/\s+/).slice(0, 2).join(" ");
+    unit = ["extra large", "fl oz"].includes(two) ? two : unit.split(/\s+/)[0];
+  }
+  return qty > 0 ? { qty: Math.round(qty * 1000) / 1000, unit } : null;
+}
+
+/* The unit a line is saved with. Written: as written ("cups", "banana", "medium" -- the server
+ * weighs those). A bare number: a count of the food when one of it has a weight and it's a
+ * count-sized number ("2" bananas), else the food's own unit -- "200" has always meant grams. */
+const _MB_COUNT_UNITS = ["each", "medium", "whole", "fruit", "piece", "egg", "large", "small", "clove"];
+function _mbUnit(amt, ing) {
+  if (amt && amt.unit) return amt.unit;
+  const conv = (ing && ing.unit_conversions) || {};
+  const counts = _MB_COUNT_UNITS.some(u => conv[u]) || (conv.slice && /\b(bread|toast|loaf|sourdough|rye|cheese)\b/i.test(ing.name || ""));
+  if (amt && counts && amt.qty < 20) return "each";
+  return (ing && ing.default_unit) || "g";
 }
 
 function _mbFormatAmount(qty, unit) {
   const n = Number(qty);
   const shown = Number.isFinite(n) ? String(Math.round(n * 100) / 100) : "";
+  if (unit === "each") return shown;
   return unit && unit !== "g" ? `${shown} ${unit}` : (unit === "g" ? `${shown} g` : shown);
 }
 
