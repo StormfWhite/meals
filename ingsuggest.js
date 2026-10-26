@@ -49,10 +49,26 @@ App.ingSuggest = {
     const input = this._input;
     const opts = this._opts;
     if (!input || !item) return;
+    const before = input.value;
     input.value = item.name;
     this.close();
-    if (opts && opts.onPick) opts.onPick(item, input);
+    if (opts && opts.onPick) opts.onPick(item, input, before);
     input.dispatchEvent(new Event("input", { bubbles: true }));
+  },
+
+  /* Enter in an add box (grocery, pantry, market, recipe lines): fill in the highlighted row when
+   * it was picked with the arrows, or when it finishes the word being typed ("ban" -> "banana").
+   * "milk" is never swapped for "almond milk" behind anyone's back. True = it filled something. */
+  takeActive(input) {
+    if (this._input !== input) return false;
+    const item = this.active();
+    const typed = ((this._opts && this._opts.query) ? this._opts.query(input.value) : input.value).trim().toLowerCase();
+    if (item && (this._moved || (typed && item.name.toLowerCase().startsWith(typed) && item.name.toLowerCase() !== typed))) {
+      this.accept(item);
+      return true;
+    }
+    this.close();
+    return false;
   },
 
   close() {
@@ -61,11 +77,16 @@ App.ingSuggest = {
     this._input = null;
     this._items = [];
     this._index = -1;
+    this._moved = false;
     clearTimeout(this._timer);
   },
 
   // ── fetching ────────────────────────────────────────────────────────
   _open(input, opts) {
+    if (opts.minChars && input.value.trim().length < opts.minChars) {   // an add box: only once typing starts
+      if (this._input === input) this.close();
+      return;
+    }
     this._input = input;
     this._opts = opts;
     clearTimeout(this._timer);
@@ -81,14 +102,18 @@ App.ingSuggest = {
       const all = opts.local();
       const hits = t ? all.filter(o => o.name.toLowerCase().includes(t)) : all;
       this._items = hits.sort((a, b) => (b.name.toLowerCase().startsWith(t) ? 1 : 0) - (a.name.toLowerCase().startsWith(t) ? 1 : 0)).slice(0, 8);
-      this._index = -1;   // a typed meal name is never replaced unless clicked
+      // a typed meal name is never REPLACED unless clicked -- but one it starts is completed
+      // by Enter/Tab (takeActive): the top row is marked only when it begins with what's typed
+      this._index = t && this._items.length && this._items[0].name.toLowerCase().startsWith(t) ? 0 : -1;
+      this._moved = false;
       this._draw(input);
       return;
     }
     const ctx = (opts.context && opts.context()) || {};
     const seq = ++this._seq;
+    const q = (opts.query ? opts.query(input.value) : input.value).trim();
     const params = new URLSearchParams({
-      q: input.value.trim(),
+      q,
       meal: ctx.meal || "",
       meal_name: ctx.meal_name || "",
       used: (ctx.used || []).join(","),
@@ -102,9 +127,18 @@ App.ingSuggest = {
     catch (err) { return; }
     if (seq !== this._seq || document.activeElement !== input) return;
     this._items = res.suggestions;
+    if (opts.extra) {
+      // the caller's own rows (the Pantry: saved meals put away as blocks), matched the same way
+      const t = q.toLowerCase();
+      const have = new Set(this._items.map(i => i.name.toLowerCase()));
+      const more = opts.extra().filter(o => !have.has(o.name.toLowerCase()) && (!t || o.name.toLowerCase().includes(t)));
+      more.sort((a, b) => (b.name.toLowerCase().startsWith(t) ? 1 : 0) - (a.name.toLowerCase().startsWith(t) ? 1 : 0));
+      this._items = [...this._items, ...more].slice(0, 9);
+    }
     // Typed something -> the top row is what Tab completes to. Empty box ->
     // the list is a menu to look at, not something Tab should commit.
-    this._index = input.value.trim() && this._items.length ? 0 : -1;
+    this._index = q && this._items.length ? 0 : -1;
+    this._moved = false;
     this._draw(input);
   },
 
@@ -161,6 +195,7 @@ App.ingSuggest = {
     const n = this._items.length;
     if (!n) return;
     this._index = this._index < 0 ? (delta > 0 ? 0 : n - 1) : (this._index + delta + n) % n;
+    this._moved = true;
     Array.from(this._el.children).forEach((row, i) => row.classList.toggle("on", i === this._index));
   },
 

@@ -143,8 +143,6 @@ App.groceriesPanel = {
     // the meal lines say where each comes from (fridge / dry / freezer / list): ask again
     if (App.plan && App.plan.refreshSources) App.plan.refreshSources();
     if (this._stockOpen) this._drawStock();
-    const datalist = container.querySelector("#gp-ingredient-catalog");
-    if (datalist) datalist.innerHTML = ingredients.filter(i => !i.hide_suggest).map(i => `<option value="${App.esc(i.name)}">`).join("");
 
     const rowsOf = (id) => { const el = container.querySelector(id); el.innerHTML = ""; return el; };
     const groceryRows = rowsOf("#gp-grocery-rows");
@@ -174,7 +172,6 @@ App.groceriesPanel = {
   _frame() {
     const container = this._container;
     // a phone's datalist pops the whole catalog the moment the bar is tapped
-    const listAttr = gpPhone() ? "" : 'list="gp-ingredient-catalog"';
     const sugToggle = (kind) => `<button class="icon-btn gp-sug-toggle" data-list="${kind}" hidden>${App.icon(GP_DOWN)}<span class="gp-sug-n num"></span></button>`;
     const open = (kind) => this._sugOpen[kind] ? " sug-open" : "";
     // enterkeyhint "enter", not "done": done asks the keyboard to go away; Enter here means "next item"
@@ -187,19 +184,18 @@ App.groceriesPanel = {
         <div class="gp-head-slot"></div>
         <div class="gp-rows" id="gp-grocery-rows"></div>
         <div class="gp-add-row">
-          <input class="gp-add-name" ${listAttr} placeholder="Add an item…" spellcheck="false" enterkeyhint="enter">
+          <input class="gp-add-name" placeholder="Add an item…" autocomplete="off" spellcheck="false" enterkeyhint="enter">
           <input class="gp-add-qty" placeholder="qty" spellcheck="false" enterkeyhint="enter">
           ${sugToggle("grocery")}
         </div>
         <div class="gp-rows gp-sugs" id="gp-grocery-sugs"></div>
-        ${listAttr ? '<datalist id="gp-ingredient-catalog"></datalist>' : ""}
       </div>
       <div class="gp-section gp-market${open("market")}" data-list="market">
         <div class="gp-head-slot"></div>
         <div class="gp-rows" id="gp-market-rows"></div>
         <div class="gp-rows gp-free" id="gp-free-rows"></div>
         <div class="gp-add-row">
-          <input class="gp-free-add" placeholder="Add a line, press Enter…" spellcheck="false" enterkeyhint="enter">
+          <input class="gp-free-add" placeholder="Add a line, press Enter…" autocomplete="off" spellcheck="false" enterkeyhint="enter">
           ${sugToggle("market")}
         </div>
         <div class="gp-rows gp-sugs" id="gp-market-sugs"></div>
@@ -213,7 +209,7 @@ App.groceriesPanel = {
         <div class="gp-stock-body"${this._stockOpen ? "" : " hidden"}>
         <div class="gp-rows" id="gp-stock-rows"></div>
         <div class="gp-add-row gp-stock-addrow">
-          <input class="gp-stock-name" ${listAttr} placeholder="Add to pantry…" spellcheck="false" enterkeyhint="enter">
+          <input class="gp-stock-name" placeholder="Add to pantry…" autocomplete="off" spellcheck="false" enterkeyhint="enter">
           <input class="gp-stock-qty" placeholder="qty" spellcheck="false" enterkeyhint="enter">
           <span class="gp-stock-pick">
             <button class="icon-btn where-fridge" data-where="fridge" title="Fridge">${App.icon(GP_FRIDGE)}</button>
@@ -384,7 +380,15 @@ App.groceriesPanel = {
       await this._addStock(name, qty, where);
       this._reload();
     };
-    [nameIn, qtyIn].forEach(i => i.addEventListener("keydown", e => { if (e.key === "Enter" || e.keyCode === 13) { e.preventDefault(); add(); } }));
+    [nameIn, qtyIn].forEach(i => i.addEventListener("keydown", e => {
+      if (e.key !== "Enter" && e.keyCode !== 13) return;
+      e.preventDefault();
+      if (i === nameIn) App.ingSuggest.takeActive(nameIn);
+      add();
+    }));
+    // what's in the catalog, and saved meals (a meal's name + a count puts meal blocks away)
+    _gpSuggest(nameIn, qtyIn, { week: () => this._weekStart,
+      extra: () => ((App.plan && App.plan._recipes) || []).map(r => ({ name: r.name, reason: "meal" })) });
     // a photo: what's in it comes back as rows to check (pantry_scan.py), never straight in
     c.querySelector(".gp-stock-cam input").addEventListener("change", async (e) => {
       const file = (e.target.files || [])[0];
@@ -465,7 +469,11 @@ App.groceriesPanel = {
       </div>`);
       if (r.estimated) el.querySelector(".gp-se-qty").classList.add("guess");
       el.querySelector(".gp-scan-chk").addEventListener("change", (e) => { r.on = e.target.checked; this._drawScan(); });
-      el.querySelector(".gp-se-name").addEventListener("input", (e) => { r.name = e.target.value; r.ingredient_id = null; });
+      const nm = el.querySelector(".gp-se-name");
+      nm.addEventListener("input", (e) => { r.name = e.target.value; r.ingredient_id = null; });
+      // the catalog's own name, picked from the dropdown, ties it to that ingredient
+      _gpSuggest(nm, null, { week: () => this._weekStart, onPick: (item) => { r.name = item.name; r.ingredient_id = item.id || null; } });
+      nm.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.keyCode === 13) { e.preventDefault(); App.ingSuggest.takeActive(nm); nm.blur(); } });
       el.querySelector(".gp-se-qty").addEventListener("input", (e) => { r.qty = e.target.value; r.estimated = false; });
       el.querySelector(".gp-scan-at").addEventListener("click", () => {
         r.where = order[(order.indexOf(at) + 1) % order.length];
@@ -550,9 +558,13 @@ App.groceriesPanel = {
       const cancel = () => { this._stockEdit = null; this._drawStock(); };
       el.querySelector(".gp-se-ok").addEventListener("click", save);
       [nameIn, qtyIn].forEach(i => i.addEventListener("keydown", e => {
-        if (e.key === "Enter" || e.keyCode === 13) { e.preventDefault(); save(); }
-        else if (e.key === "Escape") cancel();
+        if (e.key === "Enter" || e.keyCode === 13) {
+          e.preventDefault();
+          if (i === nameIn) App.ingSuggest.takeActive(nameIn);   // a typo fixed into the real name merges them
+          save();
+        } else if (e.key === "Escape" && !App.ingSuggest.isOpen()) cancel();
       }));
+      _gpSuggest(nameIn, null, { week: () => wk });
       requestAnimationFrame(() => { qtyIn.focus(); qtyIn.select(); });
       return el;
     };
@@ -855,9 +867,15 @@ App.groceriesPanel = {
         .then(() => { this._pending = this._pending.filter(p => p !== pend); return this._reload(); })
         .catch(() => {});   // a failed redraw must never stall the adds queued behind it
     };
-    const onEnter = (e) => { if (e.key === "Enter" || e.keyCode === 13) { e.preventDefault(); addItem(); sizesFor = ""; } };
+    const onEnter = (e) => {
+      if (e.key !== "Enter" && e.keyCode !== 13) return;
+      e.preventDefault();
+      if (e.target === nameInput) App.ingSuggest.takeActive(nameInput);   // "ban" + Enter = banana
+      addItem(); sizesFor = "";
+    };
     nameInput.addEventListener("keydown", onEnter);
     qtyInput.addEventListener("keydown", onEnter);
+    _gpSuggest(nameInput, qtyInput, { week: () => this._weekStart, onPick: () => offerSizes() });
     // something the store has been asked about before: its sizes are offered in the amount box
     let sizesFor = "";
     const offerSizes = async () => {
@@ -893,9 +911,11 @@ App.groceriesPanel = {
 
   _wireFree() {
     const freeAdd = this._container.querySelector(".gp-free-add");
+    _gpSuggest(freeAdd, null, { week: () => this._marketWeek });
     freeAdd.addEventListener("keydown", async (e) => {
       if (e.key !== "Enter" && e.keyCode !== 13) return;
       e.preventDefault();
+      App.ingSuggest.takeActive(freeAdd);
       if (!freeAdd.value.trim()) return;
       const [text, qty] = _gpSplitAmount(freeAdd.value.trim());   // "6 peaches" → peaches · 6, like the grocery box
       freeAdd.value = "";
@@ -949,6 +969,24 @@ App.groceriesPanel = {
 const GP_UNITS = "blocks?|servings?|cups?|c|tbsps?|tablespoons?|tsps?|teaspoons?|g|grams?|kg|oz|ounces?|lbs?|pounds?|ml|l|liters?|cans?|jars?|bags?|boxe?s?|packs?|packages?|bunch(?:es)?|heads?|dozen|doz|cartons?|bottles?|loaf|loaves|gal(?:lons?)?|qt|quarts?|pints?";
 function _gpRange(week) {   // "Oct 25 – Oct 31", via plan.js's own formatter
   return typeof _planRange === "function" ? _planRange(week, _planShift(week, 6)) : week;
+}
+
+/* The ranked ingredient dropdown (ingsuggest.js) on an add box. Only the name part of "grapes 2 lb"
+ * is looked up; picking a row keeps the amount -- into the qty box when there is one, else back
+ * on the line ("6 peac" -> "Peaches 6"). Opens once typing starts, never on a bare tap. */
+function _gpSuggest(input, qtyInput, opts = {}) {
+  App.ingSuggest.attach(input, {
+    minChars: 1,
+    query: (text) => { const [name, qty] = _gpSplitAmount(text); return qty ? name : text; },
+    context: () => ({ week: opts.week ? opts.week() : "" }),
+    extra: opts.extra,
+    onPick: (item, el, before) => {
+      const [, qty] = _gpSplitAmount(before || "");
+      if (qty && qtyInput && !qtyInput.value.trim()) qtyInput.value = qty;
+      else if (qty && !qtyInput) el.value = `${item.name} ${qty}`;
+      if (opts.onPick) opts.onPick(item);
+    },
+  });
 }
 
 function _gpSplitAmount(text) {

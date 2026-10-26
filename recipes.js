@@ -80,7 +80,7 @@ App.recipes = {
     const qty = item && item.qty ? item.qty : "";
     const unit = item ? (item.unit || "") : "g";
     const row = App.el(`<div class="rf-ing-row" style="display:flex;gap:6px;align-items:center;">
-      <input class="ing-name" list="ingredient-options" placeholder="ingredient" value="${_esc(name)}" style="flex:2;min-width:0;">
+      <input class="ing-name" placeholder="ingredient" autocomplete="off" spellcheck="false" value="${_esc(name)}" style="flex:2;min-width:0;">
       <input class="ing-qty" type="number" step="any" placeholder="qty" value="${qty}" style="width:70px;min-width:0;">
       <input class="ing-unit" placeholder="unit" value="${_esc(unit)}" style="width:90px;min-width:0;">
       <button class="icon-btn ing-remove" title="Remove">${App.icon('<path d="M18 6 6 18M6 6l12 12"/>')}</button>
@@ -88,10 +88,20 @@ App.recipes = {
     row.querySelector(".ing-remove").addEventListener("click", () => row.remove());
     row.dataset.note = (item && item.note) || "";
     // Enter walks the line like a meal block: name → amount → a new line below (keyboard stays up)
+    // the same ranked dropdown as a meal's lines; Enter finishes a started name ("ban" -> banana)
+    App.ingSuggest.attach(row.querySelector(".ing-name"), {
+      minChars: 1,
+      context: () => ({ meal_name: (document.getElementById("rf-name") || {}).value || "" }),
+      onPick: (item) => { if (item.typical) row.querySelector(".ing-qty").placeholder = item.typical.label; },
+    });
     row.addEventListener("keydown", (e) => {
       if (e.key !== "Enter" && e.keyCode !== 13) return;
       e.preventDefault();
-      if (e.target.classList.contains("ing-name")) { row.querySelector(".ing-qty").focus(); return; }
+      if (e.target.classList.contains("ing-name")) {
+        App.ingSuggest.takeActive(e.target);
+        row.querySelector(".ing-qty").focus();
+        return;
+      }
       const next = this._ingredientRow(null);
       next.querySelector(".ing-unit").value = "";
       row.after(next);
@@ -164,9 +174,6 @@ App.recipes = {
       <h2>${recipe ? "Edit recipe" : "New recipe"}
         <button class="icon-btn" onclick="App.closeModal()">${App.icon('<path d="M18 6 6 18M6 6l12 12"/>')}</button>
       </h2>
-      <datalist id="ingredient-options">
-        ${this._ingredients.map(i => `<option value="${_esc(i.name)}">`).join("")}
-      </datalist>
       <div class="modal-section" style="border-top:none;padding-top:0;">
         <label class="field-label">Name</label>
         <input id="rf-name" value="${recipe ? _esc(recipe.name) : imported ? _esc(imported.name) : ""}" placeholder="e.g. Eggplant Parm">

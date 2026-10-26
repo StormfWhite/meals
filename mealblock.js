@@ -74,8 +74,26 @@ App.mealBlock = {
     // Meal-name dropdown: learned order, with a x per row that retires a
     // suggestion (the recipe and its history stay; it just stops being offered).
     App.ingSuggest.attach(nameInput, {
-      local: () => host.optionsFor(meal).slice(),
+      // this meal's usual ones first (learned order), then every other saved meal
+      local: () => {
+        const own = host.optionsFor(meal).slice();
+        const have = new Set(own.map(o => o.name.toLowerCase()));
+        return own.concat((host.recipes || []).filter(r => r.name && !have.has(r.name.toLowerCase()))
+          .map(r => ({ name: r.name, recipe_id: r.id })));
+      },
       onDelete: (item) => host.hideOption(meal, item),
+    });
+    // Enter / Tab finish a meal name that's been started ("eggpl" -> "Eggplant parm"), never swap one
+    nameInput.addEventListener("keydown", (e) => {
+      if ((e.key !== "Enter" && e.key !== "Tab") || e.shiftKey) return;
+      const filled = App.ingSuggest.takeActive(nameInput);
+      if (e.key === "Enter") {
+        e.preventDefault();
+        const first = rowsWrap.querySelector(".mb-ing");
+        if (first) first.focus();
+      } else if (filled) {
+        nameInput.dispatchEvent(new Event("change", { bubbles: true }));
+      }
     });
     const servInput = el.querySelector(".mb-serv");
     const rowsWrap = el.querySelector(".mb-rows");

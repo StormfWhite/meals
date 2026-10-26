@@ -41,8 +41,7 @@ App.bulk = {
     box.innerHTML = `
       <div class="bk-head">
         <span class="bk-pot">${App.icon(BK_POT)}</span>
-        <input class="bk-name" list="bk-made" placeholder="What's being made — black beans, stock, sauce…" spellcheck="false" autocomplete="off" value="${App.esc(d.name)}">
-        <datalist id="bk-made">${this._data.items.map(i => `<option value="${App.esc(i.name)}">`).join("")}</datalist>
+        <input class="bk-name" placeholder="What's being made — black beans, stock, sauce…" spellcheck="false" autocomplete="off" value="${App.esc(d.name)}">
         <input class="bk-date num" type="date" value="${d.date}" title="Made on">
       </div>
       <div class="bk-rows"></div>
@@ -68,10 +67,22 @@ App.bulk = {
       if (it && !this._readRows().length) this._again(it);
       this._saveDraft();
     });
+    // what's been made before: picking one (or finishing its name) brings back its last pot
+    const again = () => {
+      const it = this._data.items.find(i => i.name.toLowerCase() === name.value.trim().toLowerCase());
+      if (it && !this._readRows().length) this._again(it);
+    };
+    App.ingSuggest.attach(name, {
+      local: () => this._data.items.map(i => ({ name: i.name, reason: Object.keys(i.have).length ? "on hand" : "made before" })),
+      onPick: () => again(),
+    });
     name.addEventListener("keydown", (e) => {
       if (e.key !== "Enter") return;
       e.preventDefault();
-      rows.querySelector(".bk-ing").focus();
+      App.ingSuggest.takeActive(name);
+      again();
+      const first = this._body.querySelector(".bk-rows .bk-ing");
+      if (first) first.focus();
     });
     box.querySelector(".bk-yield").addEventListener("input", () => this._preview());
     box.querySelector(".bk-yield").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); this._make(); } });
