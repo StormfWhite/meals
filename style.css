@@ -867,3 +867,4 @@ button.mb-tag { cursor: pointer; font: inherit; font-size: 10px; }
 .gp-scan-row .gp-se-qty.guess { font-style: italic; color: var(--text-dim); }
 .gp-row .icon-btn.gp-scan-at { opacity: 1; width: 22px; height: 22px; }
 .gp-row .icon-btn.gp-scan-at svg { width: 13px; height: 13px; }
+.bk-hint { color: var(--warn); }

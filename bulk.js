@@ -203,7 +203,9 @@ App.bulk = {
       sum.innerHTML = `<span title="Everything that goes in">${App.esc(res.input_text || "—")} in · ${Math.round(t.calories_kcal)} kcal · ${t.protein_g.toFixed(0)} g P</span>`
         + (res.yield_g && res.yield_g !== res.input_g ? ` <span title="What it makes">→ ${App.esc(res.yield_text_g)}</span>` : "")
         + (pu ? ` <b class="bk-per">1 ${App.esc(pu.word)} · ${Math.round(pu.calories_kcal)} kcal · ${pu.protein_g.toFixed(1)} g P</b>`
-              : res.per100 ? ` <b class="bk-per">100 g · ${Math.round(res.per100.calories_kcal)} kcal · ${res.per100.protein_g.toFixed(1)} g P</b>` : "");
+              : res.per100 ? ` <b class="bk-per">100 g · ${Math.round(res.per100.calories_kcal)} kcal · ${res.per100.protein_g.toFixed(1)} g P</b>` : "")
+        + (res.per_cup && (!pu || pu.word !== "cup") ? ` <span title="What 1 cup of it in a meal counts">· 1 cup ${Math.round(res.per_cup.calories_kcal)} kcal</span>` : "")
+        + (!res.per_cup ? ` <span class="bk-hint" title="A meal line can then say &quot;1 cup&quot; of it">· add cups to use it by the cup — "8 cups, 3 lb"</span>` : "");
     }, 220);
   },
 

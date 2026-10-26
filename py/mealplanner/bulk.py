@@ -69,19 +69,18 @@ def _unit_word(word: str) -> str:
     return w[:-1] if w.endswith("s") and not w.endswith("ss") and len(w) > 2 else w
 
 
-def parse_yield(text: str, input_g: float) -> dict:
-    """What the pot makes -> {yield_g, unit: {word, g, n} | None, text, conversions}. Nothing is
-    saved here (the preview asks too); `conversions` are the units a meal line can then use."""
+def _one_yield(t: str, input_g: float) -> dict:
+    """One part of what the pot makes ("8 cups", "3 lb", "6 blocks of 1 lb"); `weighed` = it says
+    the pot's real weight."""
     from . import stock
-    t = re.sub(r"\s+", " ", (text or "").strip().lower())
-    out = {"yield_g": input_g, "unit": None, "text": text.strip() if text else "", "conversions": {}}
+    out = {"yield_g": input_g, "unit": None, "conversions": {}, "weighed": False}
     if not t:
         return out
     # several of one size: "6 blocks of 1 lb", "4 x 32 oz jars"
     m = stock.BLOCKS.match(t)
     if m and m.group(2).strip() and stock.size_g(m.group(2)):
         size, n = stock.size_g(m.group(2)), float(m.group(1))
-        out.update(yield_g=n * size, unit={"word": "block", "g": size, "n": n})
+        out.update(yield_g=n * size, unit={"word": "block", "g": size, "n": n}, weighed=True)
         out["conversions"]["block"] = size
         return out
     for rx, n_at, size_at, pack_at in stock.COUNT_SIZE:
@@ -89,7 +88,7 @@ def parse_yield(text: str, input_g: float) -> dict:
         if m and stock.size_g(m.group(size_at)):
             size, n = stock.size_g(m.group(size_at)), float(m.group(n_at))
             word = stock.PACKS.get((m.group(pack_at) or "").lower()) or "package"
-            out.update(yield_g=n * size, unit={"word": word, "g": size, "n": n})
+            out.update(yield_g=n * size, unit={"word": word, "g": size, "n": n}, weighed=True)
             out["conversions"][word] = size
             return out
     m = re.match(r"^([\d./ ]*\d)\s*(.*)$", t)
@@ -100,7 +99,7 @@ def parse_yield(text: str, input_g: float) -> dict:
     if word in ("oz", "ounce", "ounces", "lb", "lbs", "pound", "pounds", "g", "gram", "grams", "kg"):
         g = stock.prices._parse_grams(f"{n} {word}")
         if g:
-            out["yield_g"] = g
+            out.update(yield_g=g, weighed=True)
             return out
     if not word:
         return out
@@ -111,6 +110,28 @@ def parse_yield(text: str, input_g: float) -> dict:
         out["conversions"][unit] = g_each
         if unit in nutrition.TSP_PER:            # a volume: cups (and so every other volume) follow from it
             out["conversions"]["cup"] = input_g / (n * nutrition.TSP_PER[unit] / nutrition.TSP_PER["cup"])
+    return out
+
+
+def parse_yield(text: str, input_g: float) -> dict:
+    """What the pot makes -> {yield_g, unit: {word, g, n} | None, text, conversions}. Nothing is
+    saved here (the preview asks too); `conversions` are the units a meal line can then use.
+    Several parts say several things (Storm 2026-10-25: "1 cup ... the right proportions"): in
+    "8 cups, 3 lb" the weight is the pot's real weight and a cup is an eighth of it."""
+    t = re.sub(r"\s+", " ", (text or "").strip().lower())
+    parts = [p for p in re.split(r"\s*(?:,|;|·|\+|=|\band\b)\s*", t) if p] or [""]
+    first = [_one_yield(p, input_g) for p in parts]
+    weighed = next((r for r in first if r["weighed"]), None)
+    base = weighed["yield_g"] if weighed else input_g
+    out = {"yield_g": base, "unit": weighed["unit"] if weighed else None, "text": text.strip() if text else "",
+           "conversions": dict(weighed["conversions"]) if weighed else {}}
+    for p, r in zip(parts, first):
+        if r is weighed:
+            continue
+        r = _one_yield(p, base)                  # a count or a volume: measured against the real weight
+        out["conversions"].update(r["conversions"])
+        if r["unit"]:
+            out["unit"] = r["unit"]
     return out
 
 

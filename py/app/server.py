@@ -901,7 +901,9 @@ def _bulk_preview(rows: list[dict], yield_text: str) -> dict:
         per100 = {key: totals["total"].get(key, 0.0) * k for key in nutrition.NUTRIENT_KEYS}
     return {**totals, "input_g": round(input_g, 1), "input_text": stock.us_amount(input_g),
             "yield_g": round(y["yield_g"] or 0, 1), "yield_text_g": stock.us_amount(y["yield_g"] or 0),
-            "unit": y["unit"], "per100": per100, "per_unit": _per_unit(per100, y["unit"])}
+            "unit": y["unit"], "per100": per100, "per_unit": _per_unit(per100, y["unit"]),
+            # a meal line can say "1 cup" of it only once a cup has a weight
+            "per_cup": _per_unit(per100, {"word": "cup", "g": y["conversions"]["cup"]}) if "cup" in y["conversions"] else None}
 
 
 def _bulk_view() -> dict:
