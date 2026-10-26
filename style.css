@@ -804,6 +804,9 @@ button.mb-tag { cursor: pointer; font: inherit; font-size: 10px; }
 .bk-date { flex: none; width: 128px; font-size: 12px; padding: 4px 6px; }
 .bk-rows { display: flex; flex-direction: column; gap: 1px; padding: 2px 0 2px 24px; }
 .bk-rows .mb-amt { flex: 0 0 72px; }
+/* the empty line reads as a box to type in, not as column headers */
+.bk-rows .mb-row input:placeholder-shown { background: var(--panel-2); }
+.bk-rows .mb-row input::placeholder { color: var(--text-dim); }
 .bk-rows .mb-stat { min-width: 64px; font-size: 10.5px; }
 .bk-foot { display: flex; align-items: center; gap: 6px; padding-left: 24px; }
 .bk-yield { flex: 1; min-width: 0; font-size: 12px; padding: 5px 8px; }

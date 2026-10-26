@@ -21,8 +21,9 @@ App.bulk = {
   async render(body) {
     App.setNav(`<span class="plan-date">${App.icon(BK_POT)} Bulk</span>`);
     body.innerHTML = `<div class="pad"><div class="loading-state"><div class="spin"></div>Loading…</div></div>`;
-    const [ings, data] = await Promise.all([App.api("/api/ingredients"), App.api("/api/bulk")]);
+    const [ings, data, recs] = await Promise.all([App.api("/api/ingredients"), App.api("/api/bulk"), App.api("/api/recipes")]);
     this._ingredients = ings.ingredients;
+    this._recipes = recs.recipes;
     this._data = data;
     body.innerHTML = `<div class="bk">
       <section class="bk-make"></section>
@@ -62,18 +63,21 @@ App.bulk = {
 
     const name = box.querySelector(".bk-name");
     // an existing bulk item picked with nothing typed under it: its last pot comes back
-    name.addEventListener("change", () => {
-      const it = this._data.items.find(i => i.name.toLowerCase() === name.value.trim().toLowerCase());
-      if (it && !this._readRows().length) this._again(it);
-      this._saveDraft();
-    });
-    // what's been made before: picking one (or finishing its name) brings back its last pot
+    name.addEventListener("change", () => { again(); this._saveDraft(); });
+    // what's been made before brings back its last pot; a saved recipe brings its ingredients
+    // (Storm 2026-10-26: "list multiple ingredients for the bulk item as if it is a recipe")
     const again = () => {
-      const it = this._data.items.find(i => i.name.toLowerCase() === name.value.trim().toLowerCase());
-      if (it && !this._readRows().length) this._again(it);
+      if (this._readRows().length) return;
+      const key = name.value.trim().toLowerCase();
+      const it = this._data.items.find(i => i.name.toLowerCase() === key);
+      if (it) return this._again(it);
+      const rec = (this._recipes || []).find(r => r.name.toLowerCase() === key);
+      if (rec) this._fromRecipe(rec);
     };
     App.ingSuggest.attach(name, {
-      local: () => this._data.items.map(i => ({ name: i.name, reason: Object.keys(i.have).length ? "on hand" : "made before" })),
+      local: () => this._data.items.map(i => ({ name: i.name, reason: Object.keys(i.have).length ? "on hand" : "made before" }))
+        .concat((this._recipes || []).filter(r => !this._data.items.some(i => i.name.toLowerCase() === r.name.toLowerCase()))
+          .map(r => ({ name: r.name, reason: "recipe" }))),
       onPick: () => again(),
     });
     name.addEventListener("keydown", (e) => {
@@ -81,8 +85,9 @@ App.bulk = {
       e.preventDefault();
       App.ingSuggest.takeActive(name);
       again();
-      const first = this._body.querySelector(".bk-rows .bk-ing");
-      if (first) first.focus();
+      // the empty line at the end -- a pot that came back keeps its lines untouched
+      const blank = this._body.querySelector(".bk-rows .bk-row:last-child .bk-ing");
+      if (blank) blank.focus();
     });
     box.querySelector(".bk-yield").addEventListener("input", () => this._preview());
     box.querySelector(".bk-yield").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); this._make(); } });
@@ -102,7 +107,7 @@ App.bulk = {
   _row(item) {
     const ing = item && item.ingredient_id ? this._ingredients.find(i => i.id === item.ingredient_id) : null;
     const row = App.el(`<div class="mb-row bk-row">
-      <input class="mb-ing bk-ing" placeholder="ingredient" spellcheck="false" autocomplete="off" enterkeyhint="enter" value="${App.esc(item ? (item.name || (ing ? ing.name : "")) : "")}">
+      <input class="mb-ing bk-ing" placeholder="＋ add an ingredient" spellcheck="false" autocomplete="off" enterkeyhint="enter" value="${App.esc(item ? (item.name || (ing ? ing.name : "")) : "")}">
       <input class="mb-amt bk-amt num" placeholder="amt" spellcheck="false" enterkeyhint="enter" value="${item ? App.esc(_mbFormatAmount(item.qty, item.unit)) : ""}">
       <span class="mb-stat num"></span>
       <button class="icon-btn mb-row-x" title="Remove line" tabindex="-1">${App.icon(GP_X)}</button>
@@ -254,6 +259,15 @@ App.bulk = {
     this._drawMake({ name: it.name, yield_text: l.yield_text || "", where: l.where, date: _bkToday(),
                      lines: l.lines.map(x => ({ ...x })) });
     this._body.querySelector(".bk-make").scrollIntoView({ block: "nearest" });
+  },
+
+  // a saved recipe's lines become the pot's; name, yield and where stay as typed
+  _fromRecipe(rec) {
+    const box = this._body.querySelector(".bk-make");
+    this._drawMake({ name: rec.name, yield_text: box.querySelector(".bk-yield").value, where: this._where,
+                     date: box.querySelector(".bk-date").value || _bkToday(),
+                     lines: rec.ingredients.map(x => ({ ingredient_id: x.ingredient_id, qty: x.qty, unit: x.unit })) });
+    this._saveDraft();
   },
 
   // ── everything made in bulk ────────────────────────────────────────
