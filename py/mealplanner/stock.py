@@ -77,6 +77,7 @@ def keeps(ing: dict) -> tuple[int, bool]:
 
 
 FRIDGE_NAMES = r"\beggs?\b|cheese|\bbutter\b|milk|yogh?urt|cream|kefir|tofu|tempeh|juice"
+MADE_GRACE_DAYS = 7            # a bulk pot left in the fridge past its use-by: counted this long more, then gone
 LOW_DAYS = 7                    # runs out within this long after the list week starts = running low
 
 
@@ -542,11 +543,17 @@ class Ledger:
                 if lot["g"] <= 0.5:
                     continue
                 age = (datetime.date.fromisoformat(end) - datetime.date.fromisoformat(lot["since"])).days
+                # a bulk pot stays where it was put: the replay doesn't freeze it for you (Storm
+                # 2026-10-26: "why does it say it is in the freezer when I put it in the fridge").
+                # Past its days it shows "use by" in the Pantry; a week after that it's gone.
+                if not lot["frozen"] and ing and ing.get("made") and days < age <= days + MADE_GRACE_DAYS:
+                    kept.append(lot)
+                    continue
                 if not lot["frozen"] and age > days:
-                    key = "frozen" if freezes else "wasted"
+                    key = "frozen" if freezes and not (ing and ing.get("made")) else "wasted"
                     t = tally.setdefault(ing_id, {})
                     t[key] = t.get(key, 0.0) + lot["g"]
-                    if freezes:
+                    if key == "frozen":
                         kept.append({"g": lot["g"], "since": end, "frozen": True})
                     continue
                 if lot["frozen"] and age > FREEZER_DAYS:
@@ -777,7 +784,8 @@ class Ledger:
             fresh = [l for l in lots if not l["frozen"]]
             fridge, frozen = self.total(fresh), self.total([l for l in lots if l["frozen"]])
             look = self.outlook(week, ing_id, 0.0)
-            use_by = min((_add_days(l["since"], days) for l in fresh), default=None) if fresh and not freezes else None
+            use_by = (min((_add_days(l["since"], days) for l in fresh), default=None)
+                      if fresh and (not freezes or ing.get("made")) else None)
             out.append({"ingredient_id": ing_id, "name": ing["name"], "where": storage(ing),
                         "fridge_g": round(fridge, 1), "freezer_g": round(frozen, 1),
                         "fridge_text": pack_text(ing, fridge) or us_amount(fridge), "freezer_text": blocks_text(ing, frozen) or pack_text(ing, frozen) or us_amount(frozen),
