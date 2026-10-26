@@ -201,11 +201,15 @@ App.groceriesPanel = {
         <div class="gp-rows gp-sugs" id="gp-market-sugs"></div>
       </div>
       <div class="gp-section gp-stock${this._stockOpen ? " open" : ""}">
+        <div class="gp-stock-headrow">
         <button class="gp-section-head gp-stock-head" title="What's in the kitchen">
           <span class="field-label">${App.icon(GP_PANTRY)} Pantry</span>
           <span class="gp-count dim num gp-stock-n"></span>
           <span class="gp-stock-chev">${App.icon(GP_DOWN)}</span>
         </button>
+        <!-- in the head, not under 20+ rows: one tap whether the Pantry is open or not (Storm 2026-10-26) -->
+        <label class="icon-btn gp-stock-cam" title="Photo of the fridge, pantry or freezer — fills in what's there to check and add">${App.icon(GP_CAMERA)}<input type="file" accept="image/*" hidden></label>
+        </div>
         <div class="gp-stock-body"${this._stockOpen ? "" : " hidden"}>
         <div class="gp-rows" id="gp-stock-rows"></div>
         <div class="gp-add-row gp-stock-addrow">
@@ -216,7 +220,6 @@ App.groceriesPanel = {
             <button class="icon-btn where-pantry" data-where="pantry" title="Dry">${App.icon(GP_DRY)}</button>
             <button class="icon-btn where-freezer" data-where="freezer" title="Freezer">${App.icon(GP_SNOW)}</button>
           </span>
-          <label class="icon-btn gp-stock-cam" title="Photo of the fridge, pantry or freezer — fills in what's there to check and add">${App.icon(GP_CAMERA)}<input type="file" accept="image/*" hidden></label>
         </div>
         <div class="gp-scan" hidden></div>
         </div>
@@ -394,6 +397,7 @@ App.groceriesPanel = {
       const file = (e.target.files || [])[0];
       e.target.value = "";
       if (!file) return;
+      if (!this._stockOpen) this._toggleStock(true);
       this._scan = { reading: true, where };
       this._drawScan();
       try {

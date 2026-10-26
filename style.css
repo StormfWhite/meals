@@ -427,6 +427,9 @@ button.mb-tag:hover { color: var(--good); border-color: var(--good); }
 .gp-stock-sub.where-pantry svg { color: var(--dry); }
 .gp-stock-sub.where-freezer svg { color: var(--freezer); }
 .gp-stock-head { width: 100%; text-align: left; padding: 0; cursor: pointer; }
+.gp-stock-headrow { display: flex; align-items: center; gap: 4px; }
+.gp-stock-headrow .gp-stock-head { flex: 1; min-width: 0; }
+.gp-stock-headrow .gp-stock-cam { flex: none; }
 .gp-stock-head .gp-count .warn { color: var(--warn); }
 .gp-stock-chev { display: inline-flex; color: var(--text-dim); transition: transform .15s; }
 .gp-stock-chev svg { width: 13px; height: 13px; }
