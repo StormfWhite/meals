@@ -59,19 +59,6 @@ def servings(slot: dict) -> float:
     return n if n > 0 else 1.0
 
 
-def pot_factor(slot: dict, recipe: Optional[dict] = None) -> float:
-    """How many times its lines go into the pot (what's bought and taken from the kitchen). Storm
-    2026-10-25: "if the servings say two then it is already split" -- servings 1 = the lines ARE
-    the whole pot, shared by the household; servings 2 = the lines are one person's portion, so
-    twice that is made. Against a recipe saved as N servings it's servings / N (4 of a 4-serving
-    recipe = the recipe once). A batch cook (`store`) and linked leftovers (`leftover_group`, one
-    pot for several meals) list their whole pot already: 1."""
-    if (slot.get("store") or {}).get("n") or slot.get("leftover_group"):
-        return 1.0
-    per = float((recipe or {}).get("servings") or 1) or 1.0
-    return servings(slot) / per
-
-
 def parse_slot_key(key: str) -> tuple[str, str, int]:
     date, _, rest = key.partition(":")
     meal, _, index = rest.partition(SLOT_INDEX_SEP)

@@ -798,6 +798,7 @@ def nutrition_week(week: Optional[str] = None, member_id: Optional[str] = None):
 class GapMeal(BaseModel):
     totals: dict = {}
     eaters: Optional[list[str]] = None
+    servings: Optional[float] = None      # how many portions the pot splits into (household.portion)
 
 
 class GapDay(BaseModel):

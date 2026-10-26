@@ -96,15 +96,25 @@ def share(member: dict) -> float:
     return float(member.get("share") or 1.0 / max(1, active_count()))
 
 
-def portion(member: dict, eaters: Optional[list] = None) -> float:
+def portion(member: dict, eaters: Optional[list] = None, servings: Optional[float] = None) -> float:
     """How much of one planned meal (its whole pot) this member eats. A meal is everyone's unless
     its slot names `eaters` (Storm: "some we could designate to joanna or to me like extra
-    meals"); then it's split among just those, by their shares."""
+    meals"). `servings` -- the meal's count -- is how many portions the pot splits into, and each
+    person eating it has one (Storm 2026-10-25: "auto split the meal nutrition for one person
+    unless the count says 1", "if it says 2 it should split it also"): 2 = half each, 1 = the
+    whole pot is one person's. Without a count (a batch cook): split among the eaters by shares."""
     active = [m for m in list_members() if m.get("active", True)]
     eat = [m for m in active if m["id"] in eaters] if eaters else active
     if member["id"] not in {m["id"] for m in eat}:
         return 0.0
+    if servings:
+        return 1.0 / servings
     return share(member) / sum(share(m) for m in eat)
+
+
+def default_servings() -> int:
+    """A new meal's count: one portion for each person in the household."""
+    return max(1, active_count())
 
 
 def active_count() -> int:

@@ -212,6 +212,7 @@ App.mealBlock = {
         host.onWeekChanged(await App.api(`/api/board/${host.getWeek().week_start}/slots/${key}/eaters`,
           { method: "PUT", body: { member_ids: next } }));
         drawWho();
+        if (lastPreview) applyPreview(lastPreview);
         host.onStatsChanged();
       } catch (err) { App.toast(err.message); }
     });
@@ -631,7 +632,7 @@ App.mealBlock = {
       ownRecipe = false;
       nameInput.value = matchedRecipe ? matchedRecipe.name : "";
       nameInput.title = nameInput.value;
-      servInput.value = s ? s.servings_used : 1;
+      servInput.value = s ? s.servings_used : (host.members().length || 1);
       el.classList.toggle("filled", !!s);
       drawRows(s ? (s.ingredient_overrides || (matchedRecipe ? matchedRecipe.ingredients : [])) : null);
       bulkOpen = false;
@@ -643,13 +644,13 @@ App.mealBlock = {
     };
 
     // ── live stats ───────────────────────────────────────────────────
-    /* How many times the lines go into the pot -- board.pot_factor on the server: servings over the
-     * recipe's own servings; a batch cook (its lines are the whole batch) and a meal eaten from a
-     * batch count once. The header and the day total are the whole pot; each person eats a share. */
-    const potFactor = () => {
+    /* The count: how many portions the pot (the lines) splits into, one per person eating it --
+     * household.portion on the server. A batch cook (its lines are the whole batch) and a meal eaten
+     * from a batch have none: split among whoever eats them. */
+    const portions = () => {
       const s = slot();
-      if ((s && s.store && s.store.n) || (sources && sources.served)) return 1;
-      return (Number(servInput.value) || 1) / ((matchedRecipe && matchedRecipe.servings) || 1);
+      if ((s && s.store && s.store.n) || (sources && sources.served)) return null;
+      return Number(servInput.value) || host.members().length || 1;
     };
     const scaled = (t, k) => t && k !== 1 ? {
       ...Object.fromEntries(["calories_kcal", "protein_g", "fiber_g"].map(n => [n, (t[n] || 0) * k])),
@@ -657,8 +658,7 @@ App.mealBlock = {
     let lastPreview = null;
     const applyPreview = (preview) => {
       lastPreview = preview;
-      const k = potFactor();
-      totals = preview ? scaled(preview.total, k) : null;
+      totals = preview ? preview.total : null;          // the whole pot
       let i = 0;
       Array.from(rowsWrap.children).forEach(row => {
         const statEl = row.querySelector(".mb-stat");
@@ -671,10 +671,19 @@ App.mealBlock = {
         statEl.textContent = pr ? _mbStat(pr, host.compact) : "";
         statEl.title = pr ? `${Math.round(pr.calories_kcal)} kcal · ${pr.protein_g.toFixed(1)} g protein · ${pr.fiber_g.toFixed(1)} g fiber` : "";
       });
-      const kcal = totals ? Math.round(totals.calories_kcal) : 0;
-      totalEl.textContent = kcal ? `${kcal} kcal · ${totals.protein_g.toFixed(0)}g P` : "";
-      totalEl.title = totals ? `${kcal} kcal · ${totals.protein_g.toFixed(1)} g protein · ${totals.fiber_g.toFixed(1)} g fiber`
-        + (k !== 1 ? ` — the lines × ${Math.round(k * 100) / 100}` : "") : "";
+      // ONE person's portion (Storm 2026-10-25: "auto split the meal nutrition for one person unless
+      // the count says 1" / "if it says 2 it should split it also"): the pot over the count
+      const n = portions() || eaterCount();
+      const each = totals ? scaled(totals, 1 / n) : null;
+      const kcal = each ? Math.round(each.calories_kcal) : 0;
+      totalEl.textContent = kcal ? `${kcal} kcal · ${each.protein_g.toFixed(0)}g P` : "";
+      totalEl.title = each ? `One portion: ${kcal} kcal · ${each.protein_g.toFixed(1)} g protein · ${each.fiber_g.toFixed(1)} g fiber`
+        + (n > 1 ? ` — the whole pot (${Math.round(totals.calories_kcal)} kcal) split ${n} ways` : " — the whole pot, not split") : "";
+    };
+    // how many share this meal: the ones it's set to, else everyone in the household
+    const eaterCount = () => {
+      const mine = eaters();
+      return Math.max(1, mine && mine.length ? mine.length : host.members().length || 1);
     };
     // servings changed: the pot changes with it, at once (the save follows on change)
     servInput.addEventListener("input", () => { applyPreview(lastPreview); host.onStatsChanged(); });
@@ -802,7 +811,7 @@ App.mealBlock = {
       if (index) { el.remove(); host.removeBlock(key); return; }
       matchedRecipe = null;
       ownRecipe = false;
-      servInput.value = 1;
+      servInput.value = host.members().length || 1;
       el.classList.remove("filled");
       linkWrap.innerHTML = "";
       footWrap.innerHTML = "";
@@ -823,6 +832,7 @@ App.mealBlock = {
       applySources,
       get totals() { return totals; },
       eaters,
+      portions,
       flush: () => commit().catch(() => {}),
     };
   },

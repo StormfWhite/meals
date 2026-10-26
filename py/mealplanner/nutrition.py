@@ -283,11 +283,10 @@ def totals_for_slot(recipe: dict, slot: dict, ingredients_by_id: dict) -> dict:
 #
 # The board is one shared plan: a meal's lines are the whole pot, eaten by
 # the household in shares (household.portion) unless its slot names its
-# `eaters` (one person's extra meal). `servings_used` on a slot says how
-# many times its lines go into the pot (board.pot_factor): 1 = the lines are
-# the whole pot, 2 = they're one person's portion, made twice (Storm
-# 2026-10-25). A batch cook's lines are the whole batch already, and a meal
-# eaten FROM a batch uses servings for how many it takes -- both count once.
+# `eaters` (one person's extra meal). The slot's count (`servings_used`) is
+# how many portions the pot splits into, each person eating one
+# (household.portion): 2 = half each, 1 = one person's whole meal. The pot
+# itself -- what's bought -- is always the lines once.
 
 def day_totals(date_iso: str, member: Optional[dict] = None) -> dict:
     """The day's meals added up: whole pots, or with `member` what that member eats of them
@@ -312,10 +311,10 @@ def day_totals(date_iso: str, member: Optional[dict] = None) -> dict:
         if not recipe:
             continue
         per_serving = totals_for_slot(recipe, slot, ing_by_id)["per_serving"]
-        # per_serving is already per recipe serving: times the meal's servings (2 = one person's
-        # lines, made twice). A batch cook's lines are its whole batch; a meal from a batch counts once.
-        pot = 1.0 if key in served or (slot.get("store") or {}).get("n") else board.servings(slot)
-        _add_into(totals, per_serving, pot * (household.portion(member, slot.get("eaters")) if member else 1.0))
+        # the meal's count is how many portions its pot splits into; each person eating it has one.
+        # A batch cook (its lines are the whole batch) and a meal from a batch: split by shares.
+        count = None if key in served or (slot.get("store") or {}).get("n") else board.servings(slot)
+        _add_into(totals, per_serving, household.portion(member, slot.get("eaters"), count) if member else 1.0)
     return totals
 
 

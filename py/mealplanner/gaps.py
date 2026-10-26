@@ -99,7 +99,7 @@ def _amount(totals: dict, key: str) -> float:
 def lows(meals: list[dict], ppl: list[dict]) -> Optional[list[dict]]:
     """The day's low nutrients, worst first; None when too little is planned to say.
 
-    meals = [{"totals": a meal's whole pot, "eaters": member ids or None}]. Each person is
+    meals = [{"totals": a meal's whole pot, "eaters": member ids or None, "servings": its count}]. Each person is
     judged on what they eat of them (household.portion: their share of a shared meal, all of
     their own, none of someone else's): low when under LOW_BELOW of what their calories predict.
     `who` names them when it isn't everyone judged; `pct` and `have`/`target` are the worst-off
@@ -109,8 +109,8 @@ def lows(meals: list[dict], ppl: list[dict]) -> Optional[list[dict]]:
         return None
     eats = []
     for p in ppl:
-        parts = [(m.get("totals") or {}, household.portion(p["member"], m.get("eaters")) if p["member"] else 1.0)
-                 for m in meals]
+        parts = [(m.get("totals") or {}, household.portion(p["member"], m.get("eaters"), m.get("servings"))
+                  if p["member"] else 1.0) for m in meals]
         kcal = sum(_amount(t, "calories_kcal") * f for t, f in parts)
         if kcal >= MIN_KCAL / 2:                     # nothing much planned for this one: not judged
             eats.append((p, parts, kcal))

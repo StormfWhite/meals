@@ -725,7 +725,7 @@ class Ledger:
                 ing = self.ings.get(ing_id)
                 if ing is None:
                     continue
-                want = (nutrition.qty_to_grams(ing, item["qty"], item["unit"]) or 0.0) * board.pot_factor(slot, recipe)
+                want = nutrition.qty_to_grams(ing, item["qty"], item["unit"]) or 0.0
                 have = sorted(lots.get(ing_id, []), key=lambda l: (l["frozen"], l["since"]))
                 line = lines.setdefault(ing_id, {"from": {}, "short_g": 0.0})
                 if want <= 0:

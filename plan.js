@@ -385,14 +385,26 @@ App.plan = {
       const mine = this._blocks.filter(b => b.date === date && b.totals);
       const v = foot.querySelector(".v");
       if (mine.length === 0) { v.textContent = "—"; v.title = ""; this._paintGaps(foot, null); return; }
-      const sum = { calories_kcal: 0, protein_g: 0, fiber_g: 0, vitamins: {} };
-      mine.forEach(b => {
-        for (const k of ["calories_kcal", "protein_g", "fiber_g"]) sum[k] += b.totals[k] || 0;
-        for (const [k, x] of Object.entries(b.totals.vitamins || {})) sum.vitamins[k] = (sum.vitamins[k] || 0) + x;
+      // per PERSON, like each meal's header: one portion (the pot over its count) of every meal
+      // that person eats -- household.portion on the server
+      const people = (this._members || []).filter(m => m.active !== false);
+      const eatsOf = (b) => { const e = b.eaters(); return e && e.length ? e : people.map(m => m.id); };
+      const perPerson = (people.length ? people : [{ id: "_", name: "" }]).map(m => {
+        const sum = { calories_kcal: 0, protein_g: 0, fiber_g: 0 };
+        mine.forEach(b => {
+          const ids = people.length ? eatsOf(b) : ["_"];
+          if (!ids.includes(m.id)) return;
+          const n = b.portions() || ids.length;
+          for (const k of Object.keys(sum)) sum[k] += (b.totals[k] || 0) / n;
+        });
+        return { name: m.name, ...sum };
       });
-      v.textContent = `${Math.round(sum.calories_kcal).toLocaleString()} kcal · ${sum.protein_g.toFixed(0)}g P · ${sum.fiber_g.toFixed(0)}g F`;
-      v.title = `${Math.round(sum.calories_kcal)} kcal · ${sum.protein_g.toFixed(1)} g protein · ${sum.fiber_g.toFixed(1)} g fiber`;
-      days[date] = { meals: mine.map(b => ({ totals: b.totals, eaters: b.eaters() })), ingredient_ids: [...new Set(mine.flatMap(b => b.knownRows().map(r => r.ingredient_id)))] };
+      const line = (t) => `${Math.round(t.calories_kcal).toLocaleString()} kcal · ${t.protein_g.toFixed(0)}g P · ${t.fiber_g.toFixed(0)}g F`;
+      const same = perPerson.every(t => Math.round(t.calories_kcal) === Math.round(perPerson[0].calories_kcal));
+      v.textContent = same ? line(perPerson[0])
+        : perPerson.map(t => `${t.name} ${Math.round(t.calories_kcal).toLocaleString()}`).join(" · ") + " kcal";
+      v.title = perPerson.map(t => `${t.name ? t.name + ": " : "Each: "}${Math.round(t.calories_kcal)} kcal · ${t.protein_g.toFixed(1)} g protein · ${t.fiber_g.toFixed(1)} g fiber`).join("\n");
+      days[date] = { meals: mine.map(b => ({ totals: b.totals, eaters: b.eaters(), servings: b.portions() })), ingredient_ids: [...new Set(mine.flatMap(b => b.knownRows().map(r => r.ingredient_id)))] };
     });
     clearTimeout(this._gapsTimer);
     this._gapsTimer = setTimeout(() => this._refreshGaps(days), 400);
