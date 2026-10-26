@@ -601,6 +601,9 @@ class Ledger:
             if not ing:
                 continue
             want = nutrition.qty_to_grams(ing, item["qty"], item["unit"]) or 0.0
+            from . import forms
+            take_id, want = forms.to_base(ing, want, self.ings)
+            ing = self.ings.get(take_id, ing)
             have = sorted(lots.get(ing["id"], []), key=lambda l: (l["frozen"], l["since"]))
             for lot in have:
                 take = min(lot["g"], want)

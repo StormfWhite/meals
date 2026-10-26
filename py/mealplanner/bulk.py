@@ -167,7 +167,14 @@ def per100(ing: dict) -> Optional[dict]:
         _depth -= 1
     if len(res["unknown_ingredients"]) == len(made["lines"]):
         return None
-    k = 100.0 / made["yield_g"]
+    # no weight said for the pot: it weighs what went in -- as weighed NOW, and only the lines
+    # that count. Saved at make time it was 8 g (only the garlic weighed yet), so a lentil soup
+    # read 8,874 kcal per 100 g once its lentils and onions could be weighed (2026-10-26).
+    yield_g = made["yield_g"]
+    if not parse_yield(made.get("yield_text") or "", 0.0)["yield_g"]:
+        unknown = set(res["unknown_ingredients"])
+        yield_g = lines_grams([l for l in made["lines"] if l["ingredient_id"] not in unknown]) or yield_g
+    k = 100.0 / yield_g
     tot = res["total"]
     out = {key: tot.get(key, 0.0) * k for key in nutrition.NUTRIENT_KEYS}
     out["vitamins"] = {key: v * k for key, v in (tot.get("vitamins") or {}).items()}

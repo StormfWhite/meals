@@ -15,7 +15,7 @@ import re
 import uuid
 from typing import Optional
 
-from . import aisles, batches, board, bulk, config, ingredients, learning, nutrition, places, prices, recipes, stock, store
+from . import aisles, batches, board, bulk, config, forms, ingredients, learning, nutrition, places, prices, recipes, stock, store
 from .paths import DATA_DIR, GROCERIES_FILE, PRICE_HISTORY_FILE
 
 
@@ -54,7 +54,9 @@ def week_ingredient_needs(week_start_iso: str) -> dict[str, float]:
             # a unit with no known weight ("1 bunch") is still something to buy:
             # it stays on the list, just without an amount
             grams = nutrition.qty_to_grams(ing, item["qty"], item["unit"]) or 0.0
-            needs[item["ingredient_id"]] = needs.get(item["ingredient_id"], 0.0) + grams
+            # caramelized onions are bought as yellow onions (forms.py)
+            buy_id, grams = forms.to_base(ing, grams, ing_by_id)
+            needs[buy_id] = needs.get(buy_id, 0.0) + grams
     return needs
 
 

@@ -39,6 +39,14 @@ def nutrients_per_100g(ingredient: dict) -> Optional[dict]:
     if ingredient.get("made"):
         from . import bulk
         return bulk.per100(ingredient)
+    if ingredient.get("from"):
+        # made from another (forms.py): a juice or a white is its own USDA food; caramelized
+        # onions and cooked rice are the base re-weighed
+        from . import forms
+        if not (ingredient.get("fdc_id") and forms.OWN_NUTRITION.search(ingredient.get("name") or "")):
+            got = forms.per100(ingredient)
+            if got:
+                return got
     food = _fdc_nutrients(ingredient.get("fdc_id"))
     if food and ingredient.get("nutrient_fill"):
         # a gap in the record (Foundation chia lists no fiber, Foundation yogurt no B12) taken

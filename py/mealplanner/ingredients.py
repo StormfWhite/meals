@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import datetime
 import functools
+import math
 import re
 import threading
 import uuid
@@ -86,6 +87,12 @@ def add(name: str, category: str = "other", default_unit: str = "g",
         unit_conversions: Optional[dict] = None, store_section: Optional[str] = None,
         manual_nutrients: Optional[dict] = None, fdc_id: Optional[int] = None,
         shop_list: Optional[str] = None) -> dict:
+    from . import forms
+    # "garlic cloves", "minced garlic", "diced onion" ARE garlic and onion (forms.py): one of each
+    base = forms.same_food(name)
+    if base is not None:
+        return add(base, category, default_unit, unit_conversions, store_section, manual_nutrients,
+                   fdc_id, shop_list)
     data = _load()
     # one ingredient per name: a second "Yogurt" (two adds racing, the phone and the laptop)
     # would be offered twice everywhere
@@ -129,7 +136,7 @@ def update(ingredient_id: str, **fields) -> dict:
     kept = {u: g for u, g in (ing.get("unit_conversions") or {}).items() if u in ("block", ing.get("pack"))}
     for key in ("name", "fdc_id", "fdc_description", "default_unit", "unit_conversions",
                 "category", "store_section", "manual_nutrients", "shop_list", "freezes", "keep_days", "storage",
-                "nutrient_fill", "hide_suggest", "brand", "pack", "pack_size", "made"):
+                "nutrient_fill", "hide_suggest", "brand", "pack", "pack_size", "made", "from"):
         if key in fields and fields[key] is not None:
             ing[key] = fields[key].strip() if key == "name" else fields[key]
     # a block or can size said in the Pantry ("frozen in 1 lb blocks", "4 32 oz cans",
@@ -184,7 +191,11 @@ _FILLER = r"\b(organic|natural|pure|raw|unfiltered|fresh|sliced|diced|chopped|pi
 
 # how it gets typed -> how USDA spells it
 _SPELLINGS = {"dragonfruit": "dragon fruit", "bannanas?": "banana", "bananna": "banana", "makgo": "mango", "yoghurt": "yogurt",
-              "strawberrys": "strawberries", "blueberrys": "blueberries", "tomatos": "tomatoes"}
+              "strawberrys": "strawberries", "blueberrys": "blueberries", "tomatos": "tomatoes",
+              "carlic": "garlic", "garlik": "garlic", "pastery": "pastry", "spanikopita": "spanakopita"}
+# a whole name that means one thing in a kitchen and another in USDA: "Pepper" by the teaspoon
+# is black pepper, never "Pepper, banana, raw" (2026-10-26)
+_MEANS = {"pepper": "black pepper", "ground pepper": "black pepper", "cracked pepper": "black pepper"}
 
 
 _GENERIC = {"fruit", "fruits", "vegetable", "vegetables", "meat", "mix", "blend", "sauce", "seeds",
@@ -199,6 +210,7 @@ def _usda_queries(name: str) -> list[str]:
     name = name.strip().lower()
     for typed, usda in _SPELLINGS.items():
         name = re.sub(rf"\b{typed}\b", usda, name)
+    name = _MEANS.get(name, name)
     out = [name]
     clean = re.sub(r"\s{2,}", " ", re.sub(r"\band\b", " ", re.sub(_FILLER, " ", name))).strip(" ,")
     if clean and clean not in out and clean not in _GENERIC:      # "fresh berries" is no particular berry
@@ -350,6 +362,11 @@ def resolve_usda(ingredient_id: str, force: bool = False) -> Optional[dict]:
         raise KeyError(ingredient_id)
     if ing.get("made"):
         return ing          # a bulk make: its nutrition is what went into the pot (bulk.py)
+    from . import forms
+    if forms.link(ingredient_id):
+        ing = get(ingredient_id)
+        if not forms.OWN_NUTRITION.search(ing["name"]):
+            return ing      # caramelized onions, cooked rice: the base re-weighed, no record of its own
     if (ing.get("fdc_id") or (ing.get("fdc_description") or "").startswith("Equal parts")) and not force:
         return ing
     match = None
@@ -411,6 +428,8 @@ def humanize_grams(ingredient: dict, grams: float) -> str:
     per_unit = (ingredient.get("unit_conversions") or {}).get(unit)
     if unit == "g" or not per_unit:
         return f"{grams:.0f} g"
+    if unit == "head":                          # nobody buys half a head of garlic
+        return f"{max(1, math.ceil(grams / per_unit - 0.05)):g} {unit}"
     count = round((grams / per_unit) * 2) / 2  # nearest half unit
     return f"{count:g} {unit}"
 

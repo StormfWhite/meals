@@ -402,6 +402,12 @@ MIN_MATCH_SCORE = 0.45
 
 DRY_WORDS = {"dried", "dry", "uncooked"}
 COOKED = re.compile(r"\b(from dried|cooked|boiled|canned|from canned|prepared)\b")
+# USDA files some foods under a shelf word: "Spices, oregano, dried", "Nuts, almonds" -- the food
+# is the second segment ("oregano" scored 0.44 against it and never matched, 2026-10-26)
+# a word that changes what the food is: "dried cranberries" are never "Cranberries, raw"
+STATE_WORDS = {"dried", "dry", "frozen", "canned", "cooked", "smoked", "roasted", "toasted", "fried",
+               "pickled", "sweetened", "candied", "powdered", "ground", "uncooked"}
+SHELF_HEADS = {"spices", "nuts", "seeds", "cheese", "oil", "beverages", "cereals"}
 
 
 def _match_score(query: str, result: dict) -> float:
@@ -434,8 +440,13 @@ def _match_score(query: str, result: dict) -> float:
         score = 0.8
     elif head.startswith(q) or q.startswith(head):
         score = 0.7
+    elif head in SHELF_HEADS and words(q) <= words(", ".join(qualifiers)):
+        score = 0.8           # "cayenne" is "Spices, pepper, red or cayenne"
     elif q in desc:
         score = 0.5
+    elif len(q.split()) > 1 and stem(q.split()[-1]) in words(head) and words(head) <= words(q) \
+            and not ((words(q) - words(head)) & STATE_WORDS) - words(desc):
+        score = 0.55          # "green lentils": no green ones in USDA, but "Lentils, raw" is the food
     else:
         shared = set(q.split()) & set(re.split(r"[^a-z]+", desc))
         if not shared:
@@ -456,8 +467,13 @@ def _match_score(query: str, result: dict) -> float:
     if any(qual.startswith("raw") for qual in qualifiers):
         score += 0.12
     score -= 0.03 * len(qualifiers)
+    # "Eggs, ..., egg whole" is the egg itself, before its white or yolk
+    if any(qual == "whole" or qual.endswith(" whole") for qual in qualifiers):
+        score += 0.05
     if result.get("data_type") == "Foundation":
         score += 0.05
+    elif result.get("data_type") == "Survey (FNDDS)":
+        score -= 0.08         # survey records are dishes as eaten: "Egg, Benedict" was the Egg (2026-10-26)
     if dry and COOKED.search(desc):
         score -= 0.3
     return max(0.0, min(1.2, score))

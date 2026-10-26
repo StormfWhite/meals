@@ -10,6 +10,7 @@ mealplanner/bulk.py
 mealplanner/catalog.py
 mealplanner/config.py
 mealplanner/fdc.py
+mealplanner/forms.py
 mealplanner/gaps.py
 mealplanner/groceries.py
 mealplanner/household.py
