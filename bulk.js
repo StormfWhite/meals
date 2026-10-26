@@ -64,16 +64,22 @@ App.bulk = {
     const name = box.querySelector(".bk-name");
     // an existing bulk item picked with nothing typed under it: its last pot comes back
     name.addEventListener("change", () => { again(); this._saveDraft(); });
-    // what's been made before brings back its last pot; a saved recipe brings its ingredients
-    // (Storm 2026-10-26: "list multiple ingredients for the bulk item as if it is a recipe")
+    // Fills like a meal's name does -- as it's typed, the lines it was last made with. The bulk
+    // pot of that name comes first (its yield and place too), else the meal recipe: a bulk
+    // French onion soup isn't the meal one (Storm 2026-10-26). Lines typed by hand are never
+    // replaced; lines a name filled in follow the name.
+    let filledFrom = null;
     const again = () => {
-      if (this._readRows().length) return;
       const key = name.value.trim().toLowerCase();
+      if (!key || key === filledFrom || (!filledFrom && this._readRows().length)) return;
       const it = this._data.items.find(i => i.name.toLowerCase() === key);
-      if (it) return this._again(it);
-      const rec = (this._recipes || []).find(r => r.name.toLowerCase() === key);
-      if (rec) this._fromRecipe(rec);
+      const rec = !it && (this._recipes || []).find(r => r.name.toLowerCase() === key);
+      if (!it && !rec) return;
+      filledFrom = key;
+      if (it) this._fillRows(it.last.lines, it.last.yield_text || "", it.last.where);
+      else this._fillRows(rec.last_ingredients || rec.ingredients);
     };
+    name.addEventListener("input", again);
     App.ingSuggest.attach(name, {
       local: () => this._data.items.map(i => ({ name: i.name, reason: Object.keys(i.have).length ? "on hand" : "made before" }))
         .concat((this._recipes || []).filter(r => !this._data.items.some(i => i.name.toLowerCase() === r.name.toLowerCase()))
@@ -265,12 +271,17 @@ App.bulk = {
     this._body.querySelector(".bk-make").scrollIntoView({ block: "nearest" });
   },
 
-  // a saved recipe's lines become the pot's; name, yield and where stay as typed
-  _fromRecipe(rec) {
+  // a name's lines in place of the ones there, without redrawing the name box being typed in;
+  // a bulk pot also brings back what it made and where it went
+  _fillRows(lines, yieldText, where) {
     const box = this._body.querySelector(".bk-make");
-    this._drawMake({ name: rec.name, yield_text: box.querySelector(".bk-yield").value, where: this._where,
-                     date: box.querySelector(".bk-date").value || _bkToday(),
-                     lines: rec.ingredients.map(x => ({ ingredient_id: x.ingredient_id, qty: x.qty, unit: x.unit })) });
+    const rows = box.querySelector(".bk-rows");
+    rows.innerHTML = "";
+    lines.forEach(l => rows.appendChild(this._row({ ingredient_id: l.ingredient_id, qty: l.qty, unit: l.unit })));
+    this._ensureBlank();
+    if (yieldText !== undefined) box.querySelector(".bk-yield").value = yieldText;
+    if (where) { this._where = where; this._paintWhere(); }
+    this._preview();
     this._saveDraft();
   },
 
