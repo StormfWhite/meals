@@ -52,7 +52,7 @@ App.bulk = {
       </div>
       <div class="bk-rows"></div>
       <div class="bk-foot">
-        <input class="bk-yield" placeholder="makes — 8 cups · 3 lb · 6 blocks of 1 lb" title="How much it makes. Blank = the weight of what goes in" spellcheck="false" value="${App.esc(d.yield_text)}">
+        <input class="bk-yield" placeholder="makes — 8 cups · 3 lb · 6 blocks of 1 lb" title="How much it makes. Blank = worked out from the lines, cooked" spellcheck="false" value="${App.esc(d.yield_text)}">
         <button class="btn-primary bk-go" title="Make it — into the ${d.where}, its ingredients out of the kitchen">${App.icon(BK_CHECK)}</button>
       </div>
       <div class="bk-sum dim num"></div>`;
@@ -208,11 +208,14 @@ App.bulk = {
       if (seq !== this._pseq) return;
       rows.forEach(r => { r.el.querySelector(".mb-stat").textContent = ""; });
       known.forEach((r, i) => { r.el.querySelector(".mb-stat").textContent = _mbStat(res.rows[i], false); });
+      const yb = this._body.querySelector(".bk-yield");    // blank yield = the estimate, shown in its box
+      yb.placeholder = res.estimate_text ? `makes ≈ ${res.estimate_text}` : "makes — 8 cups · 3 lb · 6 blocks of 1 lb";
       if (!known.length) { sum.innerHTML = ""; return; }
       const t = res.total;
       const pu = res.per_unit;
       sum.innerHTML = `<span title="Everything that goes in">${App.esc(res.input_text || "—")} in · ${Math.round(t.calories_kcal)} kcal · ${t.protein_g.toFixed(0)} g P</span>`
-        + (res.yield_g && res.yield_g !== res.input_g ? ` <span title="What it makes">→ ${App.esc(res.yield_text_g)}</span>` : "")
+        + (res.estimated ? ` <span title="What it makes, worked out from the lines cooked${res.water_added_g ? " (with " + App.esc(res.water_added_text) + " of water the dry things take up)" : ""} — type a yield to say otherwise">→ ≈ ${App.esc(res.estimate_text)}</span>`
+           : res.yield_g && res.yield_g !== res.input_g ? ` <span title="What it makes">→ ${App.esc(res.yield_text_g)}</span>` : "")
         + (pu ? ` <b class="bk-per">1 ${App.esc(pu.word)} · ${Math.round(pu.calories_kcal)} kcal · ${pu.protein_g.toFixed(1)} g P</b>`
               : res.per100 ? ` <b class="bk-per">100 g · ${Math.round(res.per100.calories_kcal)} kcal · ${res.per100.protein_g.toFixed(1)} g P</b>` : "")
         + (res.per_cup && (!pu || pu.word !== "cup") ? ` <span title="What 1 cup of it in a meal counts">· 1 cup ${Math.round(res.per_cup.calories_kcal)} kcal</span>` : "")

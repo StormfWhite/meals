@@ -18,9 +18,15 @@ Undo marks it `undone` -- it stops counting, but stays the recipe the next make 
 How much comes out (`parse_yield`):
   "3 lb" / "1.5 kg"            weighed: that's the weight
   "6 blocks of 1 lb", "4 x 32 oz jars"   that many of that size
-  "8 cups" / "4 qt" / "2 l"    a volume: the pot weighs what went in, a cup is 1/8 of it
+  "8 cups" / "4 qt" / "2 l"    a volume: the pot weighs what it's estimated to, a cup is 1/8 of it
   "12 servings" / "6 jars"     a count: the same, one of them is 1/12 of the pot
-  blank                        the weight of what went in
+  blank                        the estimate (`estimate`): weight AND cups, worked out from the lines
+
+The estimate (Storm 2026-10-26: "shouldn't bulk auto determine based on the ingredient how many
+cups, oz, lb, etc it made?"): every line cooked -- dry lentils, beans, rice, pasta, oats take up
+water (from the pot's listed water/broth first, else water that wasn't written down), greens and
+softened vegetables shrink -- then each line's cooked volume (its own cup weight, else water's).
+Kitchen yields, a fixed table; a said weight or volume always wins.
 """
 from __future__ import annotations
 
@@ -69,6 +75,80 @@ def _unit_word(word: str) -> str:
     return w[:-1] if w.endswith("s") and not w.endswith("ss") and len(w) > 2 else w
 
 
+# what cooking does to a line: (name/USDA-description pattern, cooked weight per raw gram, grams in
+# a cup of it cooked). Sources: 1 cup dry lentils (192 g) -> 2.5 cups cooked (198 g each); dry
+# beans/chickpeas ~185 g -> 3 cups (172 g); white rice 185 g -> 3 cups (158 g); quinoa 170 g ->
+# 3 cups (185 g); 2 oz dry pasta -> 1 cup (140 g); 1 cup oats (81 g) -> ~2 cups oatmeal (234 g);
+# 10 oz raw spinach -> ~1.5 cups cooked (180 g); sweated onions/peppers/mushrooms lose ~15% and
+# pack ~210 g a cup.
+COOKS = [
+    (re.compile(r"\b(lentils?|split peas?)\b"), 2.58, 198.0),
+    (re.compile(r"\b(beans?|chickpeas?|garbanzos?|black-eyed peas?)\b.*\b(dry|dried|mature seeds)\b|"
+                r"\b(dry|dried)\b.*\b(beans?|chickpeas?|garbanzos?)\b"), 2.75, 172.0),
+    (re.compile(r"\brice\b"), 2.56, 158.0),
+    (re.compile(r"\bquinoa\b"), 3.26, 185.0),
+    (re.compile(r"\b(pasta|spaghetti|penne|macaroni|noodles?|rotini|fusilli|orzo)\b"), 2.5, 140.0),
+    (re.compile(r"\b(oats?|oatmeal)\b"), 2.9, 234.0),
+    (re.compile(r"\b(spinach|kale|chard|collards?|arugula|greens)\b"), 0.9, 180.0),
+    (re.compile(r"\b(onions?|shallots?|leeks?|mushrooms?|peppers?|zucchini|celery|cabbage|eggplant)\b"), 0.85, 210.0),
+]
+# already cooked or out of a can: it goes in as it is
+_READY = re.compile(r"\b(cooked|canned|from canned|boiled|caramelized|sauteed|sautéed|roasted)\b")
+_LIQUID = re.compile(r"\b(water|broth|stock|bouillon)\b")
+WATER_CUP_G = 240.0
+
+
+def _cooks(ing: dict) -> Optional[tuple[float, float]]:
+    text = f"{ing.get('name') or ''} {ing.get('fdc_description') or ''}".lower()
+    if _READY.search(text) or ing.get("made") or ing.get("from"):
+        return None
+    if re.search(r"\b(spices?|powder|ground|flakes)\b", text):
+        return None                                 # dried oregano, chili powder: a pinch, as is
+    return next(((w, cup) for rx, w, cup in COOKS if rx.search(text)), None)
+
+
+def estimate(lines: list[dict], by_id: Optional[dict] = None) -> dict:
+    """What the pot comes out as, from its lines: {g, cups, text, water_added_g}."""
+    by_id = by_id or ingredients.by_id()
+    solid_g = cups = liquid_g = soak_g = 0.0
+    for item in lines:
+        ing = by_id.get(item["ingredient_id"])
+        if not ing:
+            continue
+        g = nutrition.qty_to_grams(ing, item.get("qty") or 0, item.get("unit") or "each") or 0.0
+        if g <= 0:
+            continue
+        name = (ing.get("name") or "").lower()
+        if _LIQUID.search(name) and not re.search(r"\b(powder|cubes?|paste)\b", name):
+            liquid_g += g
+            continue
+        rule = _cooks(ing)
+        if rule:
+            w, cup_g = rule
+            solid_g += g * w
+            cups += g * w / cup_g
+            soak_g += max(0.0, g * (w - 1))         # water it takes up (negative = what it gives off)
+            continue
+        own_cup = nutrition.qty_to_grams(ing, 1, "cup")
+        solid_g += g
+        cups += g / (own_cup or WATER_CUP_G)
+    left = max(0.0, liquid_g - soak_g)              # the listed liquid goes into the dry things first
+    total = solid_g + left
+    cups += left / WATER_CUP_G
+    text = f"{_round_cups(cups)} cups · {stock_amount(total)}" if total else ""
+    return {"g": total, "cups": cups, "text": text, "water_added_g": max(0.0, soak_g - liquid_g)}
+
+
+def _round_cups(c: float) -> str:
+    r = round(c * 4) / 4 if c < 4 else round(c * 2) / 2 if c < 12 else round(c)
+    return f"{r:g}"
+
+
+def stock_amount(g: float) -> str:
+    from . import stock
+    return stock.us_amount(g)
+
+
 def _one_yield(t: str, input_g: float) -> dict:
     """One part of what the pot makes ("8 cups", "3 lb", "6 blocks of 1 lb"); `weighed` = it says
     the pot's real weight."""
@@ -113,12 +193,17 @@ def _one_yield(t: str, input_g: float) -> dict:
     return out
 
 
-def parse_yield(text: str, input_g: float) -> dict:
+def parse_yield(text: str, input_g: float, est: Optional[dict] = None) -> dict:
     """What the pot makes -> {yield_g, unit: {word, g, n} | None, text, conversions}. Nothing is
     saved here (the preview asks too); `conversions` are the units a meal line can then use.
     Several parts say several things (Storm 2026-10-25: "1 cup ... the right proportions"): in
     "8 cups, 3 lb" the weight is the pot's real weight and a cup is an eighth of it."""
     t = re.sub(r"\s+", " ", (text or "").strip().lower())
+    if est and est.get("g"):
+        if not t:                                # nothing said: the estimate, weight and cups
+            return {"yield_g": est["g"], "unit": None, "text": "", "estimated": True,
+                    "conversions": {"cup": est["g"] / est["cups"]} if est.get("cups") else {}}
+        input_g = est["g"]                       # "8 cups" with no weight: the cooked pot's weight
     parts = [p for p in re.split(r"\s*(?:,|;|·|\+|=|\band\b)\s*", t) if p] or [""]
     first = [_one_yield(p, input_g) for p in parts]
     weighed = next((r for r in first if r["weighed"]), None)
@@ -173,7 +258,7 @@ def per100(ing: dict) -> Optional[dict]:
     yield_g = made["yield_g"]
     if not parse_yield(made.get("yield_text") or "", 0.0)["yield_g"]:
         unknown = set(res["unknown_ingredients"])
-        yield_g = lines_grams([l for l in made["lines"] if l["ingredient_id"] not in unknown]) or yield_g
+        yield_g = estimate([l for l in made["lines"] if l["ingredient_id"] not in unknown])["g"] or yield_g
     k = 100.0 / yield_g
     tot = res["total"]
     out = {key: tot.get(key, 0.0) * k for key in nutrition.NUTRIENT_KEYS}
@@ -197,7 +282,7 @@ def make(name: str, lines: list[dict], yield_text: str, where: str, date: str) -
     if bare:    # it would go in as nothing, nutrition and all
         raise ValueError(f"how much {(by_id.get(bare['ingredient_id']) or {}).get('name', 'of a line')}?")
     input_g = lines_grams(lines, by_id)
-    y = parse_yield(yield_text, input_g)
+    y = parse_yield(yield_text, input_g, estimate(lines, by_id))
     if not y["yield_g"]:
         raise ValueError('how much does it make? ("8 cups", "3 lb") -- the lines have no weight to go by')
     ing = ingredients.add(name.strip(), "other")
