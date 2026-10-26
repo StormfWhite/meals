@@ -58,7 +58,7 @@ App.mealBlock = {
         </header>
         <div class="mb-name-row">
           <input class="mb-name" autocomplete="off" placeholder="${MB_LABELS[meal]}…" spellcheck="false">
-          <input class="mb-serv num" type="number" min="0.5" step="0.5" title="Servings used from the batch" value="1">
+          <input class="mb-serv num" type="number" min="0.5" step="0.5" title="Servings — 1: the lines are the whole pot, shared · 2: the lines are one person's, made twice" value="1">
           <button class="icon-btn mb-source" title="Recipe: a link or a cookbook photo">${App.icon(MB_BOOK)}</button>
           <button class="icon-btn mb-banger" title="Add to Bangers">${App.icon(MB_STAR)}</button>
           <button class="icon-btn mb-repeat" title="Repeat this meal every week">${App.icon(MB_REPEAT)}</button>
@@ -217,7 +217,9 @@ App.mealBlock = {
     });
 
     const applySources = (entry) => {
+      const wasServed = !!(sources && sources.served);
       sources = entry || null;
+      if (wasServed !== !!(sources && sources.served) && lastPreview) { applyPreview(lastPreview); host.onStatsChanged(); }
       drawWho();
       el.classList.toggle("served", !!(sources && sources.served));
       Array.from(rowsWrap.children).forEach(markDestination);
@@ -641,8 +643,22 @@ App.mealBlock = {
     };
 
     // ── live stats ───────────────────────────────────────────────────
+    /* How many times the lines go into the pot -- board.pot_factor on the server: servings over the
+     * recipe's own servings; a batch cook (its lines are the whole batch) and a meal eaten from a
+     * batch count once. The header and the day total are the whole pot; each person eats a share. */
+    const potFactor = () => {
+      const s = slot();
+      if ((s && s.store && s.store.n) || (sources && sources.served)) return 1;
+      return (Number(servInput.value) || 1) / ((matchedRecipe && matchedRecipe.servings) || 1);
+    };
+    const scaled = (t, k) => t && k !== 1 ? {
+      ...Object.fromEntries(["calories_kcal", "protein_g", "fiber_g"].map(n => [n, (t[n] || 0) * k])),
+      vitamins: Object.fromEntries(Object.entries(t.vitamins || {}).map(([n, v]) => [n, v * k])) } : t;
+    let lastPreview = null;
     const applyPreview = (preview) => {
-      totals = preview ? preview.total : null;
+      lastPreview = preview;
+      const k = potFactor();
+      totals = preview ? scaled(preview.total, k) : null;
       let i = 0;
       Array.from(rowsWrap.children).forEach(row => {
         const statEl = row.querySelector(".mb-stat");
@@ -657,8 +673,11 @@ App.mealBlock = {
       });
       const kcal = totals ? Math.round(totals.calories_kcal) : 0;
       totalEl.textContent = kcal ? `${kcal} kcal · ${totals.protein_g.toFixed(0)}g P` : "";
-      totalEl.title = totals ? `${kcal} kcal · ${totals.protein_g.toFixed(1)} g protein · ${totals.fiber_g.toFixed(1)} g fiber` : "";
+      totalEl.title = totals ? `${kcal} kcal · ${totals.protein_g.toFixed(1)} g protein · ${totals.fiber_g.toFixed(1)} g fiber`
+        + (k !== 1 ? ` — the lines × ${Math.round(k * 100) / 100}` : "") : "";
     };
+    // servings changed: the pot changes with it, at once (the save follows on change)
+    servInput.addEventListener("input", () => { applyPreview(lastPreview); host.onStatsChanged(); });
 
     const refreshStats = async () => {
       const rows = knownRows();

@@ -47,13 +47,14 @@ def week_ingredient_needs(week_start_iso: str) -> dict[str, float]:
         if recipe is None:
             continue
         ing_list = slot.get("ingredient_overrides") or recipe["ingredients"]
+        pot = board.pot_factor(slot, recipe)        # servings 2: the lines are one person's, twice is bought
         for item in ing_list:
             ing = ing_by_id.get(item["ingredient_id"])
             if ing is None:
                 continue
             # a unit with no known weight ("1 bunch") is still something to buy:
             # it stays on the list, just without an amount
-            grams = nutrition.qty_to_grams(ing, item["qty"], item["unit"]) or 0.0
+            grams = (nutrition.qty_to_grams(ing, item["qty"], item["unit"]) or 0.0) * pot
             needs[item["ingredient_id"]] = needs.get(item["ingredient_id"], 0.0) + grams
     return needs
 
