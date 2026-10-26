@@ -37,20 +37,24 @@ This is a photo inside a home kitchen{place}. List every food or drink in it tha
 keep track of as groceries on hand.
 
 Reply with ONLY a JSON object, no prose and no code fence:
-{{"where": "fridge" | "pantry" | "freezer", "items": [{{"name": "...", "count": 1, "size": "32 oz" | null, \
+{{"where": "fridge" | "pantry" | "freezer", "items": [{{"name": "...", "brand": "..." | null, "count": 1, "size": "32 oz" | null, \
 "unit": "can" | "jar" | "bag" | "box" | "bottle" | "carton" | "package" | "tub" | "bunch" | "head" | \
 "each" | null, "left": 1.0, "read": true}}]}}
 
 - "where": where this photo looks like it was taken (a dry shelf or cupboard is "pantry").
-- "name": the food as it would be written on a grocery list -- "canned diced tomatoes", "greek \
-yogurt", "frozen peas", "eggs". Keep a brand only for a name-brand specialty product (e.g. "Olipop"). \
-If one of these names already kept is the same food, copy it exactly: {known}
+- "name": the food as it would be written on a grocery list, WITHOUT the brand -- "black beans" \
+(not "Goya black beans"), "penne", "greek yogurt", "frozen peas", "eggs". Only a product that IS its \
+brand keeps it (e.g. "Olipop"). If one of these names already kept is the same food, copy it \
+exactly: {known}
+- "brand": the brand printed on it ("Goya", "Barilla"), else null.
 - "count": how many separate identical containers or pieces you can see (4 cans = 4).
 - "size": the amount ONE of them holds, as printed on the package ("32 oz", "1 lb", "500 g", \
 "64 fl oz"). Not readable: your best estimate of a normal package of it, and "read": false. Loose \
 produce with no package: null.
 - "unit": what one of them is when there is no size (a bunch of cilantro, a head of lettuce, \
-3 lemons = "each"); else the container word.
+3 lemons = "each"); else the container word. Fruit and vegetables you can count one by one are \
+"each" with "count" = how many pieces (a bunch of 6 bananas = count 6, "each"); "bunch" is only \
+for herbs and greens sold tied together.
 - "left": for an opened container, roughly how full it is (0.5 = half); 1.0 when unopened or unsure.
 - Go shelf by shelf, then the door: jars, cheese, eggs, sauces and condiments count too. Name what \
 the label or the look says it is ("canned chickpeas", "green olives"); a vague "canned food" only \
@@ -132,6 +136,8 @@ def qty_text(item: dict) -> str:
     left = min(1.0, _num(item.get("left"), 1.0))
     size = _size(item.get("size"))
     unit = str(item.get("unit") or "").strip().lower()
+    if unit == "bunch" and count > 3:
+        unit = "each"        # "6 bunch" of bananas is 6 bananas: nobody keeps 6 bunches of cilantro
     if size:
         n = count * left
         return size if abs(n - 1) < 0.01 else f"{_fmt(n)} x {size}"
@@ -158,6 +164,9 @@ def rows(data: dict, where: Optional[str]) -> list[dict]:
         if not isinstance(item, dict):
             continue
         name = re.sub(r"\s+", " ", str(item.get("name") or "")).strip()
+        brand = re.sub(r"\s+", " ", str(item.get("brand") or "")).strip()
+        if brand and name.lower().startswith(brand.lower() + " "):
+            name = name[len(brand) + 1:]                    # "Goya black beans" -> "black beans"
         if not name or len(name) > 60:
             continue
         match = by_key.get(_key(name))
