@@ -932,6 +932,9 @@ App.groceriesPanel = {
 
     row.querySelector(".gp-del").addEventListener("click", async (e) => {
       e.stopPropagation();
+      // gone from the screen at once; the list math (slow on a phone) catches up behind it
+      const box = row.closest(".gp-swipe") || row;
+      box.style.display = "none";
       await App.api(`/api/groceries/${this._wk(item.shop_list)}/items/${item.ingredient_id}`, { method: "DELETE" });
       App.toast(`${item.name} off the list`);
       this._reload();
@@ -1071,6 +1074,7 @@ App.groceriesPanel = {
       this._reload();
     });
     row.querySelector(".gp-free-remove").addEventListener("click", async () => {
+      (row.closest(".gp-swipe") || row).style.display = "none";    // at once; the redraw catches up
       await App.api(`/api/groceries/${this._marketWeek}/free-list/${item.id}`, { method: "DELETE" });
       this._reload();
     });
