@@ -13,7 +13,9 @@ own Markdown), e.g.
 
 When a note uses list bullets, only the bulleted lines are ingredients --
 the bare lines between them ("Marinade", "Yoghurt Sauce") are sub-headings.
-A note with no bullets at all is one ingredient per line. Everything from a
+A bare line that starts with an amount ("½ cup strawberries", indented or
+not) is an ingredient even in a bulleted note -- only amount-less bare lines
+are sub-headings. A note with no bullets at all is one ingredient per line. Everything from a
 "Method"/"Instructions" heading on is the recipe's notes, not ingredients.
 A line with no amount is still an ingredient, just with no quantity: an
 amount nobody wrote is never invented, and neither is a unit -- "2 eggs" is
@@ -56,8 +58,11 @@ _NUM = r"(?:\d+\s+\d+/\d+|\d+/\d+|\d+(?:\.\d+)?(?:\s*[½⅓⅔¼¾⅕⅛⅜⅝�
 _AMOUNT = re.compile(rf"^(?P<num>{_NUM})(?:\s*(?:-|–|to)\s*{_NUM})?(?![\d/])\s*(?P<rest>.*)$")
 _UNIT_WORD = re.compile(r"^([A-Za-z]+)\.?(?=\s|$|,)")
 _TRAILING = re.compile(rf"^(?P<rest>.*\D)\s+(?P<num>{_NUM})\s*(?P<unit>[A-Za-z]+)?\.?$")
-_BULLET = re.compile(r"^\s*(?:[-*+•◦▪‣]|\d+[.)]|- \[[ xX]\]|\[[ xX]\])\s+")
+_BULLET = re.compile(r"^\s*(?:[-*+•◦▪‣▢☐□◻✓✔]|\d+[.)]|- \[[ xX]\]|\[[ xX]\])\s+")
 _METHOD = re.compile(r"^(?:#+\s*)?(?:method|instructions?|directions?|steps?|preparation|prep|how to make( it)?|to make)\s*:?\s*$", re.I)
+_JUNK = re.compile(r"^[\s\-—–*•▢☐□◻✓✔]*$")
+_CHECKBOX_ONLY = re.compile(r"^\s*(?:[-*+•]\s*)?[▢☐□◻✓✔]\s*$")
+_NUMBERED_HEAD = re.compile(r"^\d+\\?[.)]")                          # "2\. Balsamic Marinade" is a heading
 _ING_HEAD = re.compile(r"^(?:#+\s*)?ingredients?\s*:?\s*$", re.I)
 
 
@@ -109,6 +114,7 @@ def _is_ingredient(text: str) -> bool:
 def parse_line(line: str) -> Optional[dict]:
     """One ingredient line → {name, qty, unit, note}; qty None = no amount written."""
     text = _plain(_BULLET.sub("", _BULLET.sub("", line)))          # "* • 1 kg" has two bullets
+    text = re.sub(r"^(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)-(ounce|oz|pound|lb|gram|g)s?\b", r"\1 (\2 \3)", text)   # "1 15-ounce can"
     if not text:
         return None
     qty, unit = None, ""
@@ -167,11 +173,15 @@ def parse_note(raw: str) -> dict:
     # a note headed "Ingredients", or one that starts straight in with "2 cups
     # flour", has no meal name written -- leave it blank rather than call the
     # meal "Ingredients", and keep that first line as an ingredient
-    if _ING_HEAD.match(name):
+    if _ING_HEAD.match(name) or _CHECKBOX_ONLY.match(name):
         name = ""
     elif _is_ingredient(_plain(_BULLET.sub("", name))):
         rest, name = [lines[i - 1]] + rest, ""
-    bulleted = any(_BULLET.match(l) for l in rest if l.strip())
+    # a checklist note ("▢" boxes on their own lines, after or before each item): the boxes ARE the
+    # bullets, so every line between them is an ingredient, amount or not ("Salt and pepper to taste")
+    checklist = any(_CHECKBOX_ONLY.match(l) for l in rest)
+    rest = [l for l in rest if not _JUNK.match(l)]
+    bulleted = not checklist and any(_BULLET.match(l) for l in rest if l.strip())
     items, method = [], []
     for line in rest:
         if method or _METHOD.match(_plain(line)):
@@ -179,8 +189,9 @@ def parse_note(raw: str) -> dict:
             continue
         if not line.strip() or _ING_HEAD.match(_plain(line)):
             continue
-        if bulleted and not _BULLET.match(line):
-            continue                                               # a sub-heading like "Marinade"
+        if bulleted and not _BULLET.match(line) and not (_AMOUNT.match(_plain(line)) and not _NUMBERED_HEAD.match(_plain(line))):
+            continue                                               # a sub-heading like "Marinade"; a line that
+                                                                   # starts with an amount is always an ingredient
         item = parse_line(line)
         if item:
             items.append(item)

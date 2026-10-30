@@ -448,8 +448,9 @@ App.mealBlock = {
       const other = Object.entries(host.getWeek().slots)
         .find(([k, o]) => k !== key && o.recipe_id === s.recipe_id && !o.leftover_group);
       if (!other) return;
-      const [oDate, oMeal] = other[0].split(":");
-      const btn = App.el(`<button class="mb-tag mb-link-btn">${App.icon('<path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 1 1 0 10h-2"/><path d="M8 12h8"/>')}same batch as ${_mbShortDay(oDate)} ${MB_LABELS[oMeal].toLowerCase()}</button>`);
+      const [oDate, oMealKey] = other[0].split(":");
+      const oMeal = oMealKey.split("~")[0];
+      const btn = App.el(`<button class="mb-tag mb-link-btn">${App.icon('<path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 1 1 0 10h-2"/><path d="M8 12h8"/>')}same batch as ${_mbShortDay(oDate)} ${(MB_LABELS[oMeal] || oMeal).toLowerCase()}</button>`);
       btn.addEventListener("click", async () => {
         const week = await App.api(`/api/board/${host.getWeek().week_start}/leftover-groups/link`, {
           method: "POST", body: { slot_a: key, slot_b: other[0] },

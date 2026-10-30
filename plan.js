@@ -440,6 +440,7 @@ App.plan = {
       <button class="icon-btn" id="plan-prev" title="${weekMode ? "Previous week" : "Previous day"}">${App.icon('<path d="m15 18-6-6 6-6"/>')}</button>
       <div class="plan-date">${label}</div>
       <button class="icon-btn" id="plan-next" title="${weekMode ? "Next week" : "Next day"}">${App.icon('<path d="m9 18 6-6-6-6"/>')}</button>
+      <button class="icon-btn" id="plan-import" title="Recipes from notes">${App.icon('<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9Z"/><path d="M14 3v6h6"/><path d="M12 12v5M9.5 14.5 12 17l2.5-2.5"/>')}</button>
       <button class="btn-ghost btn-mini" id="plan-today">${weekMode ? "This week" : "Today"}</button>
       <div class="seg seg-mini" id="plan-mode">
         <button data-mode="" class="${!this._forceMode ? "active" : ""}">Auto</button>
@@ -451,6 +452,7 @@ App.plan = {
     const step = weekMode ? 7 : 1;
     nav.querySelector("#plan-prev").addEventListener("click", () => { this._date = _planShift(this._date, -step); this.render(body); });
     nav.querySelector("#plan-next").addEventListener("click", () => { this._date = _planShift(this._date, step); this.render(body); });
+    nav.querySelector("#plan-import").addEventListener("click", () => App.recipes.openImportFrom(() => this.render(body)));
     nav.querySelector("#plan-today").addEventListener("click", () => { this._date = _planToday(); this._band = null; this.render(body); });
     nav.querySelector("#plan-mode").addEventListener("click", (e) => {
       const btn = e.target.closest("button"); if (!btn) return;

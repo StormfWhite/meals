@@ -73,7 +73,7 @@ App.history = {
       mealsWrap.innerHTML = `<div class="modal-hint">Nothing planned that week.</div>`;
     }
     slotEntries.forEach(([slotKey, slot]) => {
-      const [date, meal] = slotKey.split(":");
+      const [date, mealKey] = slotKey.split(":"); const meal = mealKey.split("~")[0];
       const recipe = this._recipes.find(r => r.id === slot.recipe_id);
       const row = App.el(`<div class="item-row">
         <span class="name">${_fmtShort(date)} ${meal}</span>

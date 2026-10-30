@@ -11,6 +11,7 @@ const RC_LIST = '<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>';
 
 App.recipes = {
   _recipes: [],
+  _onDone: null,
   _ingredients: [],
 
   async render(body) {
@@ -41,6 +42,35 @@ App.recipes = {
     }
     body.querySelector("#new-recipe-btn").addEventListener("click", () => this._openEditor(null));
     body.querySelector("#import-recipe-btn").addEventListener("click", () => this._openImport());
+  },
+
+  /* A recipe shared in from the Recipes app (or its inbox on the laptop): read like a note, the
+   * ingredients resolved by name, saved to the recipe list -- type its name in a meal to use it. */
+  async importShared(text) {
+    const parsed = await App.api("/api/recipes/parse", { method: "POST", body: { text } });
+    if (!parsed.name) { App.toast("Nothing to read in that recipe"); return false; }
+    // never overwrite or duplicate: a recipe already here (same name, or same source page even after
+    // you renamed it) keeps whatever you edited -- the Recipes app only ever adds
+    const link = (text.match(/https?:\/\/\S+/g) || []).pop() || "";
+    const norm = (u) => (u || "").trim().toLowerCase().replace(/[?#].*$/, "").replace(/\/+$/, "");
+    const have = (await App.api("/api/recipes")).recipes.some(x =>
+      x.name.trim().toLowerCase() === parsed.name.trim().toLowerCase() || (link && norm(x.source_url) === norm(link)));
+    if (have) return true;                                   // already saved: just clear the inbox file
+    await this._saveParsed(parsed, ["shared"], link);
+    App.toast(`Added “${parsed.name}” — type its name in a meal`);
+    return true;
+  },
+
+  // A parsed recipe straight into the list: ingredients resolved by name, no editor step.
+  async _saveParsed(parsed, tags, source_url = "") {
+    const ings = (await App.api("/api/ingredients")).ingredients;
+    const rows = [];
+    for (const it of parsed.ingredients) {
+      const unit = it.unit || "each";
+      const ingredient_id = await App.resolveIngredientId(it.name, unit, ings, true);
+      rows.push({ ingredient_id, qty: it.qty || 0, unit, note: it.note || "" });
+    }
+    await App.api("/api/recipes", { method: "POST", body: { name: parsed.name, servings: 4, ingredients: rows, tags, notes: parsed.notes || "", source_url } });
   },
 
   _recipeRow(r) {
@@ -115,14 +145,35 @@ App.recipes = {
    * search), or paste the text. recipe_import.py reads it -- top line = the
    * name, a line each = the ingredients, a leading amount = the quantity --
    * and the editor opens filled in, to check and save. */
+  /* Opened from the plan's top bar so importing never leaves the week: `onDone` runs instead of
+   * redrawing the Recipes page. */
+  async openImportFrom(onDone) {
+    this._onDone = onDone;
+    if (!this._recipes.length) {
+      try { this._recipes = (await App.api("/api/recipes")).recipes; } catch (e) { /* only the duplicate check */ }
+    }
+    this._openImport();
+  },
+
+  _finish() {
+    const f = this._onDone;
+    this._onDone = null;
+    if (f) f(); else this.render(document.getElementById("body"));
+  },
+
   _openImport() {
     App.openModal(`
-      <h2>From a note
+      <h2>From notes
         <button class="icon-btn" onclick="App.closeModal()">${App.icon('<path d="M18 6 6 18M6 6l12 12"/>')}</button>
       </h2>
       <div class="modal-section" style="border-top:none;padding-top:0;">
         <input id="ri-q" placeholder="Search notes…" spellcheck="false" autocomplete="off">
         <div id="ri-list" class="ri-list"><div class="loading-state"><div class="spin"></div>Reading notes…</div></div>
+        <div class="ri-bar" id="ri-bar" hidden>
+          <span class="dim num" id="ri-count"></span>
+          <button class="icon-btn" id="ri-review" title="Review first">${App.icon('<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>')}</button>
+          <button class="btn-primary" id="ri-add">${App.icon('<path d="M20 6 9 17l-5-5"/>')}</button>
+        </div>
       </div>
       <div class="modal-section">
         <textarea id="ri-paste" rows="4" placeholder="…or paste a recipe: name on top, one ingredient a line"></textarea>
@@ -135,6 +186,33 @@ App.recipes = {
       App.closeModal();
       this._openEditor(null, parsed);
     };
+    const picked = new Map();   // note id → title, kept across searches
+    const bar = () => {
+      document.getElementById("ri-bar").hidden = picked.size === 0;
+      document.getElementById("ri-count").textContent = `${picked.size} selected`;
+      document.getElementById("ri-review").hidden = picked.size !== 1;
+    };
+    // one tap adds every picked note as a recipe; a single pick can be reviewed in the editor first
+    document.getElementById("ri-review").addEventListener("click", async () => {
+      const [id] = picked.keys();
+      open(await App.api(`/api/notes/${encodeURIComponent(id)}/recipe`));
+    });
+    document.getElementById("ri-add").addEventListener("click", async (e) => {
+      e.currentTarget.disabled = true;
+      const have = new Set(this._recipes.map(r => r.name.trim().toLowerCase()));
+      let added = 0, skipped = [];
+      for (const [id, title] of picked) {
+        const parsed = await App.api(`/api/notes/${encodeURIComponent(id)}/recipe`);
+        if (!parsed.name || !parsed.ingredients.length) { skipped.push(title); continue; }
+        if (have.has(parsed.name.trim().toLowerCase())) { skipped.push(`${parsed.name} (already saved)`); continue; }
+        await this._saveParsed(parsed, ["note"]);
+        have.add(parsed.name.trim().toLowerCase());
+        added++;
+      }
+      App.closeModal();
+      App.toast(`Added ${added} recipe${added === 1 ? "" : "s"}` + (skipped.length ? ` · skipped ${skipped.join(", ")}` : ""));
+      this._finish();
+    });
     let seq = 0;
     const load = async (q) => {
       const mine = ++seq;
@@ -145,13 +223,15 @@ App.recipes = {
       if (!res.available) { list.innerHTML = `<div class="gp-empty">No notes on this device — paste instead</div>`; return; }
       list.innerHTML = res.notes.length ? "" : `<div class="gp-empty">${q ? "No note matches" : "No recipe-looking notes — search for one"}</div>`;
       res.notes.forEach(n => {
-        const row = App.el(`<button class="ri-note">
+        const row = App.el(`<button class="ri-note${picked.has(n.id) ? " sel" : ""}">
+          <span class="ri-tick">${App.icon('<path d="M20 6 9 17l-5-5"/>')}</span>
           <span class="ri-note-t">${_esc(n.title)}</span>
           <span class="dim num">${n.lines ? `${n.lines} ${App.icon(RC_LIST)}` : ""}</span>
         </button>`);
-        row.addEventListener("click", async () => {
-          row.disabled = true;
-          open(await App.api(`/api/notes/${encodeURIComponent(n.id)}/recipe`));
+        row.addEventListener("click", () => {
+          if (picked.has(n.id)) picked.delete(n.id); else picked.set(n.id, n.title);
+          row.classList.toggle("sel", picked.has(n.id));
+          bar();
         });
         list.appendChild(row);
       });
@@ -234,7 +314,7 @@ App.recipes = {
       }
       App.closeModal();
       App.toast(recipe ? "Recipe updated" : "Recipe added");
-      this.render(document.getElementById("body"));
+      this._finish();
     });
   },
 };

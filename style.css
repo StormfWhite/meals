@@ -321,6 +321,8 @@ button.mb-tag:hover { color: var(--good); border-color: var(--good); }
 .mb-amt { flex: 0 0 48px; text-align: right; }
 .mb-note { flex: 0 0 16px; transition: flex-basis 0.18s ease; color: var(--text-dim); font-style: italic; }
 .mb-note:focus, .mb-note.has-note { flex: 0 1 64px; }
+/* no empty "…" box on every line: a note only shows when the line already has one (an import's ", diced") */
+.mb-note:not(.has-note):not(:focus) { display: none; }
 .mb-stat { flex: 0 0 auto; min-width: 0; font-size: 10px; color: var(--text-dim); text-align: right; white-space: nowrap; overflow: hidden; }
 /* one day, one wide column: ingredient and amount stay together on the
    left and the stats ride out to the right margin */
@@ -337,6 +339,25 @@ button.mb-tag:hover { color: var(--good); border-color: var(--good); }
 .is-week .mb-row-x { position: absolute; right: 0; top: 50%; transform: translateY(-50%); background: var(--panel); }
 .mb-row-x svg { width: 10px; height: 10px; }
 .mb-row:hover .mb-row-x, .mb-row:focus-within .mb-row-x { opacity: 0.75; }
+
+/* week view: tighter cells so more of the seven days fits without scrolling */
+.is-week.plan-cols, .is-week .plan-cols { gap: 4px 6px; padding: 6px 10px 20px; }
+.is-week .day-col-head { padding: 3px 7px 4px; }
+.is-week .day-col-foot { margin-top: 0; padding: 4px 7px; gap: 5px; border-radius: 7px; }
+.is-week .mb { gap: 1px; padding: 4px 6px 5px; border-radius: 8px; }
+.is-week .mb-head svg { width: 11px; height: 11px; }
+.is-week .mb-label { font-size: 9px; }
+.is-week .mb-name { font-size: 12px; padding: 2px 5px; }
+.is-week .mb-serv { padding: 2px 3px; }
+.is-week .mb-rows { gap: 0; }
+.is-week .mb-link { min-width: 0; }
+.is-week .mb-tag { max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 1px 6px; }
+.is-week .mb-head { gap: 4px; }
+.is-week .mb-total { font-size: 9.5px; }
+/* the "same batch as" button only shows on hover: float it over the rows instead of reserving a line for it */
+.is-week .mb-link:not(.keep):has(> .mb-link-btn:only-child) { height: 0; position: relative; }
+.is-week .mb-link:not(.keep) > .mb-link-btn:only-child { position: absolute; top: 0; left: 0; z-index: 4; }
+.is-week .mb-row input { padding: 1px 4px; }
 
 /* ── learned ingredient suggestions (ingsuggest.js) ────────────────────
    position: fixed off <body>, not inside the row: the plan is a scrolling
@@ -725,6 +746,14 @@ input.gp-row-name:focus { background: var(--panel); border-color: var(--border);
 .ri-note { display: flex; align-items: center; gap: 8px; text-align: left; padding: 8px 10px; border: 0; border-radius: 8px;
   background: transparent; color: var(--text); font: inherit; font-size: 13px; cursor: pointer; }
 .ri-note:hover { background: var(--panel-2); }
+.ri-tick { width: 16px; height: 16px; flex: none; display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid var(--border); border-radius: 5px; color: transparent; }
+.ri-tick svg { width: 11px; height: 11px; }
+.ri-note.sel { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.ri-note.sel .ri-tick { background: var(--accent); border-color: var(--accent); color: #fff; }
+.ri-bar { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+.ri-bar .num { margin-right: auto; }
+.ri-bar[hidden], #ri-review[hidden] { display: none; }
 .ri-note-t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ri-note .dim { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; }
 .ri-note .dim svg { width: 11px; height: 11px; }

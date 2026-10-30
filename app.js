@@ -276,6 +276,18 @@ function init() {
   App.api("/api/meta").catch(() => {}); // warms the connection, surfaces a dead server early
 
   App.setView("plan");
+
+  // recipes handed over by the Recipes app: files in the inbox (laptop) or an intent text (Android shell)
+  App.sharedIn = (text) => App.recipes.importShared(text);
+  // laptop: the Recipes app drops a file here whenever a recipe is saved; look now and every 20 s
+  const pickUp = () => App.api("/api/inbox").then(async (r) => {
+    if (r.ops && App.bangers) App.bangers._refresh();         // stars / deletes made over there
+    for (const it of r.items || []) {
+      if (await App.recipes.importShared(it.text)) await App.api(`/api/inbox/${encodeURIComponent(it.file)}`, { method: "DELETE" });
+    }
+  }).catch(() => {});
+  pickUp();
+  setInterval(pickUp, 20000);
 }
 
 document.addEventListener("DOMContentLoaded", init);

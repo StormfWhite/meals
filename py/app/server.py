@@ -10,7 +10,9 @@ module lands.
 from __future__ import annotations
 
 import base64
+import json
 import re
+import time
 import uuid
 from pathlib import Path
 from typing import Optional
@@ -369,6 +371,7 @@ class RecipeBody(BaseModel):
     ingredients: list[RecipeIngredient] = []
     tags: list[str] = []
     notes: str = ""
+    source_url: str = ""                 # where it came from; the Recipes app links its copy by this
 
 
 class RecipeUpdateBody(BaseModel):
@@ -419,6 +422,8 @@ def create_recipe(body: RecipeBody):
         raise HTTPException(400, "a recipe needs a name")
     recipe = recipes.add(body.name, body.servings,
                          [i.model_dump() for i in body.ingredients], body.tags, body.notes)
+    if body.source_url.strip():
+        recipe = recipes.update(recipe["id"], source_url=body.source_url)
     return {"recipe": _recipe_summary(recipe, ingredients.by_id())}
 
 
@@ -446,6 +451,74 @@ def note_as_recipe(note_id: str):
 def parse_recipe_text(body: RecipeTextBody):
     """Pasted text, read the same way a note is: top line = name, one ingredient a line."""
     return recipe_import.parse_note(body.text)
+
+
+# ── recipes handed over by the Recipes app (laptop: files in DATA_DIR/inbox) ──
+
+def _norm_url(u: str) -> str:
+    return re.sub(r"[?#].*$", "", (u or "").strip().lower()).rstrip("/")
+
+
+def _find_recipe(url: str, name: str) -> Optional[dict]:
+    """The Recipes app's recipe in ours: by its page address, else by name."""
+    all_ = recipes.list_recipes()
+    if url:
+        hit = next((r for r in all_ if _norm_url(r.get("source_url", "")) == _norm_url(url)), None)
+        if hit:
+            return hit
+    return next((r for r in all_ if name and r["name"].strip().lower() == name.strip().lower()), None)
+
+
+def _apply_ops(d: Path) -> int:
+    """Stars and deletes made in the Recipes app (inbox/*.json). An op whose recipe hasn't arrived
+    yet (its .txt is picked up separately) waits for a later pass, and is dropped after a day."""
+    n = 0
+    for f in sorted(d.glob("*.json")):
+        try:
+            op = json.loads(f.read_text(encoding="utf-8"))
+        except Exception:
+            f.unlink()
+            continue
+        rec = _find_recipe(op.get("url", ""), op.get("name", ""))
+        if rec is None:
+            if time.time() - f.stat().st_mtime > 86400 or op.get("op") == "delete":
+                f.unlink()                       # nothing to delete / too old to wait for
+            continue
+        kind = op.get("op")
+        if kind == "delete":
+            for b in [b for b in bangers.list_bangers() if b["recipe_id"] == rec["id"]]:
+                bangers.delete(b["id"])
+            recipes.delete(rec["id"])
+        elif kind == "stars":                    # the full set of meals this recipe is a banger for
+            want = {m for m in op.get("meals", []) if m in board.MEALS}
+            have = {b["meal"]: b for b in bangers.list_bangers() if b["recipe_id"] == rec["id"]}
+            for m in want - set(have):
+                bangers.add(m, rec["id"])
+            for m in set(have) - want:
+                bangers.delete(have[m]["id"])
+        f.unlink()
+        n += 1
+    return n
+
+
+@app.get("/api/inbox")
+def inbox_list():
+    d = DATA_DIR / "inbox"
+    items = []
+    ops = 0
+    if d.exists():
+        ops = _apply_ops(d)
+        for f in sorted(d.glob("*.txt")):
+            items.append({"file": f.name, "text": f.read_text(encoding="utf-8", errors="replace")})
+    return {"items": items, "ops": ops}
+
+
+@app.delete("/api/inbox/{name}")
+def inbox_done(name: str):
+    f = DATA_DIR / "inbox" / Path(name).name
+    if f.suffix == ".txt" and f.exists():
+        f.unlink()
+    return {"ok": True}
 
 
 @app.put("/api/recipes/{recipe_id}")
