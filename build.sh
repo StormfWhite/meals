@@ -41,3 +41,4 @@ print("py.zip", (out / "py.zip").stat().st_size // 1024, "KB")
 PY
 touch "$OUT/.nojekyll"   # GitHub Pages would drop __init__.py
 echo "built from $SRC ($(wc -l < "$OUT/py/files.txt") python files)"
+date +%s > "$OUT/version.txt"   # the page compares this when it comes back to the front and reloads itself if it moved

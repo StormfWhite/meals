@@ -350,6 +350,19 @@ function init() {
   }).catch(() => {});
   if (!paneView) pickUp();                 // once now; after that the server tells us (below)
 
+  // phone / web build: coming back to the front after a new version was published reloads the page.
+  // (An Android shell resumes the SAME page, so "closing and reopening" never fetched the update.)
+  if (!/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) {
+    let mine = null;
+    const stamp = () => fetch("version.txt", { cache: "no-store" }).then((r) => (r.ok ? r.text() : null)).catch(() => null);
+    stamp().then((t) => { mine = t; });
+    document.addEventListener("visibilitychange", async () => {
+      if (document.visibilityState !== "visible" || mine === null) return;
+      const t = await stamp();
+      if (t && t !== mine) location.reload();
+    });
+  }
+
   // laptop: the phone's edits (through Dropbox), the Recipes app and the importer all change files here.
   // The server watches them (inotify, no polling) and holds one event stream open to each window: it
   // sends "data" / "inbox" the moment something changes, so an idle window does nothing at all.

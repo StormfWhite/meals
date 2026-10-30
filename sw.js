@@ -1,5 +1,5 @@
 // Meals: the app shell and Pyodide cached so the planner opens fast and offline.
-const VERSION = "m1";
+const VERSION = "m2";
 self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", (e) => e.waitUntil(caches.keys()
   .then((ks) => Promise.all(ks.filter((k) => k !== VERSION && k !== "pyodide" && k !== "meal-photos").map((k) => caches.delete(k)))).then(() => self.clients.claim())));
@@ -14,7 +14,7 @@ self.addEventListener("fetch", (e) => {
     return;
   }
   if (u.origin !== location.origin || u.pathname.includes("/api/")) return;
-  e.respondWith(fetch(e.request).then((r) => {   // our own files: network first so updates land, cache when offline
+  e.respondWith(fetch(e.request, { cache: "no-cache" }).then((r) => {   // our own files: network first (revalidated -- Pages says max-age=600) so updates land, cache when offline
     if (r.ok) { const copy = r.clone(); caches.open(VERSION).then((c) => c.put(e.request, copy)); }
     return r;
   }).catch(() => caches.match(e.request, { ignoreSearch: true })));
