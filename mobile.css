@@ -63,6 +63,7 @@ body.offline #topbar::after { content: "offline · saved on this phone"; font-si
   .gp-row { min-height: 40px; font-size: 15px; }
   .gp-row-need { font-size: 12.5px; }
   .gp-row .icon-btn { display: none; }          /* hover-only on the laptop: swipe instead */
+  .gp-row .icon-btn.gp-del, .gp-row .icon-btn.gp-free-remove { display: inline-flex !important; position: static !important; transform: none !important; opacity: .6; width: 32px; height: 32px; }   /* a real delete too, beside the swipe */
   .gp-sug .gp-sug-x { display: inline-flex; opacity: .8; width: 32px; height: 28px; }
   .gp-add-qty { width: 76px; }
 }

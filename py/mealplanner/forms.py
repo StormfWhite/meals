@@ -71,6 +71,9 @@ def same_food(name: str) -> Optional[str]:
     if _PRODUCT.search(n):
         return None
     base = n
+    # "fat garlic clove", "2 large cloves garlic", "peeled garlic cloves" -- size words don't make it another food
+    base = re.sub(r"^(?:\d+ )?(?:(?:fat|large|big|small|medium|plump|fresh|whole|peeled|crushed) )*(?:cloves? (?:of )?)?(garlic)(?: cloves?)?$",
+                  r"\1", base)
     base = re.sub(r"^(?:\d+ )?cloves? (?:of )?(garlic)$", r"\1", base)
     base = re.sub(r"^(garlic) cloves?$", r"\1", base)
     base = re.sub(rf"^{_PREP}(?: and {_PREP})?\s+", "", base)

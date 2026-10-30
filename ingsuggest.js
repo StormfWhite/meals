@@ -30,7 +30,8 @@ App.ingSuggest = {
   _seq: 0,
 
   attach(input, opts) {
-    input.addEventListener("focus", () => this._open(input, opts));
+    // a box that already holds a finished entry isn't asking for suggestions just because it was clicked
+    input.addEventListener("focus", () => { if (!(opts.doneOnFocus && opts.doneOnFocus(input))) this._open(input, opts); });
     input.addEventListener("input", () => this._open(input, opts));
     input.addEventListener("blur", () => setTimeout(() => { if (this._input === input) this.close(); }, 120));
     input.addEventListener("keydown", (e) => this._onKey(e, input, opts));
@@ -83,6 +84,10 @@ App.ingSuggest = {
 
   // ── fetching ────────────────────────────────────────────────────────
   _open(input, opts) {
+    if (opts.settled && opts.settled(input)) {   // the typed text IS a saved entry: nothing left to suggest
+      if (this._input === input) this.close();
+      return;
+    }
     if (opts.minChars && input.value.trim().length < opts.minChars) {   // an add box: only once typing starts
       if (this._input === input) this.close();
       return;
@@ -182,7 +187,9 @@ App.ingSuggest = {
     el.style.minWidth = `${Math.max(r.width, 200)}px`;
     el.style.left = `${Math.min(r.left, window.innerWidth - 260)}px`;
     const below = window.innerHeight - r.bottom;
-    if (below < 150 && r.top > below) {
+    // compact week view: the lines under the box are what you're filling in, so open upward when it fits
+    const upFirst = !!input.closest(".is-week .mb") && r.top >= el.offsetHeight + 8;
+    if (upFirst || (below < 150 && r.top > below)) {
       el.style.top = "auto";
       el.style.bottom = `${window.innerHeight - r.top + 3}px`;
     } else {

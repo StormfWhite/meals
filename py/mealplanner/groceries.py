@@ -10,6 +10,7 @@ recipe actually needs.
 from __future__ import annotations
 
 import datetime
+import math
 import json
 import re
 import uuid
@@ -98,6 +99,53 @@ def active_shop(kind: str = "grocery") -> Optional[dict]:
     return place.get("market" if kind == "market" else "store")
 
 
+def _weight_up(grams: float) -> str:
+    """Weight the way it's sold loose: whole ounces under half a pound, then pounds in quarters,
+    always rounded UP -- you can't buy less than you need."""
+    oz = grams / 28.3495
+    if oz < 8:
+        return f"{max(1, math.ceil(oz - 0.05))} oz"
+    lb = math.ceil(oz / 16 * 4 - 0.02) / 4
+    return f"{lb:g} lb"
+
+
+_COUNTED = re.compile(r"\b(eggs?|lemons?|limes?|oranges?|apples?|avocados?|bananas?|pears?|peach(?:es)?|plums?|"
+                      r"nectarines?|mangos?|mangoes|kiwis?|cucumbers?|zucchini|bell peppers?|onions?|shallots?|tomatoes)\b", re.I)
+_HERB = re.compile(r"\b(basil|cilantro|parsley|mint|dill|chives|sage|rosemary|thyme|tarragon)\b", re.I)
+_LB = 453.592
+
+
+def buy_label(ing: dict, to_buy: float, buy: dict, shop_list: str = "") -> str:
+    """What to put in the amount box: what you can actually BUY. A package the store sells (Kroger's
+    size) -> "2 x 32 oz" / "32 oz pack"; a counted food -> whole numbers ("3 lemons", "1 dozen"
+    eggs, "2 heads"); a market herb -> bunches; loose weight -> pounds / ounces rounded UP.
+    Cups and spoons stay as the meals say them."""
+    if not to_buy or to_buy <= 0.5:
+        return ""
+    name = ing.get("name") or ""
+    produce = ing.get("category") in ("vegetable", "fruit")
+    count_g = nutrition.count_grams(ing)
+    # a loose-by-the-pound item is "a 1 lb package" in the store's data: not a real pack
+    pk = (buy.get("package") or {}).get("package_g")
+    n = buy.get("packages")
+    real_pack = bool(pk and n) and not (produce and abs(pk - _LB) < 2)
+    if real_pack:
+        return f"{stock.us_amount(pk)} pack" if n == 1 else f"{n} × {stock.us_amount(pk)}"
+    if _COUNTED.search(name) and count_g:
+        count = max(1, math.ceil(to_buy / count_g - 0.05))
+        if re.search(r"\beggs?\b", name, re.I):
+            return f"{math.ceil(count / 12):g} dozen"
+        return f"{count}"
+    if shop_list == aisles.MARKET and _HERB.search(name):
+        bunches = max(1, math.ceil(to_buy / 40))
+        return f"{bunches} bunch" if bunches == 1 else f"{bunches} bunches"
+    unit = ing.get("default_unit", "g")
+    if unit == "g":
+        return _weight_up(to_buy)
+    got = ingredients.humanize_grams(ing, to_buy)
+    return _weight_up(to_buy) if got.endswith(" g") else got
+
+
 def get_week_groceries(week_start_iso: str, with_prices: bool = True,
                        allow_network: bool = False) -> list[dict]:
     """Recipe-derived needs (seeded by the learning loop) merged with
@@ -163,10 +211,7 @@ def get_week_groceries(week_start_iso: str, with_prices: bool = True,
         need = ledger.needs(week_start_iso).get(ing_id, 0.0)
         covered = need > 0 and buy["to_buy_g"] == 0 and ing_id not in extra_ids
         to_buy = buy["to_buy_g"] if buy["to_buy_g"] is not None else 0.0
-        if ing.get("default_unit", "g") == "g" or not to_buy:
-            label = stock.us_amount(to_buy)
-        else:
-            label = ingredients.humanize_grams(ing, to_buy)
+        label = buy_label(ing, to_buy, buy, shop_list)
         if extra.get(ing_id, {}).get("qty_text") and ing_id not in needs:
             label = ""                        # a hand-add's typed amount says it already
         if s.get("qty_text") is not None:     # the amount typed on the list row itself wins
@@ -338,17 +383,27 @@ def add_extra_item(week_start_iso: str, ingredient_id: str, qty_g: Optional[floa
     return get_week_groceries(week_start_iso)
 
 
+def _planned_grams(week_start_iso: str) -> dict[str, float]:
+    """What the week's plan asks for, per ingredient, exactly as the list counts it: the recipe needs
+    (nudged by what's been learned) plus what the bulk pots being made are short of. A removal is
+    measured against this -- against anything less, the row comes straight back."""
+    out = {i: learning.seeded_quantity(i, grams) for i, grams in week_ingredient_needs(week_start_iso).items()}
+    for ing_id, grams in stock.Ledger().make_short(week_start_iso).items():
+        out[ing_id] = out.get(ing_id, 0.0) + grams
+    return out
+
+
 def remove_item(week_start_iso: str, ingredient_id: str) -> list[dict]:
-    """Take a row off this week's list whatever put it there (the swipe):
-    a hand-add is dropped, and a recipe need is hidden at today's amount --
-    planning more of it later brings it back, since that's a new need."""
-    needs = week_ingredient_needs(week_start_iso)
-    need = learning.seeded_quantity(ingredient_id, needs[ingredient_id]) if ingredient_id in needs else 0.0
+    """Take a row off this week's list whatever put it there (the swipe, the x):
+    a hand-add is dropped, and a planned need is hidden at today's amount --
+    planning more of it later brings it back, since that's a new need. A row with no amount
+    (a line typed without one) is hidden too: it needs recording as 0, not skipping."""
+    planned = _planned_grams(week_start_iso)
     data = _load()
     week = data["weeks"].setdefault(week_start_iso, {"items": {}, "extra_items": {}, "free_list": []})
     week.setdefault("extra_items", {}).pop(ingredient_id, None)
-    if need:
-        week.setdefault("items", {}).setdefault(ingredient_id, {})["removed_g"] = round(need, 1)
+    if ingredient_id in planned:
+        week.setdefault("items", {}).setdefault(ingredient_id, {})["removed_g"] = round(planned[ingredient_id], 1)
     _save(data)
     return get_week_groceries(week_start_iso)
 

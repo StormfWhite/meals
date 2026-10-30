@@ -14,6 +14,7 @@ mealplanner/forms.py
 mealplanner/gaps.py
 mealplanner/groceries.py
 mealplanner/household.py
+mealplanner/inbox_import.py
 mealplanner/ingredients.py
 mealplanner/__init__.py
 mealplanner/learning.py
@@ -30,3 +31,4 @@ mealplanner/stats.py
 mealplanner/stock.py
 mealplanner/store.py
 mealplanner/suggest.py
+mealplanner/watch.py

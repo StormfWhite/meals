@@ -87,6 +87,22 @@ App.groceriesPanel = {
     this._timer = setTimeout(() => this._reload().catch(() => {}), 300);
   },
 
+  async _autoRestock(week) {
+    const KEY = `meals.v1.autolow.${week}`;
+    let done = [];
+    try { done = JSON.parse(localStorage.getItem(KEY) || "[]"); } catch (e) {}
+    // Only what keeps (shelf-stable, 3+ weeks): a perishable shouldn't be bought just because the last ran
+    // out -- it'd sit "on hand" and go bad. Those stay in the Pantry's Running low, one tap away.
+    const need = this._stock.filter(i => i.low && !i.on_list && !i.made && (i.keep_days || 0) >= 21 && !done.includes(i.ingredient_id));
+    if (!need.length) return false;
+    try { localStorage.setItem(KEY, JSON.stringify(done.concat(need.map(i => i.ingredient_id)))); } catch (e) { return false; }   // can't remember = don't loop
+    for (const item of need) {
+      try { await App.api(`/api/groceries/${week}/extra`, { method: "POST", body: { ingredient_id: item.ingredient_id, qty: null } }); } catch (e) {}
+    }
+    App.toast(need.length === 1 ? `${need[0].name} added — running out` : `${need.length} running-out items added to the list`);
+    return true;
+  },
+
   async _reload() {
     if (!this._container || !this._container.isConnected) return;
     const gw = this._weekStart, mw = this._marketWeek, two = mw !== gw;
@@ -101,6 +117,8 @@ App.groceriesPanel = {
     ]);
     this._stock = stockRes.items;
     this._meals = stockRes.meals || [];
+    // What's running out goes on the list by itself (once per item per week, so one that's swiped off stays off).
+    if (await this._autoRestock(gw)) { this._reload(); return; }
     const low = this._stock.filter(i => i.low && !i.on_list).length;
     const pb = document.getElementById("pantry-count");
     if (pb) { pb.textContent = low ? String(low) : ""; pb.classList.toggle("on", low > 0); }
@@ -319,6 +337,9 @@ App.groceriesPanel = {
       items.forEach(item => {
         const row = this._structuredRow(item);
         if (item.meals && (item.meals.length > 1 || byAisle && item.meals.length)) row.querySelector(".gp-row-name").title = "For " + item.meals.join(", ");
+        // which meal(s) it's for, said on the row (grouped by meal the heading already names the first)
+        const forMeals = byAisle ? (item.meals || []) : (item.meals || []).slice(1);
+        if (forMeals.length) row.appendChild(App.el(`<div class="gp-for" title="For ${App.esc((item.meals || []).join(", "))}">${App.icon(GP_MEAL)}<span>${byAisle ? "" : "also "}${App.esc(forMeals.join(" · "))}</span></div>`));
         wrap.appendChild(App.swipeAway(row, async () => {
           await App.api(`/api/groceries/${this._wk(item.shop_list)}/items/${item.ingredient_id}`, { method: "DELETE" });
           App.toast(`${item.name} off the list`);
@@ -372,19 +393,27 @@ App.groceriesPanel = {
     const c = this._container;
     const nameIn = c.querySelector(".gp-stock-name"), qtyIn = c.querySelector(".gp-stock-qty");
     let where = null;
-    c.querySelectorAll(".gp-stock-pick button").forEach(b => b.addEventListener("click", () => {
-      where = where === b.dataset.where ? null : b.dataset.where;
-      c.querySelectorAll(".gp-stock-pick button").forEach(x => x.classList.toggle("on", x.dataset.where === where));
-    }));
+    const paint = () => c.querySelectorAll(".gp-stock-pick button").forEach(x => x.classList.toggle("on", x.dataset.where === where));
     const add = async () => {
       let name = nameIn.value.trim(), qty = qtyIn.value.trim();
-      if (!name) return;
+      if (!name) return false;
       if (!qty) [name, qty] = _gpSplitAmount(name);
-      if (!qty) { qtyIn.focus(); return; }
+      if (!qty) { qtyIn.focus(); return false; }     // the amount is the point: ask for it, keeping the place picked
       nameIn.value = ""; qtyIn.value = ""; nameIn.focus();
       await this._addStock(name, qty, where);
+      where = null; paint();
       this._reload();
+      return true;
     };
+    // the fridge / dry / freezer icon sends it: with something typed, tapping a place adds it there at once
+    c.querySelectorAll(".gp-stock-pick button").forEach(b => {
+      b.addEventListener("mousedown", (e) => e.preventDefault());   // keep the keyboard / caret where it is
+      b.addEventListener("click", () => {
+        where = (!nameIn.value.trim() && where === b.dataset.where) ? null : b.dataset.where;   // nothing typed: it just picks (or un-picks) the place
+        paint();
+        if (nameIn.value.trim()) add();
+      });
+    });
     [nameIn, qtyIn].forEach(i => i.addEventListener("keydown", e => {
       if (e.key !== "Enter" && e.keyCode !== 13) return;
       e.preventDefault();
@@ -812,6 +841,7 @@ App.groceriesPanel = {
              title="${item.price ? `${App.esc(item.price_label || "")}${item.price_age_days ? ` · ${item.price_age_days}d ago` : ""}${item.packages > 1 ? ` · ×${item.packages}` : ""}` : "What does one cost? Type it once."}">
       ${item.low_stock ? `<button class="icon-btn gp-low" title="Low or out here — where else nearby has it?">${App.icon(GP_WARN)}</button>` : ""}
       <button class="icon-btn gp-move" title="Move to the ${other === "market" ? "farmer's market" : "grocery"} list">${App.icon(GP_SWAP)}</button>
+      <button class="icon-btn gp-del" title="Take it off the list">${App.icon(GP_X)}</button>
       ${item.source === "extra" ? `<button class="icon-btn gp-row-remove-extra" title="Remove the amount added by hand">${App.icon(GP_X)}</button>` : ""}
     </div>`);
 
@@ -897,6 +927,13 @@ App.groceriesPanel = {
         method: "POST", body: { shop_list: other },
       });
       App.toast(`${item.name} → ${other === "market" ? "farmer's market" : "groceries"}`);
+      this._reload();
+    });
+
+    row.querySelector(".gp-del").addEventListener("click", async (e) => {
+      e.stopPropagation();
+      await App.api(`/api/groceries/${this._wk(item.shop_list)}/items/${item.ingredient_id}`, { method: "DELETE" });
+      App.toast(`${item.name} off the list`);
       this._reload();
     });
 

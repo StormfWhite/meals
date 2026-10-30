@@ -65,6 +65,8 @@ App.mealBlock = {
           <button class="icon-btn mb-clear" title="${index ? "Remove this meal" : "Clear this meal"}">${App.icon('<path d="M18 6 6 18M6 6l12 12"/>')}</button>
         </div>
         <div class="mb-link"></div>
+        <div class="mb-sum" draggable="true" title="Click to edit · drag onto another meal to swap"></div>
+        <button class="icon-btn mb-adding" title="Add an ingredient">${App.icon('<path d="M12 5v14M5 12h14"/>')}</button>
         <div class="mb-rows"></div>
         <div class="mb-foot"></div>
       </section>
@@ -74,6 +76,9 @@ App.mealBlock = {
     // Meal-name dropdown: learned order, with a x per row that retires a
     // suggestion (the recipe and its history stay; it just stops being offered).
     App.ingSuggest.attach(nameInput, {
+      // a meal that's already in (its name is a saved meal) doesn't pop the list back up
+      settled: (input) => !!recipeByName(input.value),
+      doneOnFocus: (input) => !!input.value.trim(),
       // this meal's usual ones first (learned order), then every other saved meal
       local: () => {
         const own = host.optionsFor(meal).slice();
@@ -209,7 +214,7 @@ App.mealBlock = {
       const at = mine && mine.length === 1 ? people.findIndex(m => m.id === mine[0]) : -1;
       const next = at + 1 < people.length ? [people[at + 1].id] : [];
       try {
-        host.onWeekChanged(await App.api(`/api/board/${host.getWeek().week_start}/slots/${key}/eaters`,
+        host.onWeekChanged(await App.api(`/api/board/${host.weekFor(key)}/slots/${key}/eaters`,
           { method: "PUT", body: { member_ids: next } }));
         drawWho();
         if (lastPreview) applyPreview(lastPreview);
@@ -259,6 +264,7 @@ App.mealBlock = {
       // which meal this is and what's already on the block so it can offer
       // the thing that usually comes next (see suggest.py).
       App.ingSuggest.attach(row.querySelector(".mb-ing"), {
+        doneOnFocus: (input) => !!ingredientByName(input.value),   // a line that's already an ingredient
         context: () => ({
           meal,
           meal_name: nameInput.value.trim(),
@@ -347,10 +353,32 @@ App.mealBlock = {
     };
     rowsWrap.addEventListener("focusout", () => setTimeout(ensureBlankRow, 0));
 
+    /* Week view shows a meal collapsed: just its ingredient names as one dim wrapped line, and the
+     * editable rows open in place while focus is inside the block (style.css .is-week .mb-sum).
+     * Always kept current, so it's right the moment the block collapses. */
+    const sumEl = el.querySelector(".mb-sum");
+    const paintSummary = () => {
+      sumEl.textContent = Array.from(rowsWrap.querySelectorAll(".mb-ing")).map(i => i.value.trim()).filter(Boolean).join(" · ");
+    };
+    // open the block and land on its blank last line, ready to type
+    const addIngredient = () => {
+      nameInput.focus();
+      const last = rowsWrap.lastElementChild && rowsWrap.lastElementChild.querySelector(".mb-ing");
+      if (last) last.focus();
+    };
+    sumEl.addEventListener("click", addIngredient);
+    // on mousedown, not click: focusing the button opens the block, which hides the button before mouseup
+    const addBtn = el.querySelector(".mb-adding");
+    addBtn.addEventListener("mousedown", (e) => { e.preventDefault(); addIngredient(); });
+    addBtn.addEventListener("click", (e) => { if (e.detail === 0) addIngredient(); });
+    rowsWrap.addEventListener("input", paintSummary);
+    rowsWrap.addEventListener("change", paintSummary);
+
     const drawRows = (list) => {
       rowsWrap.innerHTML = "";
       (list || []).forEach(item => rowsWrap.appendChild(makeRow(item)));
       ensureBlankRow();
+      paintSummary();
       schedulePreview();
     };
 
@@ -433,7 +461,7 @@ App.mealBlock = {
           : `<button class="mb-tag mb-fresh" title="Tap to eat servings put away instead, when there are some">${App.icon(MB_FLAME)}cooking fresh</button>`);
         btn.addEventListener("click", async () => {
           try {
-            host.onWeekChanged(await App.api(`/api/board/${host.getWeek().week_start}/slots/${key}/fresh`,
+            host.onWeekChanged(await App.api(`/api/board/${host.weekFor(key)}/slots/${key}/fresh`,
               { method: "PUT", body: { fresh: !!served } }));
           } catch (err) { App.toast(err.message); }
         });
@@ -452,7 +480,7 @@ App.mealBlock = {
       const oMeal = oMealKey.split("~")[0];
       const btn = App.el(`<button class="mb-tag mb-link-btn">${App.icon('<path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 1 1 0 10h-2"/><path d="M8 12h8"/>')}same batch as ${_mbShortDay(oDate)} ${(MB_LABELS[oMeal] || oMeal).toLowerCase()}</button>`);
       btn.addEventListener("click", async () => {
-        const week = await App.api(`/api/board/${host.getWeek().week_start}/leftover-groups/link`, {
+        const week = await App.api(`/api/board/${host.weekFor(key)}/leftover-groups/link`, {
           method: "POST", body: { slot_a: key, slot_b: other[0] },
         });
         host.onWeekChanged(week);
@@ -494,7 +522,7 @@ App.mealBlock = {
         const save = async (count) => {
           bulkOpen = false;
           try {
-            host.onWeekChanged(await App.api(`/api/board/${host.getWeek().week_start}/slots/${key}/store`,
+            host.onWeekChanged(await App.api(`/api/board/${host.weekFor(key)}/slots/${key}/store`,
               { method: "PUT", body: { n: count, where } }));
             App.toast(count ? `${count} serving${count === 1 ? "" : "s"} into the ${where}` : "Not a batch");
           } catch (err) { App.toast(err.message); drawFoot(); }
@@ -715,7 +743,7 @@ App.mealBlock = {
 
       if (!name) {
         if (slot()) {
-          const updated = await App.api(`/api/board/${week.week_start}/slots/${key}`, { method: "DELETE" });
+          const updated = await App.api(`/api/board/${host.weekFor(key)}/slots/${key}`, { method: "DELETE" });
           host.onWeekChanged(updated);
         }
         return;
@@ -758,7 +786,7 @@ App.mealBlock = {
         if (JSON.stringify(rows) !== JSON.stringify(base)) ingredient_overrides = rows;
       }
 
-      const updated = await App.api(`/api/board/${week.week_start}/slots/${key}`, {
+      const updated = await App.api(`/api/board/${host.weekFor(key)}/slots/${key}`, {
         method: "PUT",
         body: { recipe_id: recipe.id, servings_used: Number(servInput.value) || 1, ingredient_overrides },
       });
@@ -821,6 +849,15 @@ App.mealBlock = {
       syncSource();
       drawRows(null);
     });
+
+    // An extra ("Also") meal left empty goes away by itself once focus has moved off it.
+    if (index) {
+      el.addEventListener("focusout", () => setTimeout(() => {
+        if (!el.isConnected || el.contains(document.activeElement)) return;
+        const bare = !nameInput.value.trim() && !readRows().length;
+        if (bare) el.querySelector(".mb-clear").click();
+      }, 400));
+    }
 
     draw();
 

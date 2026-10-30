@@ -22,10 +22,12 @@ DEFAULT_TARGETS = {
 
 # Per kg of body weight: protein 1.2 g (above the 0.8 floor, below the 1.6 of hard training),
 # about 32 kcal (a moderately active adult -- only an estimate without height/age), and fiber
-# 14 g per 1000 kcal. Vitamins and minerals don't scale with weight: gaps.NUTRIENTS' adult ones.
+# 14 g per 1000 kcal, but never under the 25 g adult minimum (a small body's low calorie estimate
+# alone gave 20 g). Vitamins and minerals don't scale with weight: gaps.NUTRIENTS' adult ones.
 PROTEIN_G_PER_KG = 1.2
 KCAL_PER_KG = 32
 LB = 0.45359237
+FIBER_MIN_G = 25
 
 
 def targets_for_weight(weight_lb: float) -> dict:
@@ -33,7 +35,7 @@ def targets_for_weight(weight_lb: float) -> dict:
     kcal = round(kg * KCAL_PER_KG / 10) * 10
     from .gaps import NUTRIENTS, TOP_LEVEL   # gaps imports this module
     return {"calories_kcal": kcal, "protein_g": round(kg * PROTEIN_G_PER_KG),
-            "fiber_g": round(kcal / 1000 * 14),
+            "fiber_g": max(FIBER_MIN_G, round(kcal / 1000 * 14)),
             "vitamins": {k: v for k, _, _, v in NUTRIENTS if k not in TOP_LEVEL}}
 
 

@@ -23,6 +23,8 @@ App.api = async function (path, options = {}) {
     try { msg = (await res.json()).detail || msg; } catch (e) {}
     throw new Error(msg);
   }
+  const method = (opts.method || "GET").toUpperCase();
+  if (method !== "GET" && App._rebaseStamp) setTimeout(App._rebaseStamp, 400);   // our own save, not the phone's
   if (res.status === 204) return null;
   return res.json();
 };
@@ -213,11 +215,11 @@ App.setView = function (view) {
   App.render();
 };
 
-App.render = function () {
+App.render = function (soft) {
   const body = document.getElementById("body");
   const mod = App[App.state.view];
   if (mod && typeof mod.render === "function") {
-    mod.render(body);
+    mod.render(body, soft === true);
   } else {
     body.innerHTML = `<div class="empty-state">${App.icon('<circle cx="12" cy="12" r="9"/>')}<div>“${App.state.view}” isn't wired up yet.</div></div>`;
   }
@@ -235,7 +237,67 @@ function typingInField(e) {
   return t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable);
 }
 
+/* The third pane: a second copy of the app (?pane=<view>, topbar hidden) docked on the right, so
+ * recipes / bulk / … can sit beside the plan. Same server, so the 5-second stamp poll below keeps
+ * both copies current. The view and width are remembered. */
+App.pane = {
+  KEY_V: "meals.v1.pane", KEY_W: "meals.v1.paneW",
+  _get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+  _set(k, v) { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch (e) {} },
+  _clamp(w) { return Math.max(260, Math.min(Math.round(window.innerWidth * 0.6), w)); },
+  open(view) {
+    const side = document.getElementById("side-pane"), frame = document.getElementById("sp-frame");
+    view = view || this._get(this.KEY_V) || "recipes";
+    side.hidden = false;
+    document.getElementById("pane-handle").hidden = false;
+    const w = Number(this._get(this.KEY_W));
+    side.style.width = this._clamp(w || 460) + "px";
+    if (frame.dataset.view !== view) { frame.dataset.view = view; frame.src = `/?pane=${view}`; }
+    document.querySelectorAll("#sp-head [data-pane]").forEach(b => b.classList.toggle("on", b.dataset.pane === view));
+    document.getElementById("pane-btn").classList.add("on");
+    this._set(this.KEY_V, view);
+    this._set("meals.v1.paneOpen", "1");
+  },
+  close() {
+    document.getElementById("side-pane").hidden = true;
+    document.getElementById("pane-handle").hidden = true;
+    document.getElementById("pane-btn").classList.remove("on");
+    this._set("meals.v1.paneOpen", null);
+  },
+  wire() {
+    const side = document.getElementById("side-pane"), handle = document.getElementById("pane-handle");
+    document.getElementById("pane-btn").addEventListener("click", () => side.hidden ? this.open() : this.close());
+    document.getElementById("sp-close").addEventListener("click", () => this.close());
+    document.getElementById("sp-head").addEventListener("click", (e) => {
+      const b = e.target.closest("[data-pane]"); if (b) this.open(b.dataset.pane);
+    });
+    handle.addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+      handle.setPointerCapture(e.pointerId);
+      handle.classList.add("drag");
+      document.getElementById("sp-frame").style.pointerEvents = "none";   // the iframe would eat the drag
+      const move = (ev) => { side.style.width = this._clamp(window.innerWidth - ev.clientX) + "px"; };
+      const up = () => {
+        handle.classList.remove("drag");
+        document.getElementById("sp-frame").style.pointerEvents = "";
+        handle.removeEventListener("pointermove", move);
+        handle.removeEventListener("pointerup", up);
+        handle.removeEventListener("pointercancel", up);
+        this._set(this.KEY_W, String(side.offsetWidth));
+      };
+      handle.addEventListener("pointermove", move);
+      handle.addEventListener("pointerup", up);
+      handle.addEventListener("pointercancel", up);
+    });
+    handle.addEventListener("dblclick", () => { this._set(this.KEY_W, null); side.style.width = this._clamp(460) + "px"; });
+    if (this._get("meals.v1.paneOpen")) this.open();
+  },
+};
+
 function init() {
+  const paneView = new URLSearchParams(location.search).get("pane");
+  if (paneView) document.documentElement.classList.add("pane-mode");
+  else App.pane.wire();
   document.querySelectorAll(".nav-icon").forEach(btn => {
     btn.addEventListener("click", () => App.setView(btn.dataset.view));
   });
@@ -275,19 +337,53 @@ function init() {
 
   App.api("/api/meta").catch(() => {}); // warms the connection, surfaces a dead server early
 
-  App.setView("plan");
+  App.setView(paneView || "plan");
 
   // recipes handed over by the Recipes app: files in the inbox (laptop) or an intent text (Android shell)
   App.sharedIn = (text) => App.recipes.importShared(text);
   // laptop: the Recipes app drops a file here whenever a recipe is saved; look now and every 20 s
-  const pickUp = () => App.api("/api/inbox").then(async (r) => {
-    if (r.ops && App.bangers) App.bangers._refresh();         // stars / deletes made over there
-    for (const it of r.items || []) {
-      if (await App.recipes.importShared(it.text)) await App.api(`/api/inbox/${encodeURIComponent(it.file)}`, { method: "DELETE" });
-    }
+  // The server takes the files in itself (inbox_import.py, also on a file watcher); this just asks it to
+  // look now, and shows the result. Not in a side pane: one window asking is enough.
+  const pickUp = () => App.api("/api/inbox").then((r) => {
+    if (r.ops && App.bangers) App.bangers._refresh();         // stars / deletes / new recipes from over there
+    if (r.ops) App.toast("Recipes updated from the Recipes app");
   }).catch(() => {});
-  pickUp();
-  setInterval(pickUp, 20000);
+  if (!paneView) pickUp();                 // once now; after that the server tells us (below)
+
+  // laptop: the phone's edits (through Dropbox), the Recipes app and the importer all change files here.
+  // The server watches them (inotify, no polling) and holds one event stream open to each window: it
+  // sends "data" / "inbox" the moment something changes, so an idle window does nothing at all.
+  // Never redraws under a focused field. (The phone build has its own Dropbox long-poll in bridge.js.)
+  if (/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) {
+    let wanted = false;
+    const redrawIfIdle = () => {
+      const a = document.activeElement;
+      if (a && (a.tagName === "INPUT" || a.tagName === "TEXTAREA" || a.tagName === "SELECT" || a.isContentEditable)) { wanted = true; return; }
+      wanted = false;
+      App.render(true);        // a soft redraw: does nothing when what's on screen is already right
+    };
+    document.addEventListener("focusout", () => setTimeout(() => { if (wanted) redrawIfIdle(); }, 300));
+
+    // no file watching here (or the stream is refused): the old slow look, every 30 s
+    const slowPoll = () => {
+      let seen = null;
+      const look = () => fetch("/api/stamp").then((r) => r.json()).then((r) => r.stamp).catch(() => seen);
+      look().then((t) => { seen = t; });
+      setInterval(async () => {
+        const t = await look();
+        if (seen !== null && t !== seen) { seen = t; redrawIfIdle(); }
+        if (!paneView) pickUp();
+      }, 30000);
+    };
+    if (window.EventSource) {
+      const es = new EventSource("/api/events");
+      let opened = false, quiet;
+      es.addEventListener("hello", () => { if (opened) { redrawIfIdle(); if (!paneView) pickUp(); } opened = true; });
+      es.addEventListener("data", () => { clearTimeout(quiet); quiet = setTimeout(redrawIfIdle, 250); });   // a save is a burst of writes
+      es.addEventListener("inbox", () => { if (!paneView) pickUp(); });
+      es.onerror = () => { if (es.readyState === EventSource.CLOSED) slowPoll(); };   // refused: fall back
+    } else slowPoll();
+  }
 }
 
 document.addEventListener("DOMContentLoaded", init);

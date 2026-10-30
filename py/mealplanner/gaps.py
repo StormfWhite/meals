@@ -38,7 +38,13 @@ NUTRIENTS = [
     ("vitamin_d_mcg", "vitamin D", "mcg", 15),
     ("b12_mcg", "B12", "mcg", 2.4),
     ("folate_mcg", "folate", "mcg", 400),
+    ("vitamin_b6_mg", "B6", "mg", 1.3),
+    ("choline_mg", "choline", "mg", 425),      # adequate intake, adult women
+    ("iodine_mcg", "iodine", "mcg", 150),
+    ("omega3_g", "omega-3", "g", 1.1),         # ALA adequate intake (women); EPA/DHA count too
 ]
+# USDA lists these for few foods: a day with none of it on record can't be called low, only unknown
+UNMEASURED_OK = {"iodine_mcg", "omega3_g"}
 TOP_LEVEL = ("calories_kcal", "protein_g", "fiber_g")
 KCAL = 2000
 LOW_BELOW = 0.7          # under 70% of what the day's calories would predict
@@ -126,6 +132,8 @@ def lows(meals: list[dict], ppl: list[dict]) -> Optional[list[dict]]:
             expected = tg[key] * min(1.0, kcal / tg["calories_kcal"])
             rows.append({"name": p["name"], "ratio": have / expected if expected else 1.0,
                          "have": have, "target": tg[key], "short": (expected - have) / s, "scale": tg[key] / s})
+        if key in UNMEASURED_OK and not any(r["have"] for r in rows):
+            continue
         low = [r for r in rows if r["ratio"] < LOW_BELOW]
         if not low:
             continue

@@ -46,8 +46,9 @@ NUTRIENT_IDS = {
 # bumped when what's read out of a USDA record changes: older cached records are read again
 # (2: Atwater kcal for Foundation foods, survey foods' "1 cup" portions; 3: `missing`;
 # 4: potassium/magnesium/vitamin D/B12/folate/zinc for the day's "low" check, gaps.py;
-# 5: `missing` covers those too -- Foundation yogurt lists no B12, filled from another record)
-NORMALIZED_V = 5
+# 5: `missing` covers those too -- Foundation yogurt lists no B12, filled from another record;
+# 6: choline, B6, iodine and omega-3 (ALA+EPA+DHA+DPA, summed))
+NORMALIZED_V = 6
 OLDEST_USABLE_V = 3   # nutrition still right, just fewer vitamins: served when it can't be fetched again
 VITAMIN_IDS = {
     1162: "vitamin_c_mg",
@@ -60,7 +61,13 @@ VITAMIN_IDS = {
     1178: "b12_mcg",
     1177: "folate_mcg",
     1095: "zinc_mg",
+    1180: "choline_mg",
+    1175: "vitamin_b6_mg",
+    1100: "iodine_mcg",
 }
+OMEGA3_IDS = (1404, 1278, 1272, 1280)   # ALA, EPA, DHA, DPA -> one omega3_g
+# USDA rarely lists these: absent means "not measured", so they never trigger a fill from another record
+NO_FILL = {"iodine_mcg"}
 FOLATE_DFE = 1190   # survey foods list folate as DFE only
 
 
@@ -310,6 +317,8 @@ def _normalize(food: dict) -> dict:
             out[NUTRIENT_IDS[nid]] = amount
         elif nid in VITAMIN_IDS:
             out["vitamins"][VITAMIN_IDS[nid]] = amount
+        elif nid in OMEGA3_IDS:
+            out["vitamins"]["omega3_g"] = out["vitamins"].get("omega3_g", 0.0) + amount
         elif nid == FOLATE_DFE:
             out["vitamins"].setdefault("folate_mcg", amount)
     # newer Foundation records give energy only as Atwater kcal (2048 specific, 2047 general), no 1008
@@ -324,7 +333,8 @@ def _normalize(food: dict) -> dict:
     # what the record doesn't list at all (not "0") -- filled from another record of the same food
     listed = {(n.get("nutrient") or {}).get("id") or n.get("nutrientId") for n in food.get("foodNutrients", [])}
     out["missing"] = [k for nid, k in NUTRIENT_IDS.items() if nid not in listed and not out[k]]
-    out["missing"] += [k for nid, k in VITAMIN_IDS.items() if nid not in listed and k not in out["vitamins"]]
+    out["missing"] += [k for nid, k in VITAMIN_IDS.items()
+                       if nid not in listed and k not in out["vitamins"] and k not in NO_FILL]
     out["v"] = NORMALIZED_V
     out["description"] = food.get("description", "")
     out["food_category"] = _category_name(food) or food.get("brandedFoodCategory") or ""

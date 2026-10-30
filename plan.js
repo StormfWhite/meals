@@ -45,22 +45,63 @@ App.plan = {
     return new Date().getDay() === WEEK_VIEW_WEEKDAY;
   },
 
-  async render(body) {
+  /* Redrawing the same screen (a save, or the background change check) must not blank it to "Loading…"
+   * or throw away where you were scrolled: it keeps the old screen up until the new one is ready, and
+   * puts the scroll positions back. `soft` (the background check) also does nothing at all when what
+   * it fetched is what's already drawn. Only moving to another day / mode starts from a clean screen. */
+  async render(body, soft = false) {
     if (!this._date) this._date = _planToday();
-    clearInterval(this._bandTimer);
-    body.innerHTML = `<div class="pad"><div class="loading-state"><div class="spin"></div>Loading…</div></div>`;
+    const prev = body.querySelector("#plan-cols");
+    const keep = !!prev && this._drawnFor === `${this._date}|${this._isWeekMode()}`;
+    const panel = body.querySelector("#list-panel");
+    const pos = keep ? { c: prev.scrollTop, cl: prev.scrollLeft, b: body.scrollTop, l: panel ? panel.scrollTop : 0 } : null;
+    if (!keep) {
+      clearInterval(this._bandTimer);
+      body.innerHTML = `<div class="pad"><div class="loading-state"><div class="spin"></div>Loading…</div></div>`;
+    }
     try {
-      await this._load(body);
+      const drew = await this._load(body, soft && keep);
+      if (pos && drew !== false) {
+        const c = body.querySelector("#plan-cols"), l = body.querySelector("#list-panel");
+        if (c) { c.scrollTop = pos.c; c.scrollLeft = pos.cl; }
+        body.scrollTop = pos.b;
+        if (l) l.scrollTop = pos.l;
+      }
     } catch (err) {
       body.innerHTML = `<div class="notice bad">${App.icon('<path d="M12 9v4M12 17h.01"/><circle cx="12" cy="12" r="9"/>')}<div>${App.esc(err.message)}</div></div>`;
     }
   },
 
-  async _load(body) {
+  /* The stored week (Sun-Sat, shifted by the reup day) a date lives in, worked out from the anchor
+   * week the server told us about. */
+  _wkOf(date) {
+    const days = Math.round((Date.parse(date) - Date.parse(this._baseWs)) / 864e5);
+    return _planShift(this._baseWs, Math.floor(days / 7) * 7);
+  },
+
+  /* One week-shaped object for the blocks to read: the window's dates, every loaded week's slots. */
+  _merge() {
+    const keys = Object.keys(this._weeks).sort();
+    const first = this._weeks[keys[0]];
+    this._week = {
+      week_start: first.week_start,
+      dates: this._window || first.dates,
+      slots: Object.assign({}, ...keys.map(k => this._weeks[k].slots)),
+      leftover_groups: Object.assign({}, ...keys.map(k => this._weeks[k].leftover_groups)),
+    };
+  },
+
+  async _load(body, soft = false) {
     const today = _planToday();
     const day = await App.api(`/api/board/day/${this._date}`);
-    const [week, recipesRes, ingredientsRes, ob, ol, od, todayDay, membersRes] = await Promise.all([
-      App.api(`/api/board?week=${day.week_start}`),
+    // Week view is the seven days going forward from the day on screen, so it can straddle two
+    // stored weeks; each block reads/writes the week its own date belongs to (_wkOf).
+    this._baseWs = day.week_start;
+    const weekMode = this._isWeekMode();
+    this._window = weekMode ? Array.from({ length: 7 }, (_, i) => _planShift(this._date, i)) : null;
+    const wss = weekMode ? Array.from(new Set(this._window.map(d => this._wkOf(d)))) : [day.week_start];
+    const [weeks, recipesRes, ingredientsRes, ob, ol, od, todayDay, membersRes] = await Promise.all([
+      Promise.all(wss.map(w => App.api(`/api/board?week=${w}`))),
       App.api("/api/recipes"),
       App.api("/api/ingredients"),
       App.api("/api/board/meal-options?meal=breakfast"),
@@ -82,11 +123,29 @@ App.plan = {
     const marketWeek = todayDay.market_week || shopWeek;      // the market list resets on its own
     this._listWeek = day.week_start > shopWeek ? day.week_start : shopWeek;
     this._marketWeek = day.week_start > marketWeek ? day.week_start : marketWeek;
-    this._week = week;
+    if (soft) {
+      // Compared with what's live on screen (our own saves already updated it), not with the last
+      // full draw -- otherwise every save of ours looks like somebody else's change and redraws.
+      const byStart = (a, b) => (a.week_start < b.week_start ? -1 : 1);
+      const live = JSON.stringify(Object.values(this._weeks).sort(byStart));
+      const fetched = JSON.stringify(weeks.slice().sort(byStart));
+      // a meal just added and not named yet would vanish in a redraw
+      const bare = Array.from(body.querySelectorAll('.mb[data-key*="~"]')).some(b => !b.querySelector(".mb-name").value.trim());
+      if (live === fetched || bare) {
+        this._recipes.splice(0, this._recipes.length, ...recipesRes.recipes);          // the page's lists are shared
+        this._ingredients.splice(0, this._ingredients.length, ...ingredientsRes.ingredients);   // by reference
+        App.groceriesPanel.refresh();                // (the list may have changed, though)
+        return false;
+      }
+    }
+    this._weeks = {};
+    weeks.forEach(w => { this._weeks[w.week_start] = w; });
+    this._merge();
     this._recipes = recipesRes.recipes;
     this._ingredients = ingredientsRes.ingredients;
     this._options = { breakfast: ob.options, lunch: ol.options, dinner: od.options };
     this._draw(body);
+    this._drawnFor = `${this._date}|${this._isWeekMode()}`;
   },
 
   /* Swipe the day sideways for the next / previous one (phones). The day follows the finger,
@@ -158,7 +217,7 @@ App.plan = {
     const target = (e) => e.target.closest(".mb") || e.target.closest(".meal-cell");
     cols.addEventListener("dragstart", (e) => {
       const blk = e.target.closest && e.target.closest(".mb");
-      if (!blk || !e.target.closest(".mb-head")) { if (e.target.closest && e.target.closest(".mb")) e.preventDefault(); return; }
+      if (!blk || !e.target.closest(".mb-head, .mb-sum")) { if (e.target.closest && e.target.closest(".mb")) e.preventDefault(); return; }
       from = blk.dataset.key;
       blk.classList.add("dragging");
       e.dataTransfer.effectAllowed = "move";
@@ -234,11 +293,13 @@ App.plan = {
         const slots = this._week.slots;
         const mine = Array.from(t.querySelectorAll(".mb")).map(b => b.dataset.key);
         to = mine.find(k => !slots[k]);
-        if (!to) to = (await App.api(`/api/board/${this._week.week_start}/next-slot?date=${t.dataset.date}&meal=${t.dataset.meal}`)).slot_key;
+        if (!to) to = (await App.api(`/api/board/${this._wkOf(t.dataset.date)}/next-slot?date=${t.dataset.date}&meal=${t.dataset.meal}`)).slot_key;
       }
       if (to === src) return;
       await Promise.all(this._blocks.map(b => b.flush()));
-      this._week = await App.api(`/api/board/${this._week.week_start}/slots-swap`, { method: "POST", body: { a: src, b: to } });
+      const wk = this._wkOf(src.split(":")[0]);
+      if (wk !== this._wkOf(to.split(":")[0])) { App.toast("Meals can only trade places within the same stored week"); return; }
+      await App.api(`/api/board/${wk}/slots-swap`, { method: "POST", body: { a: src, b: to } });
       this._pick = null;
       await this.render(document.getElementById("body"));
     } catch (err) { App.toast(err.message); }
@@ -252,6 +313,7 @@ App.plan = {
       recipes: this._recipes,
       ingredients: this._ingredients,
       getWeek: () => self._week,
+      weekFor: (key) => self._wkOf(key.split(":")[0]),
       members: () => self._members || [],
       optionsFor: (meal) => self._options[meal] || [],
       optionsListId: (meal) => `plan-opts-${meal}`,
@@ -265,7 +327,8 @@ App.plan = {
         self._options[meal] = res.options;
       },
       onWeekChanged: (week) => {
-        self._week = week;
+        self._weeks[week.week_start] = week;
+        self._merge();
         App.groceriesPanel.refresh();
         self.refreshSources();
       },
@@ -284,11 +347,13 @@ App.plan = {
     clearTimeout(this._srcTimer);
     this._srcTimer = setTimeout(async () => {
       if (!this._week) return;
-      const week = this._week.week_start;
-      let res;
-      try { res = await App.api(`/api/board/${week}/sources`); } catch (e) { return; }
-      if (!this._week || this._week.week_start !== week) return;
-      this._blocks.forEach(b => b.applySources(res.slots[b.key]));
+      const week = this._week;
+      const slots = {};
+      try {
+        for (const w of Object.keys(this._weeks)) Object.assign(slots, (await App.api(`/api/board/${w}/sources`)).slots);
+      } catch (e) { return; }
+      if (this._week !== week && (!this._week || this._week.week_start !== week.week_start)) return;
+      this._blocks.forEach(b => b.applySources(slots[b.key]));
     }, 350);
   },
 
@@ -298,16 +363,15 @@ App.plan = {
    * planned are left alone. */
   async _fillWeek(fromKey, recipeId, meal, servings) {
     const from = fromKey.split(":")[0];
-    let week = this._week;
+    const week = this._week;
     const lines = (week.slots[fromKey] || {}).ingredient_overrides || null;   // the same lines, not the recipe's first ones
     for (const date of this._week.dates) {
       if (date <= from) continue;
       if (Object.keys(week.slots).some(k => k.startsWith(`${date}:${meal}`))) continue;
-      week = await App.api(`/api/board/${week.week_start}/slots/${date}:${meal}`, {
+      await App.api(`/api/board/${this._wkOf(date)}/slots/${date}:${meal}`, {
         method: "PUT", body: { recipe_id: recipeId, servings_used: servings, ingredient_overrides: lines },
       });
     }
-    this._week = week;
     await this.render(document.getElementById("body"));
   },
 
@@ -324,11 +388,13 @@ App.plan = {
       ${PLAN_MEALS.map(m => `<datalist id="plan-opts-${m}">${(this._options[m] || []).map(o => `<option value="${App.esc(o.name)}">`).join("")}</datalist>`).join("")}
       <div class="plan ${weekMode ? "is-week" : "is-day"} ${this._listOpen ? "list-open" : ""}" id="plan">
         <div class="plan-cols ${weekMode ? "" : "one-day"}" id="plan-cols"></div>
+        <div class="split-handle" id="split-handle" title="Drag to resize the list"></div>
         <aside class="list-panel" id="list-panel"></aside>
       </div>
     `;
 
     const cols = body.querySelector("#plan-cols");
+    this._wireSplit(body.querySelector("#split-handle"), body.querySelector("#list-panel"));
     // The arithmetic that keeps seven columns and the docked list on a
     // 1366-wide screen with no sideways scroll, measured in the real shell:
     //   1366 - 250 (list) - 15 (scrollbar gutter) = 1101 usable
@@ -337,15 +403,20 @@ App.plan = {
     // this has to be redone -- 146 used to fit exactly, until a slot with
     // two meals in it made the grid tall enough to want a scrollbar.
     cols.style.gridTemplateColumns = weekMode
-      ? `repeat(${dates.length}, minmax(144px, 1fr))`
+      ? `repeat(${dates.length}, minmax(120px, 1fr))`
       : "minmax(0, 780px)";
     if (!weekMode) this._wireDaySwipe(cols, body);
     this._wireDrag(cols);
 
     dates.forEach((date, ci) => {
       const isToday = date === _planToday();
-      cols.appendChild(App.el(`
-        <div class="day-col-head ${isToday ? "today" : ""}" style="grid-column:${ci + 1};grid-row:1;">
+      // Week view: each day is its own column so it only takes the height it needs (a busy Monday
+      // doesn't stretch Tuesday's rows). Day view keeps the single explicit grid.
+      const holder = weekMode ? App.el(`<div class="day-col" style="grid-column:${ci + 1};"></div>`) : cols;
+      if (weekMode) cols.appendChild(holder);
+      const at = (row) => weekMode ? "" : `grid-column:${ci + 1};grid-row:${row};`;
+      holder.appendChild(App.el(`
+        <div class="day-col-head ${isToday ? "today" : ""}" style="${at(1)}">
           <span class="dow">${_planDow(date)}</span>
           <span class="dnum">${_planDayNum(date)}</span>
           ${isToday ? '<span class="today-dot"></span>' : ""}
@@ -357,18 +428,17 @@ App.plan = {
         // stretch; the cell is what keeps every day's breakfast on the
         // same grid row while it does.
         const cell = App.el(`<div class="meal-cell" data-date="${date}" data-meal="${meal}"></div>`);
-        cell.style.gridColumn = String(ci + 1);
-        cell.style.gridRow = String(mi + 2);
+        if (!weekMode) { cell.style.gridColumn = String(ci + 1); cell.style.gridRow = String(mi + 2); }
         this._indicesFor(date, meal).forEach(index => {
           const blk = App.mealBlock.create(host, date, meal, index);
           cell.appendChild(blk.el);
           this._blocks.push(blk);
         });
         cell.appendChild(this._addMealButton(host, cell, date, meal));
-        cols.appendChild(cell);
+        holder.appendChild(cell);
       });
-      cols.appendChild(App.el(`
-        <div class="day-col-foot" data-date="${date}" style="grid-column:${ci + 1};grid-row:5;">
+      holder.appendChild(App.el(`
+        <div class="day-col-foot" data-date="${date}" style="${at(5)}">
           <span class="field-label">Day</span><span class="v num">—</span>
           <button class="day-low" hidden></button>
           <div class="day-gaps" hidden></div>
@@ -388,6 +458,33 @@ App.plan = {
       this._focusBand(false);
       this._bandTimer = setInterval(() => this._tickBand(), 60000);
     }
+  },
+
+  /* The divider between the plan and the shopping list: drag to resize, the width is remembered. */
+  _wireSplit(handle, panel) {
+    const KEY = "meals.v1.split";
+    const clamp = (w) => Math.max(200, Math.min(Math.round(window.innerWidth * 0.6), w));
+    try { const saved = Number(localStorage.getItem(KEY)); if (saved) panel.style.width = clamp(saved) + "px"; } catch (e) {}
+    handle.addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+      handle.setPointerCapture(e.pointerId);
+      handle.classList.add("drag");
+      const move = (ev) => { panel.style.width = clamp(window.innerWidth - ev.clientX) + "px"; };
+      const up = () => {
+        handle.classList.remove("drag");
+        handle.removeEventListener("pointermove", move);
+        handle.removeEventListener("pointerup", up);
+        handle.removeEventListener("pointercancel", up);
+        try { localStorage.setItem(KEY, String(panel.offsetWidth)); } catch (err) {}
+      };
+      handle.addEventListener("pointermove", move);
+      handle.addEventListener("pointerup", up);
+      handle.addEventListener("pointercancel", up);
+    });
+    handle.addEventListener("dblclick", () => {
+      panel.style.width = "";
+      try { localStorage.removeItem(KEY); } catch (e) {}
+    });
   },
 
   /* Which meals sit at one day+meal: always the first, plus any indexed
@@ -437,11 +534,11 @@ App.plan = {
       ? _planRange(this._week.dates[0], this._week.dates[6])
       : _planFull(this._date);
     const nav = App.setNav(`
-      <button class="icon-btn" id="plan-prev" title="${weekMode ? "Previous week" : "Previous day"}">${App.icon('<path d="m15 18-6-6 6-6"/>')}</button>
+      <button class="icon-btn" id="plan-prev" title="${weekMode ? "Back 7 days" : "Previous day"}">${App.icon('<path d="m15 18-6-6 6-6"/>')}</button>
       <div class="plan-date">${label}</div>
-      <button class="icon-btn" id="plan-next" title="${weekMode ? "Next week" : "Next day"}">${App.icon('<path d="m9 18 6-6-6-6"/>')}</button>
+      <button class="icon-btn" id="plan-next" title="${weekMode ? "Forward 7 days" : "Next day"}">${App.icon('<path d="m9 18 6-6-6-6"/>')}</button>
       <button class="icon-btn" id="plan-import" title="Recipes from notes">${App.icon('<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9Z"/><path d="M14 3v6h6"/><path d="M12 12v5M9.5 14.5 12 17l2.5-2.5"/>')}</button>
-      <button class="btn-ghost btn-mini" id="plan-today">${weekMode ? "This week" : "Today"}</button>
+      <button class="btn-ghost btn-mini" id="plan-today">${weekMode ? "Today" : "Today"}</button>
       <div class="seg seg-mini" id="plan-mode">
         <button data-mode="" class="${!this._forceMode ? "active" : ""}">Auto</button>
         <button data-mode="week" class="${this._forceMode === "week" ? "active" : ""}">Week</button>

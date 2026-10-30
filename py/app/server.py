@@ -18,11 +18,11 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import JSONResponse, FileResponse, PlainTextResponse
+from fastapi.responses import JSONResponse, FileResponse, PlainTextResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from mealplanner import (bangers, aisles, batches, board, bulk, config, fdc, gaps, groceries, household, ingredients,
+from mealplanner import (watch, inbox_import, bangers, aisles, batches, board, bulk, config, fdc, gaps, groceries, household, ingredients,
                          catalog, learning, nutrition, pantry_scan, places, prices, recipe_import, recipes, routines,
                          stats, stock,
                          suggest)
@@ -34,6 +34,44 @@ PHOTOS_DIR = DATA_DIR / "photos"
 ensure_dirs()
 
 app = FastAPI(title="Meal Planner")
+
+
+_STAMPED = ("board", "recipes", "ingredients", "groceries", "stock", "household", "bangers", "places", "routines")
+
+
+@app.get("/api/stamp")
+def stamp():
+    """Newest change time across the plan's data files -- the laptop page polls this so edits the
+    phone makes (they arrive through Dropbox) show up without reopening the app."""
+    t = 0
+    for n in _STAMPED:
+        try:
+            t = max(t, (DATA_DIR / f"{n}.json").stat().st_mtime_ns)
+        except OSError:
+            pass
+    return {"stamp": t}
+
+
+@app.get("/api/events")
+def events():
+    """Server-sent events: one line when the plan's data changes or the Recipes app leaves something.
+    Fed by an inotify thread (watch.py), so nothing here polls; a window just holds the connection open.
+    A comment line every few minutes tells a dropped connection from a quiet one."""
+    if not watch.start():
+        raise HTTPException(503, "no file watching here")
+
+    def stream():
+        seen = watch.version
+        yield "retry: 3000\n\nevent: hello\ndata: {}\n\n"
+        while True:
+            seen, got = watch.wait(seen, 300)
+            if not got:
+                yield ": still here\n\n"
+                continue
+            for k in sorted(got):
+                yield f"event: {k}\ndata: {{}}\n\n"
+    return StreamingResponse(stream(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 @app.get("/api/meta")
@@ -455,62 +493,16 @@ def parse_recipe_text(body: RecipeTextBody):
 
 # ── recipes handed over by the Recipes app (laptop: files in DATA_DIR/inbox) ──
 
-def _norm_url(u: str) -> str:
-    return re.sub(r"[?#].*$", "", (u or "").strip().lower()).rstrip("/")
-
-
-def _find_recipe(url: str, name: str) -> Optional[dict]:
-    """The Recipes app's recipe in ours: by its page address, else by name."""
-    all_ = recipes.list_recipes()
-    if url:
-        hit = next((r for r in all_ if _norm_url(r.get("source_url", "")) == _norm_url(url)), None)
-        if hit:
-            return hit
-    return next((r for r in all_ if name and r["name"].strip().lower() == name.strip().lower()), None)
-
-
-def _apply_ops(d: Path) -> int:
-    """Stars and deletes made in the Recipes app (inbox/*.json). An op whose recipe hasn't arrived
-    yet (its .txt is picked up separately) waits for a later pass, and is dropped after a day."""
-    n = 0
-    for f in sorted(d.glob("*.json")):
-        try:
-            op = json.loads(f.read_text(encoding="utf-8"))
-        except Exception:
-            f.unlink()
-            continue
-        rec = _find_recipe(op.get("url", ""), op.get("name", ""))
-        if rec is None:
-            if time.time() - f.stat().st_mtime > 86400 or op.get("op") == "delete":
-                f.unlink()                       # nothing to delete / too old to wait for
-            continue
-        kind = op.get("op")
-        if kind == "delete":
-            for b in [b for b in bangers.list_bangers() if b["recipe_id"] == rec["id"]]:
-                bangers.delete(b["id"])
-            recipes.delete(rec["id"])
-        elif kind == "stars":                    # the full set of meals this recipe is a banger for
-            want = {m for m in op.get("meals", []) if m in board.MEALS}
-            have = {b["meal"]: b for b in bangers.list_bangers() if b["recipe_id"] == rec["id"]}
-            for m in want - set(have):
-                bangers.add(m, rec["id"])
-            for m in set(have) - want:
-                bangers.delete(have[m]["id"])
-        f.unlink()
-        n += 1
-    return n
+_norm_url = inbox_import.norm_url
+_find_recipe = inbox_import.find_recipe
+_apply_ops = inbox_import.apply_ops
 
 
 @app.get("/api/inbox")
 def inbox_list():
-    d = DATA_DIR / "inbox"
-    items = []
-    ops = 0
-    if d.exists():
-        ops = _apply_ops(d)
-        for f in sorted(d.glob("*.txt")):
-            items.append({"file": f.name, "text": f.read_text(encoding="utf-8", errors="replace")})
-    return {"items": items, "ops": ops}
+    """Takes in whatever the Recipes app left (the same code the background watcher runs); nothing is
+    handed to the page to import any more."""
+    return {"items": [], "ops": inbox_import.run_once()}
 
 
 @app.delete("/api/inbox/{name}")

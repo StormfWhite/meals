@@ -520,6 +520,9 @@ def _with_brand(ingredient_id: str) -> Optional[dict]:
         return None
 
 
+WHOLE_UNITS = {"each", "head", "bunch", "piece", "whole", "medium", "large", "small", "fruit", "egg", "clove", "can", "jar", "bottle", "bag", "pack"}
+
+
 def humanize_grams(ingredient: dict, grams: float) -> str:
     """A gram amount in whatever kitchen unit the ingredient is normally
     bought in, since "920g eggplant" reads worse than "2 medium"."""
@@ -527,8 +530,10 @@ def humanize_grams(ingredient: dict, grams: float) -> str:
     per_unit = (ingredient.get("unit_conversions") or {}).get(unit)
     if unit == "g" or not per_unit:
         return f"{grams:.0f} g"
-    if unit == "head":                          # nobody buys half a head of garlic
-        return f"{max(1, math.ceil(grams / per_unit - 0.05)):g} {unit}"
+    if unit in WHOLE_UNITS:                     # nobody buys 2.5 onions either: whole ones, rounded up
+        n = max(1, math.ceil(grams / per_unit - 0.05))
+        word = "" if unit == "each" else (unit if n == 1 else {"bunch": "bunches", "box": "boxes"}.get(unit, unit + "s"))
+        return f"{n:g} {word}".strip()
     count = round((grams / per_unit) * 2) / 2  # nearest half unit
     return f"{count:g} {unit}"
 
