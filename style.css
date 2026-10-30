@@ -903,3 +903,6 @@ button.mb-tag { cursor: pointer; font: inherit; font-size: 10px; }
 .gp-bar-video { width: 100%; max-height: 180px; border-radius: 8px; background: #000; object-fit: cover; }
 .gp-bar-code { width: 100%; margin-top: 4px; }
 .gp-bar-out { font-size: 11px; padding: 3px 0; }
+
+.mb-head { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.mb.picked { outline: 2px solid var(--accent); outline-offset: 1px; box-shadow: 0 6px 18px rgba(0,0,0,.18); }

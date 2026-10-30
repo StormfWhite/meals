@@ -179,20 +179,69 @@ App.plan = {
       from = null; clear();
       if (!t || !src) return;
       e.preventDefault();
-      let to = t.dataset.key;
-      try {
-        if (!to) {   // room in a cell: its first empty block, else a new "Also" place
-          const slots = this._week.slots;
-          const mine = Array.from(t.querySelectorAll(".mb")).map(b => b.dataset.key);
-          to = mine.find(k => !slots[k]);
-          if (!to) to = (await App.api(`/api/board/${this._week.week_start}/next-slot?date=${t.dataset.date}&meal=${t.dataset.meal}`)).slot_key;
-        }
-        if (to === src) return;
-        await Promise.all(this._blocks.map(b => b.flush()));
-        this._week = await App.api(`/api/board/${this._week.week_start}/slots-swap`, { method: "POST", body: { a: src, b: to } });
-        await this.render(document.getElementById("body"));
-      } catch (err) { App.toast(err.message); }
+      await this._swapInto(src, t);
     });
+
+    // Touch: press and hold a meal's header to pick it up (it lights up), then tap another meal
+    // -- on this day or after swiping to another -- to swap them; tap the picked one to put it down.
+    // (HTML5 drag never fires from a finger.)
+    let timer = null, sx = 0, sy = 0, held = false;
+    cols.addEventListener("touchstart", (e) => {
+      const head = e.target.closest(".mb-head");
+      if (!head || e.touches.length !== 1) return;
+      sx = e.touches[0].clientX; sy = e.touches[0].clientY; held = false;
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        held = true;
+        if (navigator.vibrate) navigator.vibrate(15);
+        const key = head.closest(".mb").dataset.key;
+        this._pick = this._pick === key ? null : key;
+        this._paintPick();
+        if (this._pick) App.toast("Tap another meal to swap");
+      }, 450);
+    }, { passive: true });
+    cols.addEventListener("touchmove", (e) => {
+      if (Math.abs(e.touches[0].clientX - sx) > 8 || Math.abs(e.touches[0].clientY - sy) > 8) clearTimeout(timer);
+    }, { passive: true });
+    const lift = () => clearTimeout(timer);
+    cols.addEventListener("touchend", lift);
+    cols.addEventListener("touchcancel", lift);
+    cols.addEventListener("contextmenu", (e) => { if (e.target.closest(".mb-head")) e.preventDefault(); });
+    cols.addEventListener("click", async (e) => {
+      if (held) { held = false; e.preventDefault(); e.stopPropagation(); return; }   // the click that ends the long press
+      if (!this._pick) return;
+      const t = target(e);
+      if (!t) return;
+      e.preventDefault(); e.stopPropagation();
+      const src = this._pick;
+      if (t.dataset.key === src) { this._pick = null; this._paintPick(); return; }
+      this._pick = null;
+      await this._swapInto(src, t);
+    }, true);
+  },
+
+  /* The meal picked up by touch, lit until it is swapped or put down. */
+  _paintPick() {
+    document.querySelectorAll("#plan-cols .mb").forEach(b => b.classList.toggle("picked", b.dataset.key === this._pick));
+  },
+
+  /* Swap meal `src` with whatever `t` is: a meal block (its key), or room in a cell (its first
+   * empty block, else a new "Also" place). Pending edits are saved first. */
+  async _swapInto(src, t) {
+    let to = t.dataset.key;
+    try {
+      if (!to) {
+        const slots = this._week.slots;
+        const mine = Array.from(t.querySelectorAll(".mb")).map(b => b.dataset.key);
+        to = mine.find(k => !slots[k]);
+        if (!to) to = (await App.api(`/api/board/${this._week.week_start}/next-slot?date=${t.dataset.date}&meal=${t.dataset.meal}`)).slot_key;
+      }
+      if (to === src) return;
+      await Promise.all(this._blocks.map(b => b.flush()));
+      this._week = await App.api(`/api/board/${this._week.week_start}/slots-swap`, { method: "POST", body: { a: src, b: to } });
+      this._pick = null;
+      await this.render(document.getElementById("body"));
+    } catch (err) { App.toast(err.message); }
   },
 
   // ── the host contract mealblock.js renders against ────────────────
@@ -327,6 +376,7 @@ App.plan = {
       `));
     });
 
+    this._paintPick();
     this._drawNav();
     this.refreshSources();
     App.groceriesPanel.mount(body.querySelector("#list-panel"), this._listWeek,
