@@ -291,6 +291,7 @@ def _priced(ingredient: dict, item: dict, shop: Optional[dict], allow_network: b
         "aisle": price.get("aisle", ""),
         "aisle_num": price.get("aisle_num"),
         "aisle_bay": price.get("aisle_bay"),
+        "low_stock": prices.is_low(price),
         # a Ralphs price saved before aisles were kept: worth one more lookup (price_missing)
         "aisle_known": price.get("source") != "kroger" or ("aisle_num" in price and "options" in price),
     }

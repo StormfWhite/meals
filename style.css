@@ -883,3 +883,23 @@ button.mb-tag { cursor: pointer; font: inherit; font-size: 10px; }
 .gp-row .icon-btn.gp-scan-at { opacity: 1; width: 22px; height: 22px; }
 .gp-row .icon-btn.gp-scan-at svg { width: 13px; height: 13px; }
 .bk-hint { color: var(--warn); }
+
+/* drag a meal by its header onto another to swap */
+.mb-head { cursor: grab; }
+.mb.dragging { opacity: .45; }
+.mb.drop-on, .meal-cell.drop-on { outline: 2px dashed var(--accent, #6aa9ff); outline-offset: 1px; }
+
+.dg-low { cursor: pointer; }
+.dg-low.sel { outline: 1.5px solid var(--accent); outline-offset: 1px; border-radius: 4px; }
+
+.gp-row .icon-btn.gp-low { opacity: 1; color: var(--warn); }
+.gp-else { flex-basis: 100%; display: flex; flex-direction: column; gap: 2px; padding: 3px 0 2px 26px; font-size: 11px; }
+.gp-else-row { display: flex; gap: 8px; align-items: baseline; min-width: 0; }
+.gp-else-store { font-weight: 650; }
+.gp-else-item { color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.gp-else-note { color: var(--text-dim); }
+
+.gp-stock-bar { flex: none; }
+.gp-bar-video { width: 100%; max-height: 180px; border-radius: 8px; background: #000; object-fit: cover; }
+.gp-bar-code { width: 100%; margin-top: 4px; }
+.gp-bar-out { font-size: 11px; padding: 3px 0; }

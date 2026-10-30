@@ -195,7 +195,12 @@ _SPELLINGS = {"dragonfruit": "dragon fruit", "bannanas?": "banana", "bananna": "
               "carlic": "garlic", "garlik": "garlic", "pastery": "pastry", "spanikopita": "spanakopita"}
 # a whole name that means one thing in a kitchen and another in USDA: "Pepper" by the teaspoon
 # is black pepper, never "Pepper, banana, raw" (2026-10-26)
-_MEANS = {"pepper": "black pepper", "ground pepper": "black pepper", "cracked pepper": "black pepper"}
+_MEANS = {"pepper": "black pepper", "ground pepper": "black pepper", "cracked pepper": "black pepper",
+          "apple cider vinegar": "vinegar cider", "parmigiano reggiano": "cheese parmesan hard",
+          "parmesan": "cheese parmesan hard", "romanesco": "cauliflower raw"}
+# USDA has no plain version of these and its fuzzy match lands on a restaurant pizza: straight to
+# the store's / Open Food Facts' label
+_NO_USDA = {"pizza dough", "sourdough pizza dough"}
 
 
 _GENERIC = {"fruit", "fruits", "vegetable", "vegetables", "meat", "mix", "blend", "sauce", "seeds",
@@ -229,6 +234,88 @@ def _usda_queries(name: str) -> list[str]:
     if len(words) > 1 and words[-1] not in _GENERIC and not known(words[0]):
         out.append(" ".join(words[1:]))
     return list(dict.fromkeys(out))
+
+
+_FOOD_WORDS = """avocado feta gnocchi parmesan parmigiano reggiano gruyere pistachio pistachios romanesco
+cauliflower broccoli spinach kale arugula lettuce cabbage cucumber zucchini eggplant asparagus mushroom
+mushrooms potato potatoes tomato tomatoes onion onions garlic ginger carrot carrots celery pepper peppers
+strawberry strawberries blueberry blueberries raspberry raspberries blackberry blackberries mango pineapple
+banana bananas apple apples orange oranges lemon lime grapes cherries peach peaches plum pear pears melon
+watermelon cantaloupe almond almonds walnut walnuts cashew cashews pecan pecans hazelnut peanut peanuts
+chickpeas lentils beans quinoa oats oatmeal barley couscous pasta spaghetti noodles bread bagel tortilla
+yogurt cheese mozzarella cheddar ricotta cottage butter cream milk eggs tofu tempeh hummus tahini olive
+vinegar mustard ketchup mayonnaise honey syrup sugar flour cornmeal cornstarch yeast cinnamon cumin paprika
+turmeric oregano basil thyme rosemary parsley cilantro dill mint bouillon broth stock chocolate cocoa
+coconut raisins cranberries dates figs prunes apricots pomegranate kiwi papaya artichoke beet beets radish
+turnip squash pumpkin butternut leek shallot scallion cardamom nutmeg vanilla pizza dough crust""".split()
+
+
+def _vocab(skip: str = "") -> set:
+    words = set(_FOOD_WORDS)
+    for i in by_id().values():
+        if skip and i["name"].lower() == skip.lower():
+            continue          # the ingredient's own (mistyped) words are no evidence
+        words.update(re.findall(r"[a-z]{4,}", (i.get("name") or "").lower()))
+        words.update(re.findall(r"[a-z]{4,}", (i.get("fdc_description") or "").lower()))
+    return words
+
+
+def _spell(name: str) -> Optional[str]:
+    """The name with each word USDA has never heard of mended to the nearest known food word
+    ("avacado" -> "avocado", "gnocci" -> "gnocchi"); None when nothing changed."""
+    import difflib
+    vocab = _vocab(name)
+    out = []
+    for w in re.findall(r"[A-Za-z']+|[^A-Za-z']+", name.lower()):
+        if re.fullmatch(r"[a-z']{4,}", w) and w not in vocab:
+            near = difflib.get_close_matches(w, vocab, n=1, cutoff=0.8)
+            w = near[0] if near else w
+        out.append(w)
+    fixed = "".join(out)
+    return fixed if fixed != name.lower() else None
+
+
+# a descriptor between the name and the food USDA lists
+_DESCRIPTORS = re.compile(r"\b(shelled|cave|aged|better|than|sourdough|unsweetened|fresh|organic|raw|sliced)\b")
+_ALIASES = {"feta": "feta cheese", "gruyere": "gruyere cheese", "bullion": "bouillon"}
+
+
+def _resolve_spelled(ingredient_id: str, ing: dict) -> Optional[dict]:
+    """USDA again for a name that was a typo or wore a descriptor. The fixed name is only a
+    query: the ingredient keeps the name the user typed."""
+    from . import fdc
+    low = ing["name"].strip().lower()
+    if low in _NO_USDA or "," in low or " and " in low:
+        return None           # several foods go to _resolve_blend; these never to a restaurant pizza
+    tries = []
+    fixed = _spell(ing["name"])
+    for base in filter(None, (fixed, ing["name"].lower())):
+        tries.append(base)
+        trimmed = re.sub(r"\s{2,}", " ", _DESCRIPTORS.sub(" ", base)).strip()
+        if trimmed and trimmed != base:
+            tries.append(trimmed)
+    for t in list(tries):
+        for k, v in _ALIASES.items():
+            if k in t:
+                tries.append(t.replace(k, v))
+    for q in dict.fromkeys(tries):
+        if q == ing["name"].lower():
+            continue          # the plain name already failed
+        match = fdc.best_match(q)
+        if match is not None:
+            return _bind_match(ingredient_id, ing, match, q)
+    return None
+
+
+def _resolve_loose(ingredient_id: str) -> Optional[dict]:
+    """Last resort: the store's label or Open Food Facts for an UNBRANDED name (brands.bind_loose)."""
+    from . import brands, fdc
+    try:
+        return brands.bind_loose(ingredient_id)
+    except fdc.NeedFetch:
+        raise
+    except Exception:
+        return None
 
 
 def _resolve_blend(ingredient_id: str, ing: dict) -> Optional[dict]:
@@ -370,13 +457,25 @@ def resolve_usda(ingredient_id: str, force: bool = False) -> Optional[dict]:
     if (ing.get("fdc_id") or (ing.get("fdc_description") or "").startswith("Equal parts")) and not force:
         return ing
     match = None
-    for query in _usda_queries(ing["name"]):
+    for query in ([] if ing["name"].strip().lower() in _NO_USDA else _usda_queries(ing["name"])):
         match = fdc.best_match(query)
         if match is not None:
             break
     if match is None:
-        return _with_brand(ingredient_id) or _resolve_blend(ingredient_id, ing)
+        # the fallback chain: a typo mended / a descriptor dropped (USDA again), a product the
+        # store or Open Food Facts knows (brands.py), a blend -- never a guess
+        if ing.get("manual_nutrients"):
+            return _with_brand(ingredient_id) or ing        # typed in by hand: no guessing over it
+        found = _resolve_spelled(ingredient_id, ing)
+        if found:
+            return found
+        return _with_brand(ingredient_id) or _resolve_blend(ingredient_id, ing) or _resolve_loose(ingredient_id)
+    return _bind_match(ingredient_id, ing, match, query)
 
+
+def _bind_match(ingredient_id: str, ing: dict, match: dict, query: str) -> Optional[dict]:
+    """Take a USDA match's category, portions and nutrition onto the ingredient."""
+    from . import fdc
     fields: dict = {"fdc_id": match["fdc_id"], "fdc_description": match["description"]}
     category = fdc.category_for(match.get("food_category", ""))
     if category != "other":

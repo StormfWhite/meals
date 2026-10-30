@@ -149,6 +149,52 @@ App.plan = {
     cols.addEventListener("touchcancel", end);
   },
 
+  /* Drag a meal by its header onto another meal to swap the two; onto empty room in a cell
+   * (or an empty block) to move it there. Pending edits are saved first, then the server
+   * trades the slots (board.swap_slots) and the week is drawn again. */
+  _wireDrag(cols) {
+    let from = null;
+    const clear = () => cols.querySelectorAll(".drop-on, .dragging").forEach(e => e.classList.remove("drop-on", "dragging"));
+    const target = (e) => e.target.closest(".mb") || e.target.closest(".meal-cell");
+    cols.addEventListener("dragstart", (e) => {
+      const blk = e.target.closest && e.target.closest(".mb");
+      if (!blk || !e.target.closest(".mb-head")) { if (e.target.closest && e.target.closest(".mb")) e.preventDefault(); return; }
+      from = blk.dataset.key;
+      blk.classList.add("dragging");
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", from);
+    });
+    cols.addEventListener("dragover", (e) => {
+      if (!from) return;
+      const t = target(e);
+      if (!t) return;
+      e.preventDefault();
+      cols.querySelectorAll(".drop-on").forEach(x => { if (x !== t) x.classList.remove("drop-on"); });
+      t.classList.add("drop-on");
+    });
+    cols.addEventListener("dragend", () => { from = null; clear(); });
+    cols.addEventListener("drop", async (e) => {
+      const t = target(e);
+      const src = from;
+      from = null; clear();
+      if (!t || !src) return;
+      e.preventDefault();
+      let to = t.dataset.key;
+      try {
+        if (!to) {   // room in a cell: its first empty block, else a new "Also" place
+          const slots = this._week.slots;
+          const mine = Array.from(t.querySelectorAll(".mb")).map(b => b.dataset.key);
+          to = mine.find(k => !slots[k]);
+          if (!to) to = (await App.api(`/api/board/${this._week.week_start}/next-slot?date=${t.dataset.date}&meal=${t.dataset.meal}`)).slot_key;
+        }
+        if (to === src) return;
+        await Promise.all(this._blocks.map(b => b.flush()));
+        this._week = await App.api(`/api/board/${this._week.week_start}/slots-swap`, { method: "POST", body: { a: src, b: to } });
+        await this.render(document.getElementById("body"));
+      } catch (err) { App.toast(err.message); }
+    });
+  },
+
   // ── the host contract mealblock.js renders against ────────────────
   _host() {
     const self = this;
@@ -245,6 +291,7 @@ App.plan = {
       ? `repeat(${dates.length}, minmax(144px, 1fr))`
       : "minmax(0, 780px)";
     if (!weekMode) this._wireDaySwipe(cols, body);
+    this._wireDrag(cols);
 
     dates.forEach((date, ci) => {
       const isToday = date === _planToday();
@@ -447,11 +494,26 @@ App.plan = {
         <span class="dg-name">${App.esc(c.name)}</span><span class="dg-por num">${App.esc(c.portion)}</span>
         <span class="dg-helps num">${helps(c)}</span>
       </div>`;
+    // tap a low nutrient to see more of what fills it; tap it again to go back
+    const paintList = (key) => {
+      const set = key && day.focus && day.focus[key] ? day.focus[key] : day;
+      const have = set.have, buy = set.buy;
+      box.querySelectorAll(".dg-low").forEach(el => el.classList.toggle("sel", el.dataset.key === key));
+      box.querySelector(".dg-list").innerHTML = `
+        ${have.length ? `<div class="dg-head">${App.icon(GP_PANTRY)}<span>Already buy</span></div>${have.map(c => row(c, "have")).join("")}` : ""}
+        ${buy.length ? `<div class="dg-head">${App.icon(GP_CART)}<span>Could buy</span></div>${buy.map(c => row(c, "buy")).join("")}` : ""}`;
+      wireBuy();
+    };
     box.innerHTML = `
       <div class="dg-lows">${day.low.map(l => `
-        <span class="dg-low" title="${l.have} of ${l.target} ${l.unit}${App.esc(whoText(l))}"><span>${App.esc(l.label)}${l.who && l.who.length ? ` <span class="dg-who">${App.esc(l.who.join(", "))}</span>` : ""}</span><span class="dg-bar"><i style="width:${Math.min(100, l.pct)}%"></i></span><span class="num">${l.pct}%</span></span>`).join("")}</div>
-      ${day.have.length ? `<div class="dg-head">${App.icon(GP_PANTRY)}<span>Already buy</span></div>${day.have.map(c => row(c, "have")).join("")}` : ""}
-      ${day.buy.length ? `<div class="dg-head">${App.icon(GP_CART)}<span>Could buy</span></div>${day.buy.map(c => row(c, "buy")).join("")}` : ""}`;
+        <span class="dg-low" data-key="${App.esc(l.key)}" title="${l.have} of ${l.target} ${l.unit}${App.esc(whoText(l))} — tap for more that fill it"><span>${App.esc(l.label)}${l.who && l.who.length ? ` <span class="dg-who">${App.esc(l.who.join(", "))}</span>` : ""}</span><span class="dg-bar"><i style="width:${Math.min(100, l.pct)}%"></i></span><span class="num">${l.pct}%</span></span>`).join("")}</div>
+      <div class="dg-list"></div>`;
+    let picked = null;
+    box.querySelectorAll(".dg-low").forEach(el => el.addEventListener("click", () => {
+      picked = picked === el.dataset.key ? null : el.dataset.key;
+      paintList(picked);
+    }));
+    const wireBuy = () => {
     box.querySelectorAll(".dg-buy").forEach(btn => btn.addEventListener("click", async () => {
       const name = btn.closest(".dg-row").dataset.name;
       btn.disabled = true;
@@ -462,6 +524,8 @@ App.plan = {
         App.groceriesPanel.refresh();
       } catch (e) { btn.disabled = false; App.toast(`Couldn't add ${name}`); }
     }));
+    };
+    paintList(null);
     const date = foot.dataset.date;
     this._gapsOpen = this._gapsOpen || {};
     const open = this._gapsOpen[date] ?? !this._isWeekMode();

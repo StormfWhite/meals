@@ -190,6 +190,32 @@ def set_slot_extra(week_start_iso: str, key: str, **fields) -> dict:
     return get_week(week_start_iso)
 
 
+def swap_slots(week_start_iso: str, key_a: str, key_b: str) -> dict:
+    """Trade what two slots hold -- recipe, servings, edited lines, who eats it, a batch put
+    away -- so dragging Monday's dinner onto Thursday's moves both. An empty side is a plain
+    move. Routine meals are swapped as the real meals they are this week (written down at the
+    new place), and a routine slot left empty gets a tombstone so it doesn't refill."""
+    if key_a == key_b:
+        return get_week(week_start_iso)
+    live = get_week(week_start_iso)["slots"]
+    held = {k: ({f: v for f, v in live[k].items() if f != "from_routine"} if k in live else None)
+            for k in (key_a, key_b)}
+    data = _load()
+    week = data["weeks"].setdefault(week_start_iso, _empty_week())
+    for here, there in ((key_a, key_b), (key_b, key_a)):
+        slot = held[there]
+        if slot is not None:
+            week["slots"][here] = slot
+            continue
+        week["slots"].pop(here, None)
+        date, meal, _ = parse_slot_key(here)
+        if any(r["meal"] == meal for r in routines.for_date(date)):
+            week["slots"][here] = {"cleared": True}
+    _prune_leftover_groups(week)
+    _save(data)
+    return get_week(week_start_iso)
+
+
 def clear_slot(week_start_iso: str, key: str) -> dict:
     """Empty one slot. If a routine would immediately put the meal back,
     a tombstone is written instead of a plain delete -- otherwise "not

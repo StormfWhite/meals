@@ -43,6 +43,7 @@ TOP_LEVEL = ("calories_kcal", "protein_g", "fiber_g")
 KCAL = 2000
 LOW_BELOW = 0.7          # under 70% of what the day's calories would predict
 MIN_KCAL = 300           # less planned than this: too little to judge
+FOCUS_N = 8             # suggestions per kind when one low nutrient is tapped
 MIN_HELP = 0.08          # a suggestion closes at least 8% of one gap's daily amount
 
 NOT_WHOLE = re.compile(r"\b(juice|flour|extract|oil|sugar|syrup|honey|sauce|granola|bread|cracker|"
@@ -235,15 +236,25 @@ def for_days(days: dict[str, dict], on_hand: Optional[set] = None,
         in_day = set(day.get("ingredient_ids") or [])
         # the same food under another name ("yogurt" / "fage yogurt") counts as in the day too
         in_day_fdc = {o["fdc_id"] for o in owned if o["ingredient_id"] in in_day and o.get("fdc_id")}
-        have = _rank([o for o in owned if o["ingredient_id"] not in in_day and o.get("fdc_id") not in in_day_fdc], low)
-        have = [h for n, h in enumerate(have)          # and is offered once
-                if not h.get("fdc_id") or h["fdc_id"] not in {x.get("fdc_id") for x in have[:n]}]
-        for h in have:
-            h["in_stock"] = h["ingredient_id"] in on_hand
-        have.sort(key=lambda h: (-h["score"] * (1.25 if h["in_stock"] else 1.0)))
-        buy = _rank(buyable, low)
+        candidates = [o for o in owned if o["ingredient_id"] not in in_day and o.get("fdc_id") not in in_day_fdc]
+
+        def suggest(against):
+            have = _rank(candidates, against)
+            have = [h for n, h in enumerate(have)          # and is offered once
+                    if not h.get("fdc_id") or h["fdc_id"] not in {x.get("fdc_id") for x in have[:n]}]
+            for h in have:
+                h["in_stock"] = h["ingredient_id"] in on_hand
+            have.sort(key=lambda h: (-h["score"] * (1.25 if h["in_stock"] else 1.0)))
+            return have, _rank(buyable, against)
+
+        have, buy = suggest(low)
+        # tapping one low nutrient asks for more of what fills THAT one: ranked against it alone
+        focus = {}
+        for l in low:
+            h, b = suggest([l])
+            focus[l["key"]] = {"have": h[:FOCUS_N], "buy": b[:FOCUS_N]}
         out[date] = {"judged": True, "low": [{k: v for k, v in l.items() if k not in ("short", "scale", "ratio")} for l in low],
-                     "have": have[:per_kind], "buy": buy[:per_kind]}
+                     "have": have[:per_kind], "buy": buy[:per_kind], "focus": focus}
     return {"people": [{"name": p["name"], "share": p["share"]} for p in ppl], "days": out}
 
 

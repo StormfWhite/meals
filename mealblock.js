@@ -50,7 +50,7 @@ App.mealBlock = {
 
     const el = App.el(`
       <section class="mb" data-meal="${meal}" data-key="${App.esc(key)}">
-        <header class="mb-head">
+        <header class="mb-head" draggable="true" title="Drag onto another meal to swap them">
           ${index ? '<span class="mb-also" title="A second meal at this slot">+</span>' : App.icon(MB_ICONS[meal])}
           <span class="mb-label">${index ? "Also" : MB_LABELS[meal]}</span>
           <button class="mb-who" hidden></button>
@@ -77,8 +77,8 @@ App.mealBlock = {
       // this meal's usual ones first (learned order), then every other saved meal
       local: () => {
         const own = host.optionsFor(meal).slice();
-        const have = new Set(own.map(o => o.name.toLowerCase()));
-        return own.concat((host.recipes || []).filter(r => r.name && !have.has(r.name.toLowerCase()))
+        const have = new Set(own.map(o => (o.name || "").toLowerCase()));
+        return own.concat((host.recipes || []).filter(r => r.name && !have.has((r.name || "").toLowerCase()))
           .map(r => ({ name: r.name, recipe_id: r.id })));
       },
       onDelete: (item) => host.hideOption(meal, item),
@@ -108,15 +108,15 @@ App.mealBlock = {
     const recipeByName = (name) => {
       const t = (name || "").trim().toLowerCase();
       if (!t) return null;
-      const opt = host.optionsFor(meal).find(o => o.name.toLowerCase() === t);
+      const opt = host.optionsFor(meal).find(o => (o.name || "").toLowerCase() === t);
       const byOption = opt ? host.recipes.find(r => r.id === opt.recipe_id) : null;
-      return byOption || host.recipes.find(r => r.name.toLowerCase() === t) || null;
+      return byOption || host.recipes.find(r => (r.name || "").toLowerCase() === t) || null;
     };
 
     const ingredientByName = (name) => {
       const t = (name || "").trim().toLowerCase();
       if (!t) return null;
-      return host.ingredients.find(i => i.name.toLowerCase() === t) || null;
+      return host.ingredients.find(i => (i.name || "").toLowerCase() === t) || null;
     };
 
     const readRows = () => Array.from(rowsWrap.children).map(row => ({
@@ -725,8 +725,8 @@ App.mealBlock = {
       for (const r of all) {
         if (!r.name) continue;
         // half a word left behind ("frozen" beside "frozen dragonfruit pieces", no amount): not a line
-        const n = r.name.toLowerCase();
-        if (!r.amount.trim() && all.some(o => o !== r && o.name.toLowerCase().startsWith(n + " "))) continue;
+        const n = (r.name || "").toLowerCase();
+        if (!r.amount.trim() && all.some(o => o !== r && (o.name || "").toLowerCase().startsWith(n + " "))) continue;
         const amt = _mbParseAmount(r.amount);
         const known = ingredientByName(r.name);
         const unit = _mbUnit(amt, known);

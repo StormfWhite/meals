@@ -72,8 +72,8 @@ App.bulk = {
     const again = () => {
       const key = name.value.trim().toLowerCase();
       if (!key || key === filledFrom || (!filledFrom && this._readRows().length)) return;
-      const it = this._data.items.find(i => i.name.toLowerCase() === key);
-      const rec = !it && (this._recipes || []).find(r => r.name.toLowerCase() === key);
+      const it = this._data.items.find(i => (i.name || "").toLowerCase() === key);
+      const rec = !it && (this._recipes || []).find(r => (r.name || "").toLowerCase() === key);
       if (!it && !rec) return;
       filledFrom = key;
       if (it) this._fillRows(it.last.lines, it.last.yield_text || "", it.last.where);
@@ -82,7 +82,7 @@ App.bulk = {
     name.addEventListener("input", again);
     App.ingSuggest.attach(name, {
       local: () => this._data.items.map(i => ({ name: i.name, reason: Object.keys(i.have).length ? "on hand" : "made before" }))
-        .concat((this._recipes || []).filter(r => !this._data.items.some(i => i.name.toLowerCase() === r.name.toLowerCase()))
+        .concat((this._recipes || []).filter(r => !this._data.items.some(i => (i.name || "").toLowerCase() === (r.name || "").toLowerCase()))
           .map(r => ({ name: r.name, reason: "recipe" }))),
       onPick: () => again(),
     });
@@ -126,7 +126,7 @@ App.bulk = {
     // line's, so its stats show here once its USDA match lands -- not only after ✓
     row.querySelector(".bk-ing").addEventListener("change", async (e) => {
       const name = e.target.value.trim();
-      if (!name || this._ingredients.some(i => i.name.toLowerCase() === name.toLowerCase())) return;
+      if (!name || this._ingredients.some(i => (i.name || "").toLowerCase() === name.toLowerCase())) return;
       try {
         await App.resolveIngredientId(name, "g", this._ingredients, true);
         this._preview();
@@ -174,7 +174,7 @@ App.bulk = {
     return Array.from(this._body.querySelectorAll(".bk-row")).map(el => {
       const name = el.querySelector(".bk-ing").value.trim();
       const amt = _mbParseAmount(el.querySelector(".bk-amt").value) || { qty: 0, unit: "" };
-      const ing = this._ingredients.find(i => i.name.toLowerCase() === name.toLowerCase());
+      const ing = this._ingredients.find(i => (i.name || "").toLowerCase() === name.toLowerCase());
       return { el, name, qty: amt.qty, unit: _mbUnit(amt, ing), ingredient_id: ing ? ing.id : null };
     }).filter(r => r.name);
   },

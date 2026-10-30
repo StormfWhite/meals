@@ -49,6 +49,7 @@ const GP_CHECK = '<path d="M20 6 9 17l-5-5"/>';
 const GP_POT = '<path d="M4 10h16v7a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3Z"/><path d="M2 10h20"/><path d="M9 6c0-1 1-1 1-2M14 6c0-1 1-1 1-2"/>';   // made in bulk (bulk.js)
 const GP_PLACES = { fridge: [GP_FRIDGE, "Fridge"], pantry: [GP_DRY, "Dry"], freezer: [GP_SNOW, "Freezer"] };
 const gpPlace = (where, cls = "") => `<span class="gp-place where-${where} ${cls}" title="${GP_PLACES[where][1]}">${App.icon(GP_PLACES[where][0])}</span>`;
+const GP_BARCODE = '<path d="M4 5v14M7 5v14M11 5v14M14 5v14M18 5v14M20 5v14"/>';
 const GP_WARN = '<path d="M12 3 2 20h20Z"/><path d="M12 10v4M12 17h.01"/>';
 const GP_USUAL = '<path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"/><path d="M3 21v-5h5"/>';
 const gpPhone = () => window.matchMedia("(max-width: 760px)").matches;
@@ -209,6 +210,7 @@ App.groceriesPanel = {
         </button>
         <!-- in the head, not under 20+ rows: one tap whether the Pantry is open or not (Storm 2026-10-26) -->
         <label class="icon-btn gp-stock-cam" title="Photo of the fridge, pantry or freezer — fills in what's there to check and add">${App.icon(GP_CAMERA)}<input type="file" accept="image/*" hidden></label>
+        <button class="icon-btn gp-stock-bar" title="Scan a barcode — fills the add row with what it is">${App.icon(GP_BARCODE)}</button>
         </div>
         <div class="gp-stock-body"${this._stockOpen ? "" : " hidden"}>
         <div class="gp-rows" id="gp-stock-rows"></div>
@@ -411,16 +413,70 @@ App.groceriesPanel = {
       }
       this._drawScan();
     });
+    c.querySelector(".gp-stock-bar").addEventListener("click", () => this._barcode());
     this._drawScan();
+  },
+
+  /* A barcode -> the add row. The camera reads it where the browser can (BarcodeDetector: the
+   * phone); anywhere else type it, or point a USB scanner at the box. The product comes from
+   * Open Food Facts straight from the page (works on the phone build too) and lands in the
+   * Pantry add row, so picking fridge / dry / freezer adds it like anything typed. */
+  async _barcode() {
+    if (!this._stockOpen) this._toggleStock(true);
+    const box = this._container.querySelector(".gp-scan");
+    box.hidden = false;
+    box.innerHTML = `<div class="gp-scan-head"><span class="field-label">${App.icon(GP_BARCODE)} Barcode</span>
+        <button class="icon-btn gp-scan-x" title="Close">${App.icon(GP_X)}</button></div>
+      <video class="gp-bar-video" playsinline muted hidden></video>
+      <input class="gp-bar-code num" inputmode="numeric" placeholder="digits under the bars" spellcheck="false" autocomplete="off">
+      <div class="gp-bar-out dim"></div>`;
+    const video = box.querySelector("video"), input = box.querySelector(".gp-bar-code"), out = box.querySelector(".gp-bar-out");
+    let stream = null, live = true;
+    const close = () => { live = false; if (stream) stream.getTracks().forEach(t => t.stop()); box.hidden = true; box.innerHTML = ""; };
+    box.querySelector(".gp-scan-x").addEventListener("click", close);
+    const lookup = async (code) => {
+      code = code.replace(/\D/g, "");
+      if (code.length < 8) return;
+      out.textContent = "Looking it up…";
+      try {
+        const r = await fetch(`https://world.openfoodfacts.org/api/v2/product/${code}.json?fields=product_name,brands,quantity,product_quantity`);
+        const p = (await r.json()).product;
+        if (!p || !p.product_name) { out.textContent = `${code}: not in Open Food Facts — type the name`; return; }
+        const brand = (p.brands || "").split(",")[0].trim();
+        const name = brand && !p.product_name.toLowerCase().includes(brand.toLowerCase()) ? `${brand} ${p.product_name}` : p.product_name;
+        const grams = Number(p.product_quantity) || 0;
+        this._container.querySelector(".gp-stock-name").value = name;
+        this._container.querySelector(".gp-stock-qty").value = grams ? `${Math.round(grams)} g` : (p.quantity || "");
+        out.textContent = `${name} · ${p.quantity || "size unknown"} — now pick fridge, dry or freezer`;
+        close_after();
+      } catch (e) { out.textContent = "Couldn't reach Open Food Facts"; }
+    };
+    const close_after = () => { live = false; if (stream) stream.getTracks().forEach(t => t.stop()); video.hidden = true; };
+    input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); lookup(input.value); } });
+    input.addEventListener("input", () => { if (/^\d{12,14}$/.test(input.value.trim())) lookup(input.value); });   // a USB scanner types the digits
+    input.focus();
+    if (window.BarcodeDetector && navigator.mediaDevices?.getUserMedia) {
+      try {
+        const det = new BarcodeDetector({ formats: ["ean_13", "ean_8", "upc_a", "upc_e"] });
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+        video.srcObject = stream; video.hidden = false; await video.play();
+        const tick = async () => {
+          if (!live) return;
+          try { const hits = await det.detect(video); if (hits.length) { lookup(hits[0].rawValue); return; } } catch (e) {}
+          setTimeout(tick, 250);
+        };
+        tick();
+      } catch (e) { out.textContent = "Camera not available — type the digits"; }
+    } else out.textContent = "No camera scanning here — type the digits (or use a USB scanner)";
   },
 
   /* One item into the Pantry -- typed in the add row or ticked from a photo. True = it's in. */
   async _addStock(name, qty, where, quiet = false) {
       try {
         const ings = this._ingredients || [];
-        let match = ings.find(i => i.name.toLowerCase() === name.toLowerCase());
+        let match = ings.find(i => (i.name || "").toLowerCase() === name.toLowerCase());
         // a meal's name and a count ("chili 4", "4 blocks"): whole meal blocks put away (batches.py)
-        const meal = (App.plan && App.plan._recipes || []).find(r => r.name.toLowerCase() === name.toLowerCase());
+        const meal = (App.plan && App.plan._recipes || []).find(r => (r.name || "").toLowerCase() === name.toLowerCase());
         const count = qty.match(/^\s*(\d+(?:\.\d+)?)\s*(?:blocks?|servings?|srv)?\s*$/i);
         if (meal && count && (!match || /block|serv|srv/i.test(qty))) {
           const at = where === "fridge" ? "fridge" : "freezer";
@@ -754,12 +810,30 @@ App.groceriesPanel = {
       <input class="gp-row-qty num" placeholder="qty" value="${App.esc(item.unit_label)}" spellcheck="false" enterkeyhint="done" title="Amount — type it however you like">
       <input class="gp-row-price num${stale}" placeholder="$—" value="${price}"
              title="${item.price ? `${App.esc(item.price_label || "")}${item.price_age_days ? ` · ${item.price_age_days}d ago` : ""}${item.packages > 1 ? ` · ×${item.packages}` : ""}` : "What does one cost? Type it once."}">
+      ${item.low_stock ? `<button class="icon-btn gp-low" title="Low or out here — where else nearby has it?">${App.icon(GP_WARN)}</button>` : ""}
       <button class="icon-btn gp-move" title="Move to the ${other === "market" ? "farmer's market" : "grocery"} list">${App.icon(GP_SWAP)}</button>
       ${item.source === "extra" ? `<button class="icon-btn gp-row-remove-extra" title="Remove the amount added by hand">${App.icon(GP_X)}</button>` : ""}
     </div>`);
 
     const math = this._mathLine(item);
     if (math) row.appendChild(math);
+    const lowBtn = row.querySelector(".gp-low");
+    if (lowBtn) lowBtn.addEventListener("click", async () => {
+      let box = row.querySelector(".gp-else");
+      if (box) { box.remove(); return; }
+      box = App.el(`<div class="gp-else"><span class="gp-else-note">Checking nearby stores…</span></div>`);
+      row.appendChild(box);
+      let res;
+      try { res = await App.api(`/api/groceries/${this._wk(item.shop_list)}/items/${item.ingredient_id}/elsewhere`); }
+      catch (e) { box.innerHTML = `<span class="gp-else-note">Couldn't check: ${App.esc(e.message)}</span>`; return; }
+      box.innerHTML = res.stores.length ? res.stores.map(s => `
+        <div class="gp-else-row">
+          <a href="${App.esc(s.store_url)}" target="_blank" rel="noopener" class="gp-else-store" title="Open the store">${App.esc(s.name)}</a>
+          <span class="num">${s.distance_km} km</span>
+          <a href="${App.esc(s.product_url || s.store_url)}" target="_blank" rel="noopener" class="gp-else-item" title="${App.esc(s.label)}">$${s.price.toFixed(2)} ${App.esc(s.label)}</a>
+        </div>`).join("")
+        : `<span class="gp-else-note">${res.checked ? `None of ${res.checked} nearby stores has it either.` : "No other Kroger-family store to check nearby."}</span>`;
+    });
     if (item.sizes && item.sizes.length) _gpSizeList(row.querySelector(".gp-row-qty"), item.sizes);
 
     row.querySelector(".gp-chk").addEventListener("change", async (e) => {
@@ -779,7 +853,7 @@ App.groceriesPanel = {
     nameBox.addEventListener("change", async () => {
       const name = nameBox.value.trim();
       if (!name || name === item.name) { nameBox.value = item.name; return; }
-      const taken = this._ingredients.find(i => i.name.toLowerCase() === name.toLowerCase() && i.id !== item.ingredient_id);
+      const taken = this._ingredients.find(i => (i.name || "").toLowerCase() === name.toLowerCase() && i.id !== item.ingredient_id);
       try {
         if (item.source === "extra") {
           const to = await App.resolveIngredientId(name, "g", this._ingredients, true);
@@ -856,7 +930,7 @@ App.groceriesPanel = {
       rows.appendChild(App.el(`<div class="gp-row gp-pending"><span class="gp-row-name">${App.esc(name)}</span><span class="gp-row-need dim num">${App.esc(qty)}</span></div>`));
       this._addQueue = this._addQueue.then(async () => {
         const ingredients = this._ingredients;
-        let match = ingredients.find(i => i.name.toLowerCase() === name.toLowerCase());
+        let match = ingredients.find(i => (i.name || "").toLowerCase() === name.toLowerCase());
         // Something not in the catalog yet is created (and matched to USDA)
         // rather than refused -- the list is allowed to teach the catalog.
         // Made at once, matched to USDA afterwards: the item is on the list the moment Enter is hit.
@@ -884,7 +958,7 @@ App.groceriesPanel = {
     let sizesFor = "";
     const offerSizes = async () => {
       const name = nameInput.value.trim().toLowerCase();
-      const match = name && (this._ingredients || []).find(i => i.name.toLowerCase() === name);
+      const match = name && (this._ingredients || []).find(i => (i.name || "").toLowerCase() === name);
       if (!match || sizesFor === match.id) return;
       sizesFor = match.id;
       const res = await App.api(`/api/groceries/${this._weekStart}/sizes/${match.id}`).catch(() => ({ sizes: [] }));

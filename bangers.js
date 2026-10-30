@@ -130,7 +130,7 @@ App.bangers = {
     input.addEventListener("keydown", (e) => {
       if (e.key === "Enter") {
         const t = input.value.trim().toLowerCase();
-        const r = this._recipes.find(x => x.name.toLowerCase() === t);
+        const r = this._recipes.find(x => (x.name || "").toLowerCase() === t);
         if (r) this._add(meal, r.id); else App.toast("No saved meal with that name");
       } else if (e.key === "Escape" && !App.ingSuggest.isOpen()) {
         this._adding = null;

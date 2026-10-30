@@ -292,3 +292,80 @@ def per100(ingredient: dict, generic: Optional[dict]) -> dict:
     out["description"] = desc if desc.lower().startswith(b["brand"].lower()) else f'{b["brand"]} {desc}'.strip()
     out["food_category"] = b.get("food_category") or base.get("food_category", "")
     return out
+
+
+# ── an unbranded name USDA couldn't place: the store's label, then Open Food Facts ──────────
+
+def _all_words(name: str, text: str) -> bool:
+    have = {_stem(w) for w in _words(text)}
+    return all(_stem(w) in have for w in _words(name))
+
+
+def _off_generic(name: str) -> Optional[dict]:
+    """Open Food Facts product whose name holds EVERY word of the ingredient and has a label;
+    of several, the one in the middle of their calories (one odd entry can't set the numbers)."""
+    data = fdc.get_json(OFF_SEARCH, {"search_terms": name, "search_simple": 1, "action": "process",
+                                     "json": 1, "page_size": 30,
+                                     "fields": "code,product_name,brands,nutriments,serving_quantity,categories"},
+                        headers={"User-Agent": "MealPlanner/1.0 (personal use)"})
+    hits = []
+    for p in data.get("products", []):
+        n = p.get("nutriments") or {}
+        k = n.get("energy-kcal_100g")
+        if k is None or not 0 <= float(k) <= 900 or not _all_words(name, p.get("product_name") or ""):
+            continue
+        hits.append((float(k), p))
+    if len(hits) < 2:
+        return None
+    hits.sort(key=lambda h: h[0])
+    k, p = hits[len(hits) // 2]
+    per100, listed = _off_per100(p["nutriments"])
+    return {"source": "off", "id": p.get("code"), "brand": "", "description": p.get("product_name") or name,
+            "food_category": (p.get("categories") or "").split(",")[0].strip(),
+            "per100": per100, "listed": listed, "portions": {}}
+
+
+def bind_loose(ingredient_id: str) -> Optional[dict]:
+    """For a name no USDA record fits: the Kroger label of the product the store matched (every
+    word of the name in it), else Open Food Facts. The numbers are stored as the ingredient's
+    `brand` label with an empty brand, and read like any other label (per100 above)."""
+    from . import ingredients, nutrition, places, prices
+    ing = ingredients.get(ingredient_id)
+    if ing is None or ing.get("fdc_id"):
+        return None
+    hit = None
+    shop = None
+    try:
+        from . import groceries
+        shop = groceries.active_shop("grocery")
+        if shop and places.chain_of(shop) == "kroger":
+            prices.price_for(ing, shop, allow_network=True)      # remembers the store's label
+        for lab in prices.kroger_label_for(ingredient_id)[:1]:
+            serving = lab["serving"]
+            grams = serving.get("g") or nutrition.qty_to_grams(ing, serving["qty"], serving["unit"])
+            if not grams or not _all_words(ing["name"], lab["description"]):
+                continue
+            per = {k: v * 100.0 / grams for k, v in lab["per_serving"].items()}
+            if not 0 <= per.get("calories_kcal", -1) <= 900:
+                continue
+            hit = {"source": "kroger", "id": lab["upc"], "brand": "", "description": lab["description"],
+                   "food_category": (lab["categories"] or [""])[0],
+                   "per100": {**{k: per.get(k, 0.0) for k in TOP},
+                              "vitamins": {k: v for k, v in per.items() if k not in TOP}},
+                   "listed": list(per), "portions": {"serving": round(grams, 2)}}
+    except fdc.NeedFetch:
+        raise
+    except Exception:
+        hit = None
+    if hit is None:
+        hit = _off_generic(ing["name"])
+    if hit is None:
+        return None
+    with ingredients.LOCK:
+        data = ingredients._load()
+        row = next(i for i in data["ingredients"] if i["id"] == ingredient_id)
+        row["brand"] = {k: hit[k] for k in ("source", "id", "brand", "description", "food_category", "per100", "listed")}
+        if hit.get("portions"):
+            row["unit_conversions"] = {**hit["portions"], **(row.get("unit_conversions") or {})}
+        ingredients._save(data)
+    return ingredients.get(ingredient_id)

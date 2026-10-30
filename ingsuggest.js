@@ -63,7 +63,7 @@ App.ingSuggest = {
     if (this._input !== input) return false;
     const item = this.active();
     const typed = ((this._opts && this._opts.query) ? this._opts.query(input.value) : input.value).trim().toLowerCase();
-    if (item && (this._moved || (typed && item.name.toLowerCase().startsWith(typed) && item.name.toLowerCase() !== typed))) {
+    if (item && (this._moved || (typed && (item.name || "").toLowerCase().startsWith(typed) && (item.name || "").toLowerCase() !== typed))) {
       this.accept(item);
       return true;
     }
@@ -100,11 +100,11 @@ App.ingSuggest = {
       // (recency x frequency, see board.meal_options), so just filter it
       const t = input.value.trim().toLowerCase();
       const all = opts.local();
-      const hits = t ? all.filter(o => o.name.toLowerCase().includes(t)) : all;
-      this._items = hits.sort((a, b) => (b.name.toLowerCase().startsWith(t) ? 1 : 0) - (a.name.toLowerCase().startsWith(t) ? 1 : 0)).slice(0, 8);
+      const hits = t ? all.filter(o => (o.name || "").toLowerCase().includes(t)) : all;
+      this._items = hits.sort((a, b) => ((b.name || "").toLowerCase().startsWith(t) ? 1 : 0) - ((a.name || "").toLowerCase().startsWith(t) ? 1 : 0)).slice(0, 8);
       // a typed meal name is never REPLACED unless clicked -- but one it starts is completed
       // by Enter/Tab (takeActive): the top row is marked only when it begins with what's typed
-      this._index = t && this._items.length && this._items[0].name.toLowerCase().startsWith(t) ? 0 : -1;
+      this._index = t && this._items.length && (this._items[0].name || "").toLowerCase().startsWith(t) ? 0 : -1;
       this._moved = false;
       this._draw(input);
       return;
@@ -130,9 +130,9 @@ App.ingSuggest = {
     if (opts.extra) {
       // the caller's own rows (the Pantry: saved meals put away as blocks), matched the same way
       const t = q.toLowerCase();
-      const have = new Set(this._items.map(i => i.name.toLowerCase()));
-      const more = opts.extra().filter(o => !have.has(o.name.toLowerCase()) && (!t || o.name.toLowerCase().includes(t)));
-      more.sort((a, b) => (b.name.toLowerCase().startsWith(t) ? 1 : 0) - (a.name.toLowerCase().startsWith(t) ? 1 : 0));
+      const have = new Set(this._items.map(i => (i.name || "").toLowerCase()));
+      const more = opts.extra().filter(o => !have.has((o.name || "").toLowerCase()) && (!t || (o.name || "").toLowerCase().includes(t)));
+      more.sort((a, b) => ((b.name || "").toLowerCase().startsWith(t) ? 1 : 0) - ((a.name || "").toLowerCase().startsWith(t) ? 1 : 0));
       this._items = [...this._items, ...more].slice(0, 9);
     }
     // Typed something -> the top row is what Tab completes to. Empty box ->

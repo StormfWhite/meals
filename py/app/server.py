@@ -483,6 +483,17 @@ class SlotBody(BaseModel):
     ingredient_overrides: Optional[list[RecipeIngredient]] = None
 
 
+class SwapBody(BaseModel):
+    a: str
+    b: str
+
+
+@app.post("/api/board/{week}/slots-swap")
+def swap_slots(week: str, body: SwapBody):
+    """Drag a meal onto another: the two trade places (an empty target = a move)."""
+    return board.swap_slots(week, body.a, body.b)
+
+
 class LinkBody(BaseModel):
     slot_a: str
     slot_b: str
@@ -1219,6 +1230,15 @@ def remove_extra_grocery_item(week: str, ingredient_id: str):
 
 class SwapBody(BaseModel):
     to: str
+
+
+@app.get("/api/groceries/{week}/items/{ingredient_id}/elsewhere")
+def grocery_item_elsewhere(week: str, ingredient_id: str):
+    """The item is low or out at the picked store: other Kroger-family shops nearby that have it."""
+    ing = ingredients.get(ingredient_id)
+    if ing is None:
+        raise HTTPException(404, "no such ingredient")
+    return prices.elsewhere(ing, groceries.active_shop("grocery"))
 
 
 @app.post("/api/groceries/{week}/items/{ingredient_id}/swap")

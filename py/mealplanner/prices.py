@@ -65,7 +65,8 @@ def remember(ingredient_id: str, shop: Optional[dict], price: float,
              package_g: Optional[float] = None, label: str = "",
              source: str = "typed", aisle: Optional[dict] = None,
              options: Optional[list] = None, nutrition: Optional[dict] = None,
-             with_nutrition: bool = False) -> dict:
+             with_nutrition: bool = False, stock: Optional[str] = None,
+             url: Optional[str] = None) -> dict:
     data = _load()
     per_store = data["prices"].setdefault(_store_key(shop), {})
     entry = {
@@ -78,6 +79,10 @@ def remember(ingredient_id: str, shop: Optional[dict], price: float,
     }
     if options is not None:
         entry["options"] = options
+    if stock:
+        entry["stock"] = stock           # Kroger's stockLevel at that store: HIGH / LOW / TEMPORARILY_OUT_OF_STOCK
+    if url:
+        entry["url"] = url
     if with_nutrition:
         entry["nutrition"] = nutrition      # None too: "Kroger has no label for it", not asked again
     per_store[ingredient_id] = entry
@@ -259,6 +264,11 @@ NON_FOOD = {"personal care", "health & beauty", "beauty", "baby", "pet care", "p
             "household", "paper & plastic products", "home & garden", "kitchen", "health", "pharmacy"}
 
 
+def _product_url(product: dict) -> Optional[str]:
+    uri = product.get("productPageURI") or ""
+    return "https://www.kroger.com" + uri.split("?")[0] if uri.startswith("/") else None
+
+
 def _stem(word: str) -> str:
     word = word.lower().strip(".,®™'’")
     return word[:-1] if len(word) > 3 and word.endswith("s") and not word.endswith("ss") else word
@@ -307,6 +317,8 @@ def kroger_price(name: str, location_id: str) -> Optional[dict]:
             "package_g": package_g,
             **_aisle(product.get("aisleLocations") or []),
             "source": "kroger",
+            "stock": (item.get("inventory") or {}).get("stockLevel"),
+            "url": _product_url(product),
             "nutrition": _kroger_label(product, package_g),
         }))
     if not ranked:
@@ -353,7 +365,8 @@ def price_for(ingredient: dict, shop: Optional[dict], allow_network: bool = True
     entry = remember(ingredient["id"], shop, live["price"], live.get("package_g"),
                      live.get("label", ""), source="kroger",
                      aisle={k: live.get(k) for k in ("aisle", "aisle_num", "aisle_bay")},
-                     options=live.get("options", []), nutrition=live.get("nutrition"), with_nutrition=True)
+                     options=live.get("options", []), nutrition=live.get("nutrition"), with_nutrition=True,
+                     stock=live.get("stock"), url=live.get("url"))
     if live.get("nutrition"):
         _bind_label(ingredient)
     return {**entry, "age_days": 0}
@@ -390,3 +403,53 @@ def packages_needed(planned_g: float, package_g: Optional[float]) -> int:
     if not package_g or package_g <= 0 or not planned_g:
         return 1
     return max(1, math.ceil(planned_g / package_g))
+
+
+# ── low or out at the picked store: where else nearby has it ────────────────
+
+LOW_STOCK = {"LOW", "TEMPORARILY_OUT_OF_STOCK"}
+NEARBY_KM = 15.0
+
+
+def is_low(entry: Optional[dict]) -> bool:
+    return bool(entry) and entry.get("stock") in LOW_STOCK
+
+
+def elsewhere(ingredient: dict, shop: Optional[dict], limit: int = 4) -> dict:
+    """Other shops near the picked one that stock this ingredient, nearest first. Only Kroger
+    banners can be CHECKED (their API says the stock level per store), so only those are
+    offered as 'has it'; every answer carries a link to the shop (its own site, else a map)."""
+    from . import places
+
+    if not shop or shop.get("lat") is None or not kroger_configured():
+        return {"stores": [], "checked": 0}
+    cands = []
+    for s in places.stores_near(shop["lat"], shop["lon"], "grocery"):
+        if s.get("id") == shop.get("id") or places.chain_of(s) != "kroger":
+            continue
+        if s.get("distance_km", 0) <= NEARBY_KM:
+            cands.append(s)
+    out, checked = [], 0
+    for s in cands[:8]:
+        loc = kroger_location_id(s)
+        if not loc:
+            continue
+        checked += 1
+        hit = kroger_price(ingredient["name"], loc)
+        if not hit or hit.get("stock") in LOW_STOCK:
+            continue
+        out.append({"name": s["name"], "address": s.get("address", ""),
+                    "distance_km": s.get("distance_km"), "price": hit["price"],
+                    "label": hit.get("label", ""), "stock": hit.get("stock"),
+                    "product_url": hit.get("url"), "store_url": _store_url(s)})
+        if len(out) >= limit:
+            break
+    return {"stores": out, "checked": checked}
+
+
+def _store_url(s: dict) -> str:
+    """The shop's own site when OpenStreetMap has one, else a map pin."""
+    if s.get("website"):
+        return s["website"]
+    q = urllib.parse.quote_plus(f"{s.get('name', '')} {s.get('address', '')}".strip())
+    return f"https://www.google.com/maps/search/?api=1&query={q}"

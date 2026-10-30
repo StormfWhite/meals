@@ -231,6 +231,7 @@ def _fetch_stores(lat: float, lon: float, kind: str) -> Optional[list[dict]]:
             "kind": tags.get("shop") or tags.get("amenity") or "",
             "address": address,
             "postcode": tags.get("addr:postcode") or "",
+            "website": tags.get("website") or tags.get("contact:website") or "",
             "lat": elat,
             "lon": elon,
             "distance_km": round(_haversine_km(lat, lon, elat, elon), 2),

@@ -95,7 +95,7 @@ App.closeModal = function () {
 // never blocks on ingredient bookkeeping. Mutates `ingredientsList` in
 // place so the caller's cache stays in sync with what's now on the server.
 App.resolveIngredientId = async function (name, unit, ingredientsList, later) {
-  const existing = ingredientsList.find(i => i.name.toLowerCase() === name.toLowerCase());
+  const existing = ingredientsList.find(i => (i.name || "").toLowerCase() === name.toLowerCase());
   if (existing) return existing.id;
   const res = await App.api("/api/ingredients", { method: "POST",
     body: { name, category: "other", default_unit: unit || "g", resolve: !later } });
