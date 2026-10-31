@@ -378,8 +378,9 @@ App.mealBlock = {
 
     // Seasonings (spices, dried herbs, salt, oils, sauces) come after the real ingredients under a hairline.
     // Only when the lines are drawn; a line typed in stays where it is.
-    const SEASONING = /\b(salt|pepper|peppercorn|cumin|paprika|cinnamon|turmeric|oregano|thyme|rosemary|sage|cayenne|chili (?:powder|flakes?)|chilli|red pepper flakes?|garlic powder|onion powder|powder|spices?|seasoning|za'?atar|sumac|nutmeg|cloves?|coriander seed|cardamom|bay leaf|bay leaves|vanilla|extract|baking (?:soda|powder)|yeast|msg|vinegar|(?:olive |sesame |vegetable |avocado |canola |coconut )?oil|soy sauce|tamari|hot sauce|cholula|sriracha|mustard|ketchup|sugar|honey|maple syrup|dried \w+|ground \w+|curry|garam masala|fennel seed|mustard seed|nutritional yeast|liquid smoke|cornstarch)\b/i;
-    const isSeasoning = (item) => !!item && SEASONING.test(item.name || "") && !/\b(?:bell|sweet|hot|jalape[nñ]o|poblano|serrano|banana|roasted red) peppers?\b|\bpepper(?:s)?$/i.test((item.name || "").replace(/black pepper|white pepper/i, "x"));
+    const SEASONING = /\b(salt|pepper|peppercorn|cumin|paprika|cinnamon|turmeric|oregano|thyme|rosemary|sage|cayenne|chili (?:powder|flakes?)|chilli|red pepper flakes?|garlic powder|onion powder|powder|spices?|seasoning|za'?atar|sumac|nutmeg|cloves?|coriander seed|cardamom|bay leaf|bay leaves|extract|baking (?:soda|powder)|yeast|msg|soy sauce|tamari|hot sauce|cholula|sriracha|mustard|ketchup|dried \w+|ground \w+|curry|garam masala|fennel seed|mustard seed|nutritional yeast|liquid smoke|cornstarch)\b/i;
+    const nameOf = (item) => { const g = item && (host.ingredients || []).find(i => i.id === item.ingredient_id); return g ? g.name : ""; };
+    const isSeasoning = (item) => { const n = nameOf(item); return !!n && SEASONING.test(n) && !/\b(?:bell|sweet|hot|jalape[nñ]o|poblano|serrano|banana|roasted red) peppers?\b|\bpepper(?:s)?$/i.test(n.replace(/black pepper|white pepper/i, "x")); };
     const drawRows = (list) => {
       rowsWrap.innerHTML = "";
       const all = list || [];

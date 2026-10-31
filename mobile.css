@@ -127,3 +127,43 @@ body.offline #topbar::after { content: "offline · saved on this phone"; font-si
 }
 /* whose meal: no hover on a phone, so the button stays faintly there on a planned meal */
 @media (max-width: 760px) { .mb.filled .mb-who { opacity: 0.45; } .mb .mb-who.on { opacity: 1; } .mb-who svg { width: 14px; height: 14px; } }
+
+/* The day on a phone, redesigned 2026-10-31 (Storm: "no wasted space, everything visible and easily editable"):
+ * the day's date is already in the top bar, so no day header; meal cards sit close; a meal with no name is just
+ * its head + name line; the little rarely-used buttons wait until the card is being edited; nothing is left
+ * blank under the lines. */
+@media (max-width: 760px) {
+  #topbar { padding: 2px 6px 0; gap: 0; }
+  #nav { padding: 0 0 2px; gap: 2px; }
+  .icon-btn { height: 34px; width: 38px; }
+  .plan-date { font-size: 13.5px; }
+  .btn-mini { padding: 6px 8px; font-size: 12.5px; }
+  .seg-mini button { padding: 6px 7px; font-size: 12px; }
+  .is-day .day-col-head { display: none; }
+  .plan-cols.one-day { padding: 4px 6px 84px; }
+  .is-day .day-col { gap: 4px; }
+  .is-day .meal-cell { gap: 4px; }
+  .is-day .mb { padding: 4px 6px 5px; gap: 2px; border-radius: 9px; }
+  .is-day .mb-head { min-height: 16px; }
+  .is-day .mb-name-row { gap: 2px; }
+  .is-day .mb-name { padding-top: 3px; padding-bottom: 3px; }
+  .is-day .mb:not(:focus-within) :is(.mb-banger, .mb-repeat, .mb-clear):not(.on) { display: none; }
+  .is-day .mb-rows { gap: 0; }
+  .is-day .mb-row input { padding-top: 1px; padding-bottom: 1px; }
+  .is-day .mb-amt { flex: 0 0 84px; }
+  .is-day .mb:has(.mb-name:placeholder-shown):not(:focus-within) :is(.mb-rows, .mb-foot, .mb-link) { display: none; }
+  .is-day .mb-foot:empty { display: none; }
+  .is-day .mb-foot { min-height: 0; }
+}
+@media (max-width: 760px) {
+  /* "another meal here" sits in the card's corner instead of taking a row of its own */
+  .is-day .meal-cell { position: relative; }
+  .is-day .meal-add { position: absolute; right: 6px; top: 3px; width: 20px; height: 20px; min-height: 0; padding: 0; margin: 0;
+    display: inline-flex; align-items: center; justify-content: center; opacity: .55; z-index: 3; }
+  .is-day .mb-total { margin-right: 24px; }
+  .is-day .mb-foot:has(> .mb-bulk:only-child):not(:focus-within) { display: none; }
+  .is-day .mb:focus-within .mb-foot { display: flex; }
+  #nav .icon-btn { width: 32px; }
+  #nav .btn-mini { padding: 6px 7px; }
+  .seg-mini button { padding: 6px 6px; }
+}
