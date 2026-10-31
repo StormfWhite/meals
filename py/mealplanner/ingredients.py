@@ -96,7 +96,9 @@ def add(name: str, category: str = "other", default_unit: str = "g",
     data = _load()
     # one ingredient per name: a second "Yogurt" (two adds racing, the phone and the laptop)
     # would be offered twice everywhere
-    same = next((i for i in data["ingredients"] if i["name"].strip().lower() == name.strip().lower()), None)
+    # ("Carrot" and "Carrots" are one too: a trailing s doesn't make it another food)
+    key = lambda n: n.strip().lower().rstrip("s")
+    same = next((i for i in data["ingredients"] if key(i["name"]) == key(name)), None)
     if same is not None:
         return same
     ingredient = {
