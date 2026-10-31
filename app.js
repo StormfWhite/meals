@@ -137,6 +137,32 @@ App.position = function () {
   });
 };
 
+/* In the shop: opening the app on a phone that is at the picked grocery store or farmer's market pulls
+ * up the grocery list at that shop's section (Storm 2026-10-31). Judged like the shop watch: within
+ * 400 m of the shop's map pin counts as inside. Once per open; if the list was already touched, or
+ * there's no fix, nothing happens. */
+App.listWhereIAm = async function () {
+  const pos = await App.position();
+  if (!pos) return;
+  const r = await App.api("/api/groceries/geofences").catch(() => null);
+  const rad = Math.PI / 180;
+  let best = null;
+  for (const f of (r && r.fences) || []) {
+    const a = Math.sin((f.lat - pos.lat) * rad / 2) ** 2 +
+      Math.cos(pos.lat * rad) * Math.cos(f.lat * rad) * Math.sin((f.lon - pos.lon) * rad / 2) ** 2;
+    const d = 12742000 * Math.asin(Math.sqrt(a));
+    if (d <= 400 && (!best || d < best.d)) best = { d, kind: f.kind };
+  }
+  if (!best || (App.plan && App.plan._listTouched)) return;
+  if (App.state.view !== "plan") App.setView("plan");
+  App.plan.toggleList(true);
+  for (let i = 0; i < 20; i++) {            // the list draws a moment after it opens
+    const sec = document.querySelector(`#list-panel .gp-section[data-list="${best.kind}"]`);
+    if (sec) { sec.scrollIntoView({ block: "start" }); return; }
+    await new Promise((ok) => setTimeout(ok, 250));
+  }
+};
+
 /* Swipe a row sideways to remove it (phones) -- grocery rows, market lines, a meal's ingredient
  * lines. The direction is decided on the first ~10px of travel, so a vertical scroll is never
  * mistaken for a swipe and a tap is still a tap; a field being typed in keeps its touches. Past a
@@ -338,6 +364,7 @@ function init() {
   App.api("/api/meta").catch(() => {}); // warms the connection, surfaces a dead server early
 
   App.setView(paneView || "plan");
+  if (!paneView && (window.MealsAndroid || /Mobi|iPhone|Android/.test(navigator.userAgent))) App.listWhereIAm().catch(() => {});
 
   // recipes handed over by the Recipes app: files in the inbox (laptop) or an intent text (Android shell)
   App.sharedIn = (text) => App.recipes.importShared(text);
