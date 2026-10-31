@@ -597,7 +597,7 @@ App.mealBlock = {
           });
           photos.appendChild(t);
         });
-        const add = App.el(`<label class="icon-btn mb-src-add" title="Add a photo of the recipe">${App.icon(MB_CAMERA)}<input type="file" accept="image/*" hidden></label>`);
+        const add = App.el(`<label class="icon-btn mb-src-add" title="Add a photo of the recipe">${App.icon(MB_CAMERA)}<input type="file" accept="image/*" capture="environment" hidden></label>`);
         add.querySelector("input").addEventListener("change", async (e) => {
           const files = Array.from(e.target.files || []);
           for (const f of files) {

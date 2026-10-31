@@ -242,7 +242,7 @@ App.groceriesPanel = {
           <span class="gp-stock-chev">${App.icon(GP_DOWN)}</span>
         </button>
         <!-- in the head, not under 20+ rows: one tap whether the Pantry is open or not (Storm 2026-10-26) -->
-        <label class="icon-btn gp-stock-cam" title="Photo of the fridge, pantry or freezer — fills in what's there to check and add">${App.icon(GP_CAMERA)}<input type="file" accept="image/*" hidden></label>
+        <label class="icon-btn gp-stock-cam" title="Photo of the fridge, pantry or freezer — fills in what's there to check and add">${App.icon(GP_CAMERA)}<input type="file" accept="image/*" capture="environment" hidden></label>
         <button class="icon-btn gp-stock-bar" title="Scan a barcode — fills the add row with what it is">${App.icon(GP_BARCODE)}</button>
         </div>
         <div class="gp-stock-body"${this._stockOpen ? "" : " hidden"}>
@@ -558,9 +558,13 @@ App.groceriesPanel = {
   },
 
   async _barcode() {
+    // One scanner at a time: pressing the button while it's open closes it. (A second press used to start another
+    // camera while the first still held it -- "Could not start video source" -- and the box sat off-screen.)
+    if (this._scanner) { this._scanner.close(); return; }
     if (!this._stockOpen) this._toggleStock(true);
     const box = this._container.querySelector(".gp-scan");
     box.hidden = false;
+    setTimeout(() => box.scrollIntoView({ block: "nearest", behavior: "smooth" }), 50);
     const placeBtns = Object.keys(GP_PLACES).map(w => `<button class="icon-btn where-${w}" data-where="${w}" title="${GP_PLACES[w][1]}">${App.icon(GP_PLACES[w][0])}</button>`).join("");
     box.innerHTML = `<div class="gp-scan-head"><span class="field-label">${App.icon(GP_BARCODE)} Scanning</span>
         <span class="gp-bar-n num"></span><span class="gp-stock-pick gp-bar-where">${placeBtns}</span>
@@ -576,8 +580,9 @@ App.groceriesPanel = {
     box.querySelectorAll(".gp-bar-where button").forEach(b => b.addEventListener("click", () => {
       where = where === b.dataset.where ? null : b.dataset.where; this._scanWhere = where; paintWhere();
     }));
-    const close = () => { live = false; if (stream) stream.getTracks().forEach(t => t.stop()); box.hidden = true; box.innerHTML = ""; this.refresh(); };
+    const close = () => { live = false; if (stream) stream.getTracks().forEach(t => t.stop()); box.hidden = true; box.innerHTML = ""; this._scanner = null; this.refresh(); };
     box.querySelector(".gp-scan-x").addEventListener("click", close);
+    this._scanner = { close, box };
 
     let ctx = null;                        // one shared audio context: a beep must not wait on creating one
     const beep = () => {
@@ -640,12 +645,21 @@ App.groceriesPanel = {
     try { decode = await this._decoder(); } catch (e) { msg.textContent = "Couldn't load the scanner — type the digits"; return; }
     if (!live) return;
     if (!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) { msg.textContent = "No camera here — type the digits (or use a USB scanner)"; return; }
+    const open = async () => {
+      try { return await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } } }); }
+      catch (e) { if (e && e.name === "NotAllowedError") throw e; return await navigator.mediaDevices.getUserMedia({ video: true }); }   // any camera beats none
+    };
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } } });
+      stream = await open();
       if (!live) { stream.getTracks().forEach(t => t.stop()); return; }
       try { await stream.getVideoTracks()[0].applyConstraints({ advanced: [{ focusMode: "continuous" }] }); } catch (e) {}
       video.srcObject = stream; await video.play(); msg.hidden = true;
-    } catch (e) { msg.textContent = "Camera not allowed — type the digits"; return; }
+    } catch (e) {
+      msg.textContent = e && e.name === "NotAllowedError" ? "Camera not allowed — allow it in the app's settings, or type the digits"
+        : e && e.name === "NotReadableError" ? "The camera is busy in another app — close it, or type the digits"
+        : `Camera didn't start (${(e && e.name) || "error"}) — type the digits`;
+      return;
+    }
     let busy = false;
     const loop = async () => {
       if (!live) return;
