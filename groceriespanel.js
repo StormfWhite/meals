@@ -394,9 +394,18 @@ App.groceriesPanel = {
 
   // ── Pantry: what's on hand -- running low, fridge, pantry, freezer (stock.py) ──
   // the Pantry button: open it and bring it into view
+  /* The Pantry button: unfold the Pantry and scroll to its head, where the camera is. The list may still be drawing
+   * when this is called (it was just opened), so it tries again for a few seconds. */
   openPantry() {
     this._stockOpen = true;
-    if (this._container && this._container.querySelector(".gp-stock")) this._toggleStock(true, true);
+    let tries = 0;
+    const go = () => {
+      const head = this._container && this._container.isConnected && this._container.querySelector(".gp-stock-headrow");
+      if (!head) { if (tries++ < 20) setTimeout(go, 150); return; }
+      if (!this._container.querySelector(".gp-stock").classList.contains("open")) this._toggleStock(true);
+      head.scrollIntoView({ block: "start", behavior: "smooth" });
+    };
+    go();
   },
 
   // a section of the list like the other two, under the market: one click on its heading opens it
@@ -427,7 +436,12 @@ App.groceriesPanel = {
       let name = nameIn.value.trim(), qty = qtyIn.value.trim();
       if (!name) return false;
       if (!qty) [name, qty] = _gpSplitAmount(name);
-      if (!qty) { qtyIn.focus(); return false; }     // the amount is the point: ask for it, keeping the place picked
+      if (!qty) {                                     // no amount typed: the usual pack (its saved size, else the store's), then ask
+        const have = (this._ingredients || []).find(i => (i.name || "").toLowerCase() === name.toLowerCase());
+        qty = have && have.pack_size && have.pack_size.text || "";
+        if (!qty) { try { qty = ((await App.api("/api/usual-pack", { method: "POST", body: { name } })) || {}).text || ""; } catch (e) { qty = ""; } }
+        if (!qty) { qtyIn.focus(); return false; }   // still nothing: ask for it, keeping the place picked
+      }
       nameIn.value = ""; qtyIn.value = ""; nameIn.focus();
       await this._addStock(name, qty, where);
       where = null; paint();
@@ -794,8 +808,15 @@ App.groceriesPanel = {
       _gpSuggest(nm, null, { week: () => this._weekStart, onPick: (item) => { r.name = item.name; r.ingredient_id = item.id || null; } });
       nm.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.keyCode === 13) { e.preventDefault(); App.ingSuggest.takeActive(nm); nm.blur(); } });
       el.querySelector(".gp-se-qty").addEventListener("input", (e) => { r.qty = e.target.value; r.estimated = false; });
-      el.querySelector(".gp-scan-at").addEventListener("click", () => {
+      el.querySelector(".gp-scan-at").addEventListener("click", async () => {
         r.where = order[(order.indexOf(at) + 1) % order.length];
+        // the place icon sends it: this row goes into the Pantry there at once
+        if (r.name.trim() && await this._addStock(r.name.trim(), r.qty.trim() || "1", r.where, true)) {
+          sc.rows = sc.rows.filter(x => x !== r);
+          if (!sc.rows.length) this._scan = null;
+          App.toast(`${r.name.trim()} → ${GP_PLACES[r.where][1].toLowerCase()}`);
+          this._reload();
+        }
         this._drawScan();
       });
       box.appendChild(el);
