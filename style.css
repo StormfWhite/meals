@@ -538,7 +538,6 @@ input.gp-row-name:focus { background: var(--panel); border-color: var(--border);
 .gp-add-row { display: flex; align-items: center; gap: 5px; }
 .gp-add-name { flex: 1; min-width: 0; font-size: 12px; padding: 5px 8px; }
 .gp-add-qty { width: 58px; min-width: 0; font-size: 12px; padding: 5px 6px; }
-.gp-free-add { flex: 1; min-width: 0; font-size: 12px; padding: 6px 8px; }
 /* the usuals: dimmed rows, tap = on the list. The ▾ that hides them is phone-only */
 .gp-sug-toggle { display: none; position: relative; }
 .gp-sug-n { position: absolute; top: 1px; right: 1px; font-size: 9px; font-weight: 700; color: var(--accent); }
