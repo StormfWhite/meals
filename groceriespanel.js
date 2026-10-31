@@ -64,6 +64,7 @@ App.groceriesPanel = {
   _range: "",
   _shops: { grocery: null, market: null },
   _sugOpen: { grocery: false, market: false },   // phone only: the ▾ in the add bar
+  _stockOpen: true,    // the Pantry opens already unfolded (Storm 2026-10-31)
   _addQueue: Promise.resolve(),
   _pending: [],        // typed but still being looked up (USDA, ~3 s each): shown at once, faintly
 
@@ -322,7 +323,12 @@ App.groceriesPanel = {
     // keeps it), so it leaves the list. Ticked while you're still shopping stays, struck through.
     const kind = rows.length && rows[0].shop_list === "market" ? "market" : "grocery";
     const tripAt = this._tripOf(kind);
-    const gone = (r) => r.checked && tripAt && (r.checked_at ? tripAt > r.checked_at : Date.now() - tripAt < 18 * 3600_000);
+    // No trip seen but it was ticked and the day is over (9 pm, or 6 am after a later tick): you went, so it counts as bought
+    // (the Pantry already counted it the moment it was ticked) and it leaves the list.
+    const dayOver = (t) => { const d = new Date(t), e = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 21);
+                             if (t > e.getTime()) { e.setDate(e.getDate() + 1); e.setHours(6); } return Date.now() > e.getTime(); };
+    const gone = (r) => r.checked && ((tripAt && (r.checked_at ? tripAt > r.checked_at : Date.now() - tripAt < 18 * 3600_000))
+                                     || (r.checked_at && dayOver(r.checked_at)));
     const boughtN = rows.filter(r => !r.covered && gone(r)).length;
     rows = rows.filter(r => !r.covered && !gone(r));
     const groups = new Map();

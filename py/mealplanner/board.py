@@ -190,6 +190,37 @@ def set_slot_extra(week_start_iso: str, key: str, **fields) -> dict:
     return get_week(week_start_iso)
 
 
+def week_of(date_iso: str) -> str:
+    return week_start_for(datetime.date.fromisoformat(date_iso), config.load()["reup_day"]).isoformat()
+
+
+def swap_across(key_a: str, key_b: str) -> dict:
+    """swap_slots for two days that may sit in different stored weeks (Saturday and next Monday)."""
+    wa, wb = week_of(key_a.split(":")[0]), week_of(key_b.split(":")[0])
+    if wa == wb:
+        return swap_slots(wa, key_a, key_b)
+    live = {wa: get_week(wa)["slots"], wb: get_week(wb)["slots"]}
+    held = {}
+    for w, k in ((wa, key_a), (wb, key_b)):
+        slot = live[w].get(k)
+        held[k] = {f: v for f, v in slot.items() if f != "from_routine"} if slot is not None else None
+    data = _load()
+    for w, here, there in ((wa, key_a, key_b), (wb, key_b, key_a)):
+        week = data["weeks"].setdefault(w, _empty_week())
+        if held[there] is not None:
+            week["slots"][here] = held[there]
+            continue
+        week["slots"].pop(here, None)
+        date, meal, _ = parse_slot_key(here)
+        if any(r["meal"] == meal for r in routines.for_date(date)):
+            week["slots"][here] = {"cleared": True}
+        _prune_leftover_groups(week)
+    for w in (wa, wb):
+        _prune_leftover_groups(data["weeks"][w])
+    _save(data)
+    return {"weeks": [get_week(wa), get_week(wb)]}
+
+
 def swap_slots(week_start_iso: str, key_a: str, key_b: str) -> dict:
     """Trade what two slots hold -- recipe, servings, edited lines, who eats it, a batch put
     away -- so dragging Monday's dinner onto Thursday's moves both. An empty side is a plain

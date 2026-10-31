@@ -305,11 +305,47 @@ App.plan = {
     } catch (err) { App.toast(err.message); }
   },
 
+  /* The swap button on a meal: a short list of the other days of this week, each with what its same
+   * meal is now; tap one and the two trade places (an empty day = a move). The finger-friendly way to
+   * what dragging does with a mouse. */
+  async _swapMenu(key, date, meal, btn) {
+    document.querySelectorAll(".mb-menu.swap").forEach(x => x.remove());
+    const days = Array.from({ length: 7 }, (_, i) => _planShift(date, i + 1));    // the next seven days
+    const seen = { ...this._weeks };                       // day view has only its own stored week loaded
+    await Promise.all(Array.from(new Set(days.map(d => this._wkOf(d)))).filter(w => !seen[w])
+      .map(async w => { seen[w] = await App.api(`/api/board?week=${w}`).catch(() => ({ slots: {} })); }));
+    const menu = App.el(`<div class="mb-menu swap">${days.map(d => {
+      const s = (seen[this._wkOf(d)] || this._week).slots[`${d}:${meal}`];
+      const rec = s && s.recipe_id ? (this._recipes || []).find(r => r.id === s.recipe_id) : null;
+      const what = rec ? rec.name : (s && s.meal_name) || "";
+      return `<button data-day="${d}">${App.esc(_planDow(d))} ${App.esc(_planDayNum(d))}${what ? `<span class="dim"> · ${App.esc(what)}</span>` : `<span class="dim"> · free</span>`}</button>`;
+    }).join("")}</div>`);
+    document.body.appendChild(menu);
+    const rect = btn.getBoundingClientRect();
+    menu.style.top = `${Math.max(8, Math.min(rect.bottom + 4, window.innerHeight - menu.offsetHeight - 8))}px`;
+    menu.style.left = `${Math.max(8, Math.min(rect.left - 120, window.innerWidth - menu.offsetWidth - 8))}px`;
+    const away = (e) => { if (!menu.contains(e.target)) { menu.remove(); document.removeEventListener("mousedown", away); document.removeEventListener("touchstart", away); } };
+    setTimeout(() => { document.addEventListener("mousedown", away); document.addEventListener("touchstart", away); }, 0);
+    menu.addEventListener("click", async (e) => {
+      const b = e.target.closest("button[data-day]");
+      if (!b) return;
+      menu.remove();
+      document.removeEventListener("mousedown", away); document.removeEventListener("touchstart", away);
+      try {
+        await Promise.all(this._blocks.map(x => x.flush()));
+        await App.api("/api/board/slots-swap-across", { method: "POST", body: { a: key, b: `${b.dataset.day}:${meal}` } });
+        App.toast(`Swapped with ${_planDow(b.dataset.day)}`);
+        await this.render(document.getElementById("body"));
+      } catch (err) { App.toast(err.message); }
+    });
+  },
+
   // ── the host contract mealblock.js renders against ────────────────
   _host() {
     const self = this;
     return {
       compact: this._isWeekMode(),
+      swapMenu: (key, date, meal, btn) => this._swapMenu(key, date, meal, btn),
       recipes: this._recipes,
       ingredients: this._ingredients,
       getWeek: () => self._week,

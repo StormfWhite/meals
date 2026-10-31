@@ -24,6 +24,7 @@ const MB_ICONS = {
   dinner: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/>',
 };
 const MB_STAR = '<path d="m12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9Z"/>';
+const MB_SWAP = '<path d="M7 7h13"/><path d="M16 3l4 4-4 4"/><path d="M17 17H4"/><path d="M8 13l-4 4 4 4"/>';
 const MB_REPEAT = '<path d="M17 2l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>';
 // where a recipe came from: an open book (a web page or a cookbook photo)
 const MB_BOOK = '<path d="M2 4h6a4 4 0 0 1 4 4v13a3 3 0 0 0-3-3H2Z"/><path d="M22 4h-6a4 4 0 0 0-4 4v13a3 3 0 0 1 3-3h7Z"/>';
@@ -61,6 +62,7 @@ App.mealBlock = {
           <input class="mb-serv num" type="number" min="0.5" step="0.5" title="Servings — 1: the lines are the whole pot, shared · 2: the lines are one person's, made twice" value="1">
           <button class="icon-btn mb-source" title="Recipe: a link or a cookbook photo">${App.icon(MB_BOOK)}</button>
           <button class="icon-btn mb-banger" title="Add to Bangers">${App.icon(MB_STAR)}</button>
+          <button class="icon-btn mb-swap" title="Swap this meal with another day's">${App.icon(MB_SWAP)}</button>
           <button class="icon-btn mb-repeat" title="Repeat this meal every week">${App.icon(MB_REPEAT)}</button>
           <button class="icon-btn mb-clear" title="${index ? "Remove this meal" : "Clear this meal"}">${App.icon('<path d="M18 6 6 18M6 6l12 12"/>')}</button>
         </div>
@@ -826,6 +828,11 @@ App.mealBlock = {
     });
 
     el.addEventListener("change", () => { markDirty(); commit().catch(err => App.toast(err.message)); });
+
+    el.querySelector(".mb-swap").addEventListener("click", (e) => {
+      e.preventDefault();
+      host.swapMenu(key, date, meal, e.currentTarget);
+    });
 
     el.querySelector(".mb-repeat").addEventListener("click", (e) => {
       e.preventDefault();

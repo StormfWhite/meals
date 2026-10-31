@@ -604,6 +604,12 @@ class SwapBody(BaseModel):
     b: str
 
 
+@app.post("/api/board/slots-swap-across")
+def swap_slots_across(body: SwapBody):
+    """The same trade, for two days that may sit in different stored weeks."""
+    return board.swap_across(body.a, body.b)
+
+
 @app.post("/api/board/{week}/slots-swap")
 def swap_slots(week: str, body: SwapBody):
     """Drag a meal onto another: the two trade places (an empty target = a move)."""
