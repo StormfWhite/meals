@@ -337,9 +337,20 @@ App.groceriesPanel = {
       items.forEach(item => {
         const row = this._structuredRow(item);
         if (item.meals && (item.meals.length > 1 || byAisle && item.meals.length)) row.querySelector(".gp-row-name").title = "For " + item.meals.join(", ");
-        // which meal(s) it's for, said on the row (grouped by meal the heading already names the first)
+        // ONE secondary line: which meal(s) it's for, the store's product, and a warning if it may go bad.
+        // The need / on-hand / lasts-till math stays on the row, folded away: tap the line to open it.
         const forMeals = byAisle ? (item.meals || []) : (item.meals || []).slice(1);
-        if (forMeals.length) row.appendChild(App.el(`<div class="gp-for" title="For ${App.esc((item.meals || []).join(", "))}">${App.icon(GP_MEAL)}<span>${byAisle ? "" : "also "}${App.esc(forMeals.join(" · "))}</span></div>`));
+        const bits = [];
+        if (forMeals.length) bits.push(`<span class="gp-sub-meals">${App.icon(GP_MEAL)}<span>${byAisle ? "" : "also "}${App.esc(forMeals.join(" · "))}</span></span>`);
+        if (item.product) bits.push(`<span class="gp-sub-prod">${App.esc(item.product)}</span>`);
+        if (item.wasted_g > 0.5) bits.push(`<span class="warn" title="Won't keep till it's next used — plan a meal with it, or buy less">${App.icon(GP_WARN)} ${_gpUs(item.wasted_g)} may go bad</span>`);
+        const hasMath = !!row.querySelector(".gp-math");
+        if (bits.length || hasMath) {
+          const sub = App.el(`<div class="gp-sub${hasMath ? " more" : ""}" title="${App.esc((item.meals || []).join(", "))}">${bits.join("")}</div>`);
+          if (hasMath) sub.addEventListener("click", (e) => { if (!e.target.closest("a,button,input")) row.classList.toggle("open"); });
+          const math = row.querySelector(".gp-math");
+          row.insertBefore(sub, math || null);
+        }
         wrap.appendChild(App.swipeAway(row, async () => {
           await App.api(`/api/groceries/${this._wk(item.shop_list)}/items/${item.ingredient_id}`, { method: "DELETE" });
           App.toast(`${item.name} off the list`);
@@ -870,7 +881,9 @@ App.groceriesPanel = {
       row.classList.toggle("done", e.target.checked);
       if (e.target.checked) window.MealsAndroid?.shopping?.();   // the phone starts watching for leaving the shop
       await App.api(`/api/groceries/${this._wk(item.shop_list)}/items/${item.ingredient_id}`, { method: "PUT", body: { checked: e.target.checked } });
-      this._reload();
+      // the row already changed under your finger; the totals catch up once you pause (a redraw per tick is the lag)
+      clearTimeout(this._tickTimer);
+      this._tickTimer = setTimeout(() => this._reload().catch(() => {}), 2500);
     });
 
     // Tap the name to change it. A hand-added row becomes the new item (amount, tick, list kept);

@@ -1042,3 +1042,40 @@ button.mb-tag { cursor: pointer; font: inherit; font-size: 10px; }
 .list-panel .gp-row:not(.gp-stock-row) > .icon-btn.gp-row-remove-extra { right: 44px; }
 .list-panel .gp-row:not(.gp-stock-row) > .icon-btn.gp-low { right: 64px; }
 .gp-row .icon-btn.gp-del:hover, .gp-row .icon-btn.gp-free-remove:hover { color: var(--bad, #d64545); opacity: 1; }
+
+/* the "…" note box on every ingredient line is gone, for every meal past and future; the input stays in the
+   DOM (hidden) so a note already saved on a line is carried through untouched instead of being wiped */
+.mb-note, .mb-note.has-note, .mb-note:focus { display: none !important; }
+
+/* ── the shopping list, tighter and easier to read (same type sizes): two lines at most per item ── */
+.list-panel .gp-row:not(.gp-stock-row) { padding: 3px 6px 3px; row-gap: 0; align-items: center;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent); border-radius: 0;
+  transition: opacity .18s ease, background-color .15s ease; }
+.list-panel .gp-row:not(.gp-stock-row):last-child { border-bottom: 0; }
+.list-panel .gp-row:not(.gp-stock-row):hover { background: color-mix(in srgb, var(--panel-2) 70%, transparent); }
+.list-panel input.gp-row-name { font-weight: 560; }
+.list-panel .gp-row-qty { color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.list-panel .gp-row-price { font-weight: 650; font-variant-numeric: tabular-nums; }
+.gp-sub { flex-basis: 100%; display: flex; align-items: center; gap: 0 8px; min-width: 0; padding: 0 0 1px 24px;
+  font-size: 10.5px; line-height: 1.3; color: var(--text-dim); overflow: hidden; max-height: 20px;
+  transition: max-height .2s ease, opacity .18s ease; }
+.gp-sub.more { cursor: pointer; }
+.gp-sub > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.gp-sub-meals { display: inline-flex; align-items: center; gap: 4px; flex: 0 1 auto; }
+.gp-sub-meals svg { width: 10px; height: 10px; flex: none; }
+.gp-sub-prod { flex: 1 1 0; opacity: .8; }
+.gp-sub .warn { flex: none; color: var(--warn); }
+.gp-sub .warn svg { width: 10px; height: 10px; vertical-align: -1px; }
+/* the folded math */
+.list-panel .gp-row:not(.open) > .gp-math { display: none; }
+.list-panel .gp-row.open > .gp-math { padding-top: 1px; }
+.list-panel .gp-row.open .gp-sub-prod { display: none; }   /* the open math line names the product itself */
+/* ticked: fades, strikes, and folds to one line -- smooth, not a redraw */
+.list-panel .gp-row.done { opacity: .5; }
+.list-panel .gp-row.done > .gp-sub, .list-panel .gp-row.done > .gp-math { max-height: 0; opacity: 0; padding: 0; }
+.check .box { transition: background-color .12s ease, border-color .12s ease, transform .12s ease; }
+.check input:checked + .box { transform: scale(1.06); }
+.gp-group { margin: 8px 0 2px; padding: 3px 6px; border-bottom: 0; letter-spacing: .07em; color: var(--text-dim);
+  background: color-mix(in srgb, var(--panel-2) 55%, transparent); border-radius: 5px; }
+.list-panel .gp-row:not(.gp-stock-row) .gp-row-qty { width: 66px; text-align: right; }
+.list-panel .gp-row:not(.gp-stock-row) > .icon-btn.gp-low { position: static; transform: none; right: auto; opacity: 1; margin: 0 -2px 0 2px; background: none; }
