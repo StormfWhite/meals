@@ -22,7 +22,7 @@ from fastapi.responses import JSONResponse, FileResponse, PlainTextResponse, Str
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from mealplanner import (watch, inbox_import, bangers, aisles, batches, board, bulk, config, fdc, gaps, groceries, household, ingredients,
+from mealplanner import (barcodes, watch, inbox_import, bangers, aisles, batches, board, bulk, config, fdc, gaps, groceries, household, ingredients,
                          catalog, learning, nutrition, pantry_scan, places, prices, recipe_import, recipes, routines,
                          stats, stock,
                          suggest)
@@ -367,6 +367,57 @@ def resolve_ingredient(ingredient_id: str, force: bool = False, js_fetch: bool =
     if ing is None:
         raise HTTPException(404, "no confident USDA match for that name")
     return {"ingredient": ing}
+
+
+class UsualPackBody(BaseModel):
+    name: str
+
+
+@app.post("/api/usual-pack")
+def usual_pack(body: UsualPackBody):
+    """How big one of these usually is, so a scanned item with no size on its label isn't a question: what the
+    ingredient was last said to come in, else the size of the product your store matches it to ("Black beans" =
+    the 15 oz can at Ralphs). {text: "15 oz"} or 404."""
+    name = body.name.strip()
+    ing = next((i for i in ingredients.list_ingredients() if (i.get("name") or "").lower() == name.lower()), None)
+    if ing and (ing.get("pack_size") or {}).get("text"):
+        return {"text": ing["pack_size"]["text"]}
+    shop = groceries.active_shop("grocery")
+    grams = None
+    try:
+        if ing:
+            entry = prices.price_for(ing, shop, allow_network=True)
+            grams = (entry or {}).get("package_g")
+        elif shop and prices.kroger_configured():
+            loc = prices.kroger_location_id(shop)
+            live = prices.kroger_price(name, loc) if loc else None
+            grams = (live or {}).get("package_g")
+    except Exception:
+        grams = None
+    if not grams:
+        raise HTTPException(404, "no usual size known")
+    return {"text": stock.us_amount(grams)}
+
+
+@app.post("/api/barcode/{code}")
+def barcode_lookup(code: str, js_fetch: bool = False):
+    """A barcode Open Food Facts didn't know: USDA's Branded Foods by UPC (barcodes.py). {name, qty} or 404.
+    On the phone a USDA answer not fetched yet comes back as 202 {"need": url} (like /resolve)."""
+    if not fdc.available():
+        raise HTTPException(404, "no USDA key")
+    if js_fetch:
+        fdc.JS_RESPONSES = fdc.JS_STORE
+    try:
+        got = barcodes.lookup(code)
+    except fdc.NeedFetch as need:
+        return JSONResponse({"need": need.url}, status_code=202)
+    except Exception:
+        got = None
+    finally:
+        fdc.JS_RESPONSES = None
+    if not got:
+        raise HTTPException(404, "not in USDA either")
+    return got
 
 
 @app.post("/api/ingredients/resolve-all")

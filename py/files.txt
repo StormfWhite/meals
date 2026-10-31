@@ -3,6 +3,7 @@ app/server.py
 mealplanner/aisles.py
 mealplanner/_ai_worker.py
 mealplanner/bangers.py
+mealplanner/barcodes.py
 mealplanner/batches.py
 mealplanner/board.py
 mealplanner/brands.py

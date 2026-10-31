@@ -368,7 +368,7 @@ async def _call(method, path, body):
     for (let round = 0; round < 14; round++) {   // generic match + its fill + a brand lookup (brands.py)
       const res = await serial(async () => (await call("POST", url, body)).toJs());
       if (res[0] !== 202) {
-        if (res[0] < 300) { pending.push({ method: "POST", path, body }); schedulePush(); }
+        if (res[0] < 300 && !/\/barcode\//.test(path)) { pending.push({ method: "POST", path, body }); schedulePush(); }   // (a lookup changes no data)
         return new Response(res[1], { status: res[0], headers: { "Content-Type": "application/json" } });
       }
       const need = JSON.parse(res[1]).need;
@@ -481,7 +481,7 @@ async def _call(method, path, body):
     await booted;
     if (path.startsWith("/api/notes")) await notesZip();
     const body = typeof opts.body === "string" ? opts.body : "";
-    if (method === "POST" && /^\/api\/ingredients\/[^/]+\/resolve/.test(path)) return resolveInBackground(path, body);
+    if (method === "POST" && /^\/api\/(ingredients\/[^/]+\/resolve|barcode\/\d+)/.test(path)) return resolveInBackground(path, body);
     const res = await serial(async () => {
       const t = performance.now();
       const r = (await call(method, path, body)).toJs();

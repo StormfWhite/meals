@@ -535,14 +535,24 @@ App.groceriesPanel = {
     try {
       const r = await fetch(`https://world.openfoodfacts.org/api/v2/product/${code}.json?fields=product_name,brands,quantity,product_quantity`, { signal: ctl.signal });
       const p = (await r.json()).product;
-      if (!p || !p.product_name) return null;
+      if (!p || !p.product_name) return await this._usdaUpc(code);
       const brand = (p.brands || "").split(",")[0].trim();
       const full = brand && !p.product_name.toLowerCase().includes(brand.toLowerCase()) ? `${brand} ${p.product_name}` : p.product_name;
       const grams = Number(p.product_quantity) || 0;
-      const out = { name: full, qty: grams ? `${Math.round(grams)} g` : ((p.quantity || "").trim() || "1") };
+      const out = { name: full, qty: grams ? `${Math.round(grams)} g` : ((p.quantity || "").trim() || "") };
       this._upc.put(code, out);
       return out;
-    } catch (e) { return null; } finally { clearTimeout(t); }
+    } catch (e) { return await this._usdaUpc(code); } finally { clearTimeout(t); }
+  },
+
+  /* Open Food Facts didn't have it (store brands: Whole Foods' 365, Trader Joe's…): USDA's Branded Foods by the
+   * exact UPC (barcodes.py; on the phone the page fetches the URL for the Python). null = not there either. */
+  async _usdaUpc(code) {
+    try {
+      const r = await App.api(`/api/barcode/${code}`, { method: "POST" });
+      if (r && r.name) { const out = { name: r.name, qty: r.qty || "" }; this._upc.put(code, out); return out; }
+    } catch (e) { /* 404: nobody has it */ }
+    return null;
   },
 
   /* "Goya Black Beans 15.5 oz" is the catalog's "Black beans": the longest catalog name whose every word
@@ -589,9 +599,10 @@ App.groceriesPanel = {
       try {
         ctx = ctx || new (window.AudioContext || window.webkitAudioContext)();
         const o = ctx.createOscillator(), gn = ctx.createGain();
-        o.frequency.value = 1040; o.connect(gn); gn.connect(ctx.destination);
-        gn.gain.setValueAtTime(0.12, ctx.currentTime); gn.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.09);
-        o.start(); o.stop(ctx.currentTime + 0.1);
+        o.frequency.setValueAtTime(880, ctx.currentTime); o.frequency.setValueAtTime(1320, ctx.currentTime + 0.09);   // up-chirp: got it
+        o.connect(gn); gn.connect(ctx.destination);
+        gn.gain.setValueAtTime(0.18, ctx.currentTime); gn.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.24);
+        o.start(); o.stop(ctx.currentTime + 0.26);
       } catch (e) {}
       if (navigator.vibrate) navigator.vibrate(25);
       view.classList.remove("hit"); void view.offsetWidth; view.classList.add("hit");
@@ -608,16 +619,54 @@ App.groceriesPanel = {
       row.innerHTML = `<span class="gp-bar-tick">${App.icon(GP_CHECK)}</span><span class="gp-bar-what"><b>${App.esc(name)}</b> <span class="dim num">${App.esc(qty)}</span></span>${at ? `<span class="gp-bar-at where-${at}">${App.icon(GP_PLACES[at][0])}</span>` : ""}`;
       counter.textContent = ++added;
     };
+    // nobody knows this code: name it right here on the tape (remembered for next time), or read the label from a photo.
+    // The camera keeps going either way.
     const unknown = (row, code) => {
       row.className = "gp-bar-row nope";
-      row.innerHTML = `<span class="gp-bar-code-n num">${code}</span><span class="gp-bar-what">not found — type its name below</span>`;
-      row.dataset.code = code;
+      row.innerHTML = `<input class="gp-bar-name" placeholder="not found — what is it?" spellcheck="false" autocomplete="off">
+        <button class="icon-btn gp-bar-photo" title="Read the label from a photo">${App.icon(GP_CAMERA)}</button>`;
+      const ni = row.querySelector(".gp-bar-name");
+      ni.addEventListener("keydown", (e) => {
+        if (e.key !== "Enter") return;
+        e.preventDefault();
+        const v = ni.value.trim(); if (!v) return;
+        const p = { name: v, qty: "" }; this._upc.put(code, p); take(row, code, p);
+      });
+      row.querySelector(".gp-bar-photo").addEventListener("click", () => {
+        close();                                                    // the photo flow draws in this same box
+        const f = this._container.querySelector(".gp-stock-cam input"); if (f) f.click();
+      });
+      ni.focus({ preventScroll: true });
+    };
+    // the amount: what the label says, else this ingredient's usual pack (said once, remembered), else it asks -- on the tape,
+    // without stopping the camera. A bare "1" can't be weighed for beans or pasta, which is what "couldn't add" was.
+    const usualPack = (name) => {
+      const i = (this._ingredients || []).find(x => (x.name || "").toLowerCase() === name.toLowerCase());
+      return i && i.pack_size && i.pack_size.text ? i.pack_size.text : "";
+    };
+    const ask = (row, code, name, why) => {
+      row.className = "gp-bar-row nope";
+      row.innerHTML = `<span class="gp-bar-what">${App.esc(why)} <b>${App.esc(name)}</b>:</span><input class="gp-bar-qty num" placeholder="15 oz" spellcheck="false" autocomplete="off">`;
+      const qi = row.querySelector("input");
+      qi.addEventListener("keydown", async (e) => {
+        if (e.key !== "Enter") return;
+        e.preventDefault();
+        const v = qi.value.trim(); if (!v) return;
+        const at = where_();
+        if (await this._addStock(name, v, at, true)) { this._upc.put(code, { name, qty: v }); done(row, name, v, at); this.refresh(); }
+        else { qi.value = ""; qi.placeholder = 'try "8 oz" or "1 lb"'; }
+      });
+      qi.focus({ preventScroll: true });
     };
     const take = async (row, code, p) => {
       const name = this._catalogName(p.name), at = where_();
-      const ok = await this._addStock(name, p.qty || "1", at, true);
-      if (ok) { done(row, name, p.qty || "1", at); this.refresh(); }
-      else { row.className = "gp-bar-row nope"; row.innerHTML = `<span class="gp-bar-code-n num">${code}</span><span class="gp-bar-what">couldn't add ${App.esc(name)}</span>`; }
+      let qty = (p.qty || "").trim() || usualPack(name);
+      if (!qty) {                                   // the label gave no size: how big is one usually? (Ralphs' product for it)
+        try { qty = ((await App.api("/api/usual-pack", { method: "POST", body: { name } })) || {}).text || ""; } catch (e) { qty = ""; }
+      }
+      if (!qty) { ask(row, code, name, "how much"); return; }
+      if (await this._addStock(name, qty, at, true)) { done(row, name, qty, at); this.refresh(); return; }
+      ask(row, code, name, "couldn't read the amount for");
     };
     const recent = new Map();
     const onCode = (raw) => {
@@ -637,40 +686,55 @@ App.groceriesPanel = {
       if (/^\d{8,14}$/.test(v)) { onCode(v); return; }
       // text = the name for the oldest code that wasn't found
       const row = tape.querySelector(".gp-bar-row.nope[data-code]");
-      if (row) { const code = row.dataset.code; const p = { name: v, qty: "1" }; this._upc.put(code, p); delete row.dataset.code; take(row, code, p); }
+      if (row) { const code = row.dataset.code; const p = { name: v, qty: "" }; this._upc.put(code, p); delete row.dataset.code; take(row, code, p); }
     } });
     input.addEventListener("input", () => { if (/^\d{12,14}$/.test(input.value.trim())) { const v = input.value.trim(); input.value = ""; onCode(v); } });   // a USB scanner types the digits
 
-    let decode;
-    try { decode = await this._decoder(); } catch (e) { msg.textContent = "Couldn't load the scanner — type the digits"; return; }
-    if (!live) return;
-    if (!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) { msg.textContent = "No camera here — type the digits (or use a USB scanner)"; return; }
+    // Keeps looking, but takes each code ONCE: the one just taken is ignored while it's still in front of the camera
+    // (the old version re-read it on every flicker and the same item went in several times). A different barcode is
+    // taken at once; the same one again only after it has been out of sight for 3 s (a second can of the same thing).
+    let decode, scanning = false, busy = false, lockedCode = null, lastDetectAt = 0;
     const open = async () => {
       try { return await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } } }); }
       catch (e) { if (e && e.name === "NotAllowedError") throw e; return await navigator.mediaDevices.getUserMedia({ video: true }); }   // any camera beats none
     };
-    try {
-      stream = await open();
-      if (!live) { stream.getTracks().forEach(t => t.stop()); return; }
-      try { await stream.getVideoTracks()[0].applyConstraints({ advanced: [{ focusMode: "continuous" }] }); } catch (e) {}
-      video.srcObject = stream; await video.play(); msg.hidden = true;
-    } catch (e) {
-      msg.textContent = e && e.name === "NotAllowedError" ? "Camera not allowed — allow it in the app's settings, or type the digits"
-        : e && e.name === "NotReadableError" ? "The camera is busy in another app — close it, or type the digits"
-        : `Camera didn't start (${(e && e.name) || "error"}) — type the digits`;
-      return;
-    }
-    let busy = false;
+    const stopCamera = () => { if (stream) stream.getTracks().forEach(t => t.stop()); stream = null; video.srcObject = null; };
     const loop = async () => {
-      if (!live) return;
+      if (!live || !scanning) return;
       if (!busy && video.readyState >= 2 && video.videoWidth) {
         busy = true;
-        try { const code = await decode(video); if (code) onCode(code); } catch (e) {}
+        let code = null;
+        try { code = await decode(video); } catch (e) {}
         busy = false;
+        const digits = code ? String(code).replace(/\D/g, "") : "";
+        if (digits.length >= 8 && scanning) {
+          const now = Date.now(), gap = now - lastDetectAt;
+          lastDetectAt = now;
+          if (digits !== lockedCode || gap > 3000) { lockedCode = digits; onCode(digits); }
+        }
       }
-      if (video.requestVideoFrameCallback) video.requestVideoFrameCallback(loop); else requestAnimationFrame(loop);
+      if (live && scanning) { if (video.requestVideoFrameCallback) video.requestVideoFrameCallback(loop); else requestAnimationFrame(loop); }
     };
-    loop();
+    const start = async () => {
+      if (scanning) return;
+      view.hidden = false; msg.hidden = false; msg.textContent = "Point it at the barcode…";
+      try {
+        stream = await open();
+        if (!live) { stopCamera(); return; }
+        try { await stream.getVideoTracks()[0].applyConstraints({ advanced: [{ focusMode: "continuous" }] }); } catch (e) {}
+        video.srcObject = stream; await video.play(); msg.hidden = true;
+      } catch (e) {
+        msg.textContent = e && e.name === "NotAllowedError" ? "Camera not allowed — allow it in the app's settings, or type the digits"
+          : e && e.name === "NotReadableError" ? "The camera is busy in another app — close it, or type the digits"
+          : `Camera didn't start (${(e && e.name) || "error"}) — type the digits`;
+        return;
+      }
+      scanning = true; busy = false; loop();
+    };
+    try { decode = await this._decoder(); } catch (e) { msg.textContent = "Couldn't load the scanner — type the digits"; return; }
+    if (!live) return;
+    if (!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) { msg.textContent = "No camera here — type the digits (or use a USB scanner)"; return; }
+    start();
   },
 
   /* One item into the Pantry -- typed in the add row or ticked from a photo. True = it's in. */

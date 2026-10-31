@@ -1105,3 +1105,10 @@ button.mb-tag { cursor: pointer; font: inherit; font-size: 10px; }
 .gp-bar-at { display: inline-flex; opacity: .8; }
 .gp-bought-note { width: 100%; border: 0; cursor: pointer; text-align: left; margin-top: 6px; color: var(--text-dim); }
 .gp-bought-note:hover { color: var(--accent); }
+.gp-bar-next { width: 100%; margin: 4px 0; padding: 10px; font-size: 14px; display: flex; align-items: center; justify-content: center; gap: 8px; }
+.gp-bar-next[hidden], .gp-bar-view[hidden] { display: none; }
+.gp-bar-next svg { width: 16px; height: 16px; }
+.gp-bar-qty { width: 84px; margin-left: auto; padding: 3px 6px; font-size: 12px; text-align: right; }
+.gp-bar-name { flex: 1; min-width: 0; padding: 3px 6px; font-size: 12px; }
+.gp-bar-photo { width: 26px; height: 26px; flex: none; }
+.gp-bar-photo svg { width: 14px; height: 14px; }
