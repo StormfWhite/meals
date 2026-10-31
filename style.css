@@ -1103,3 +1103,5 @@ button.mb-tag { cursor: pointer; font: inherit; font-size: 10px; }
 .gp-bar-tick { color: var(--good, #3ecf8e); display: inline-flex; }
 .gp-bar-tick svg, .gp-bar-at svg { width: 12px; height: 12px; }
 .gp-bar-at { display: inline-flex; opacity: .8; }
+.gp-bought-note { width: 100%; border: 0; cursor: pointer; text-align: left; margin-top: 6px; color: var(--text-dim); }
+.gp-bought-note:hover { color: var(--accent); }

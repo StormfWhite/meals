@@ -274,6 +274,28 @@ def _stem(word: str) -> str:
     return word[:-1] if len(word) > 3 and word.endswith("s") and not word.endswith("ss") else word
 
 
+_COLD = re.compile(r"\b(dairy|refrigerat|chilled|cooler|deli|meat|seafood|poultry|eggs?|yogurt|cheese|fresh pasta|tofu)\b", re.I)
+_SHELF = re.compile(r"\b(aisle|pantry|canned|baking|cereal|snack|pasta|rice|beans|condiment|spice|oil|sauce|breakfast|beverage|coffee|tea|bakery|bread)\b", re.I)
+
+
+def keep_where(product: dict) -> Optional[str]:
+    """Where the store keeps it, so a bought one goes to the same place at home: "freezer" / "fridge" /
+    "pantry" (the shelf), or None when it can't say (fresh produce varies: onions and potatoes sit out,
+    lettuce doesn't). Kroger's own temperature flag first, then the aisle / department and categories."""
+    ind = ((product.get("temperature") or {}).get("indicator") or "").strip().lower()
+    if ind in ("frozen", "refrigerated", "ambient"):
+        return {"frozen": "freezer", "refrigerated": "fridge", "ambient": "pantry"}[ind]
+    text = " ".join([(a.get("description") or "") for a in (product.get("aisleLocations") or [])[:2]]
+                    + [c for c in (product.get("categories") or [])])
+    if re.search(r"\bfrozen\b", text, re.I):
+        return "freezer"
+    if _COLD.search(text):
+        return "fridge"
+    if _SHELF.search(text):
+        return "pantry"
+    return None
+
+
 def _aisle(locations: list[dict]) -> dict:
     """Where the store shelves it, for walking the list in order: Kroger's first location gives
     "AISLE 1" (number 1, bay 12) or a department like "FRUIT" (number 0)."""
@@ -316,6 +338,7 @@ def kroger_price(name: str, location_id: str) -> Optional[dict]:
             "label": f"{product.get('description', '')} · {item.get('size', '')}".strip(" ·"),
             "package_g": package_g,
             **_aisle(product.get("aisleLocations") or []),
+            "where": keep_where(product),
             "source": "kroger",
             "stock": (item.get("inventory") or {}).get("stockLevel"),
             "url": _product_url(product),
@@ -352,7 +375,7 @@ def price_for(ingredient: dict, shop: Optional[dict], allow_network: bool = True
     fresh_enough = known and (known.get("source") != "kroger"
                               or (time.time() - known.get("updated_at", 0) < LIVE_TTL
                                   and "aisle_num" in known and "options" in known
-                                  and "nutrition" in known))   # saved before those were kept
+                                  and "nutrition" in known and "where" in known))   # saved before those were kept
     if known and fresh_enough:
         return _aged(known)
     if not allow_network or not shop or chain_of(shop) != "kroger" or not kroger_configured():
@@ -364,12 +387,25 @@ def price_for(ingredient: dict, shop: Optional[dict], allow_network: bool = True
         return _aged(known)
     entry = remember(ingredient["id"], shop, live["price"], live.get("package_g"),
                      live.get("label", ""), source="kroger",
-                     aisle={k: live.get(k) for k in ("aisle", "aisle_num", "aisle_bay")},
+                     aisle={k: live.get(k) for k in ("aisle", "aisle_num", "aisle_bay", "where")},
                      options=live.get("options", []), nutrition=live.get("nutrition"), with_nutrition=True,
                      stock=live.get("stock"), url=live.get("url"))
     if live.get("nutrition"):
         _bind_label(ingredient)
+    _remember_where(ingredient, live.get("where"))
     return {**entry, "age_days": 0}
+
+
+def _remember_where(ingredient: dict, where: Optional[str]) -> None:
+    """What the store says about where it's kept becomes the ingredient's own `bought_to` -- unless someone
+    already said where it lives (the Pantry's fridge / dry / freezer buttons set `storage` by hand)."""
+    if not where or ingredient.get("storage_by_hand") or ingredient.get("bought_to") == where:
+        return
+    from . import ingredients
+    try:
+        ingredients.update(ingredient["id"], bought_to=where)
+    except Exception:
+        pass
 
 
 def _bind_label(ingredient: dict) -> None:

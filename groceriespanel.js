@@ -82,9 +82,18 @@ App.groceriesPanel = {
   // debounced and it restores whatever field was focused -- a redraw
   // triggered by a commit two columns away must not eat what's being typed
   // into the list.
-  refresh() {
+  // `quick`: a change in the plan only moves the grocery rows and the stock -- the catalog, the market lines and the
+  // usuals haven't changed, so they aren't fetched again (on a phone each fetch is seconds of Python)
+  refresh(quick = false) {
     clearTimeout(this._timer);
-    this._timer = setTimeout(() => this._reload().catch(() => {}), 300);
+    this._timer = setTimeout(() => this._reload(quick).catch(() => {}), quick ? 60 : 300);
+  },
+
+  /* When you last left a shop of this kind (ms): the server's trip files, or the phone's own record. */
+  _tripOf(kind) {
+    const a = window.MealsAndroid;
+    const own = a && a.lastTripOf ? Number(a.lastTripOf(kind)) || 0 : (a && a.lastTrip ? Number(a.lastTrip()) || 0 : 0);
+    return Math.max((this._tripKinds || {})[kind] || 0, own);
   },
 
   async _autoRestock(week) {
@@ -103,18 +112,22 @@ App.groceriesPanel = {
     return true;
   },
 
-  async _reload() {
+  async _reload(quick = false) {
     if (!this._container || !this._container.isConnected) return;
     const gw = this._weekStart, mw = this._marketWeek, two = mw !== gw;
+    const q = quick && this._cache && this._cache.gw === gw && this._cache.mw === mw ? this._cache : null;
     const [gRes, ingredientsRes, freeRes, gSug, mRes, mSug, stockRes] = await Promise.all([
       App.api(`/api/groceries/${gw}`),
-      App.api("/api/ingredients"),
-      App.api(`/api/groceries/${mw}/free-list`),
-      App.api(`/api/groceries/${gw}/suggestions`).catch(() => ({ items: [] })),
+      q ? { ingredients: (App.plan && App.plan._ingredients) || q.ing.ingredients } : App.api("/api/ingredients"),
+      q ? q.free : App.api(`/api/groceries/${mw}/free-list`),
+      q ? q.gSug : App.api(`/api/groceries/${gw}/suggestions`).catch(() => ({ items: [] })),
       two ? App.api(`/api/groceries/${mw}`) : null,
-      two ? App.api(`/api/groceries/${mw}/suggestions`).catch(() => ({ items: [] })) : null,
+      two ? (q ? q.mSug : App.api(`/api/groceries/${mw}/suggestions`).catch(() => ({ items: [] }))) : null,
       App.api(`/api/stock/${gw}`).catch(() => ({ items: [] })),
     ]);
+    this._cache = { gw, mw, ing: ingredientsRes, free: freeRes, gSug, mSug };
+    this._tripKinds = { ...(gRes.trip_at || {}), ...((mRes && mRes.trip_at) || {}) };
+    this._tripAt = Math.max(...Object.values(gRes.trip_at || {}), 0);
     this._stock = stockRes.items;
     this._meals = stockRes.meals || [];
     // What's running out goes on the list by itself (once per item per week, so one that's swiped off stays off).
@@ -170,6 +183,8 @@ App.groceriesPanel = {
       <span class="gp-row-name">${App.esc(p.name)}</span><span class="gp-row-need dim num">${App.esc(p.qty)}</span></div>`)));
     this._fill(rowsOf("#gp-market-rows"), market, "Nothing fresh needed yet.");
     const freeRows = rowsOf("#gp-free-rows");
+    const marketTrip = this._tripOf("market");
+    freeItems = freeItems.filter(i => !(i.checked && marketTrip && Date.now() - marketTrip < 18 * 3600_000));
     freeItems.forEach(item => freeRows.appendChild(App.swipeAway(this._freeRow(item), async () => {
       await App.api(`/api/groceries/${this._marketWeek}/free-list/${item.id}`, { method: "DELETE" });
       this._reload();
@@ -317,7 +332,13 @@ App.groceriesPanel = {
     // than one meal needs sits under the first (its tooltip names the rest). What was added by hand
     // follows under "Added" -- headed only when there are meal groups above it.
     const onHand = rows.filter(r => r.covered);
-    rows = rows.filter(r => !r.covered);
+    // Ticked, and you've since left the shop = bought: it's in the Pantry now (fridge / dry / freezer, where Kroger
+    // keeps it), so it leaves the list. Ticked while you're still shopping stays, struck through.
+    const kind = rows.length && rows[0].shop_list === "market" ? "market" : "grocery";
+    const tripAt = this._tripOf(kind);
+    const gone = (r) => r.checked && tripAt && (r.checked_at ? tripAt > r.checked_at : Date.now() - tripAt < 18 * 3600_000);
+    const boughtN = rows.filter(r => !r.covered && gone(r)).length;
+    rows = rows.filter(r => !r.covered && !gone(r));
     const groups = new Map();
     const byAisle = rows.some(r => r.aisle);
     // departments (Produce, Fruit, Deli -- Kroger numbers them 0 or 105) before the numbered aisles
@@ -358,6 +379,11 @@ App.groceriesPanel = {
         }));
       });
     });
+    if (boughtN) {
+      const note = App.el(`<button class="gp-group gp-bought-note">${App.icon(GP_CHECK)}<span>${boughtN} bought — in your Pantry</span></button>`);
+      note.addEventListener("click", () => this.openPantry());
+      wrap.appendChild(note);
+    }
     // what the meals take from the pantry or freezer: nothing to buy, said where it comes from
     if (onHand.length) {
       wrap.appendChild(App.el(`<div class="gp-group">${App.icon(GP_PANTRY)}<span>On hand</span></div>`));

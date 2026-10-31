@@ -329,7 +329,7 @@ App.plan = {
       onWeekChanged: (week) => {
         self._weeks[week.week_start] = week;
         self._merge();
-        App.groceriesPanel.refresh();
+        App.groceriesPanel.refresh(true);          // quick: only the buy rows + stock, so the list follows a meal change at once
         self.refreshSources();
       },
       onStatsChanged: () => self._paintDayTotals(),

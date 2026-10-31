@@ -1066,7 +1066,12 @@ class SectionBody(BaseModel):
 @app.get("/api/groceries/{week}")
 def get_groceries(week: str):
     items = groceries.get_week_groceries(week)
-    return {"items": items, "totals": groceries.list_totals(items),
+    # the last time the phone saw you leave a picked shop, per list (ms): ticked rows older than it are bought --
+    # they're in the Pantry now and leave the list
+    trip_at = {}
+    for t in groceries.trips():
+        trip_at[t.get("kind") or "grocery"] = int(t["at"] * 1000)
+    return {"items": items, "totals": groceries.list_totals(items), "trip_at": trip_at,
             "store": groceries.active_shop("grocery"), "market": groceries.active_shop("market")}
 
 

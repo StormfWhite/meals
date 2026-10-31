@@ -86,6 +86,11 @@ def storage(ing: dict) -> str:
     (garlic, onions, rice, spices), else "fridge". The ingredient's own `storage` wins."""
     if ing.get("storage") in ("fridge", "pantry"):
         return ing["storage"]
+    if ing.get("bought_to") in ("fridge", "pantry"):        # where Kroger shelves it
+        return ing["bought_to"]
+    from . import aisles
+    if aisles.list_for(ing) == aisles.MARKET:              # from the farmer's market: assume the fridge
+        return "fridge"
     if re.search(FRIDGE_NAMES, (ing.get("name") or "").lower()):
         return "fridge"
     days, _ = keeps(ing)
@@ -517,7 +522,9 @@ class Ledger:
             if got is None:
                 got = self.row_buy(week, ing_id, self.total(lots.get(ing_id, []))).get("buy_g")
             if got:
-                lots.setdefault(ing_id, []).append({"g": float(got), "since": week, "frozen": False})
+                # into the freezer if that's where the store keeps it (Kroger's own shelf, prices.keep_where)
+                lots.setdefault(ing_id, []).append({"g": float(got), "since": week,
+                                                    "frozen": self.ings[ing_id].get("bought_to") == "freezer"})
 
     def _cook_and_age(self, week: str, lots: dict, cook: dict[str, float], tally: dict) -> None:
         """Cook `cook` out of `lots` (oldest first, freezer last), then age what's left by a

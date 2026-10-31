@@ -136,7 +136,7 @@ def update(ingredient_id: str, **fields) -> dict:
     kept = {u: g for u, g in (ing.get("unit_conversions") or {}).items() if u in ("block", ing.get("pack"))}
     for key in ("name", "fdc_id", "fdc_description", "default_unit", "unit_conversions",
                 "category", "store_section", "manual_nutrients", "shop_list", "freezes", "keep_days", "storage",
-                "nutrient_fill", "hide_suggest", "brand", "pack", "pack_size", "made", "from"):
+                "nutrient_fill", "hide_suggest", "brand", "pack", "pack_size", "made", "from", "bought_to", "storage_by_hand"):
         if key in fields and fields[key] is not None:
             ing[key] = fields[key].strip() if key == "name" else fields[key]
     # a block or can size said in the Pantry ("frozen in 1 lb blocks", "4 32 oz cans",

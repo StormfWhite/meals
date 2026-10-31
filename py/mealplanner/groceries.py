@@ -10,6 +10,7 @@ recipe actually needs.
 from __future__ import annotations
 
 import datetime
+import time
 import math
 import json
 import re
@@ -226,6 +227,7 @@ def get_week_groceries(week_start_iso: str, with_prices: bool = True,
             "unit_label": " + ".join(t for t in (label, typed) if t),
             "section": s.get("section", ing.get("store_section")),
             "checked": s.get("checked", False),
+            "checked_at": s.get("checked_at"),
             "source": "extra" if ing_id in extra_ids else "recipe",
             "shop_list": shop_list,
             "category": ing.get("category", "other"),
@@ -338,7 +340,7 @@ def _priced(ingredient: dict, item: dict, shop: Optional[dict], allow_network: b
         "aisle_bay": price.get("aisle_bay"),
         "low_stock": prices.is_low(price),
         # a Ralphs price saved before aisles were kept: worth one more lookup (price_missing)
-        "aisle_known": price.get("source") != "kroger" or ("aisle_num" in price and "options" in price),
+        "aisle_known": price.get("source") != "kroger" or ("aisle_num" in price and "options" in price and "where" in price),
     }
 
 
@@ -624,6 +626,11 @@ def update_item(week_start_iso: str, ingredient_id: str, fields: dict) -> dict:
     for key in ("bought_qty_g", "section", "checked"):
         if key in fields:
             item[key] = fields[key]
+    if "checked" in fields:                  # when it was ticked: what a later trip out of the shop clears
+        if fields["checked"]:
+            item["checked_at"] = int(time.time() * 1000)
+        else:
+            item.pop("checked_at", None)
     _save(data)
     matches = [i for i in get_week_groceries(week_start_iso) if i["ingredient_id"] == ingredient_id]
     return matches[0] if matches else {}
