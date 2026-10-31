@@ -267,9 +267,10 @@ def per100(ing: dict) -> Optional[dict]:
     return out
 
 
-def make(name: str, lines: list[dict], yield_text: str, where: str, date: str) -> dict:
+def make(name: str, lines: list[dict], yield_text: str, where: str, date: str, replace_id: Optional[str] = None) -> dict:
     """Make it: the product (an ingredient, made if new) gets the units the yield names, the
-    make is recorded, and the replay does the rest."""
+    make is recorded, and the replay does the rest. `replace_id` = EDIT that make in place (its lines, place, date,
+    name) instead of recording another one -- changing a pot's info must not put a second pot in the kitchen."""
     from . import stock
     if where not in PLACES:
         raise ValueError("fridge, pantry or freezer")
@@ -284,8 +285,17 @@ def make(name: str, lines: list[dict], yield_text: str, where: str, date: str) -
     input_g = lines_grams(lines, by_id)
     y = parse_yield(yield_text, input_g, estimate(lines, by_id))
     if not y["yield_g"]:
-        raise ValueError('how much does it make? ("8 cups", "3 lb") -- the lines have no weight to go by')
-    ing = ingredients.add(name.strip(), "other")
+        raise ValueError("those lines have no weight to add up -- give each one an amount (\"2 cups\", \"1 lb\")")
+    old = None
+    if replace_id:
+        old = next((m for m in _load() if m["id"] == replace_id), None)
+        if old is None:
+            raise ValueError("that pot isn't there any more")
+        ing = ingredients.get(old["ingredient_id"])
+        if ing and (ing.get("name") or "").strip().lower() != name.strip().lower():
+            ing = ingredients.update(ing["id"], name=name.strip())          # renamed: still the same pot
+    else:
+        ing = ingredients.add(name.strip(), "other")
     if any(l["ingredient_id"] == ing["id"] for l in lines):
         raise ValueError("it can't go into itself")
     fields: dict = {"made": {"yield_g": y["yield_g"], "unit": y["unit"]},
@@ -300,14 +310,22 @@ def make(name: str, lines: list[dict], yield_text: str, where: str, date: str) -
         fields["keep_days"] = PANTRY_KEEP_DAYS if where == "pantry" else FRIDGE_KEEP_DAYS
     if ing.get("freezes") is None:
         fields["freezes"] = True
-    ingredients.update(ing["id"], **fields)
+    newest = latest(ing["id"])
+    if not old or (newest and newest["id"] == old["id"]):         # an older pot's edit doesn't redefine the product
+        ingredients.update(ing["id"], **fields)
     if ing.get("brand"):                     # a made thing isn't a store product
         _clear(ing["id"], "brand")
-    entry = {"id": "mk_" + uuid.uuid4().hex[:8], "ingredient_id": ing["id"], "lines": lines,
+    entry = {"id": old["id"] if old else "mk_" + uuid.uuid4().hex[:8], "ingredient_id": ing["id"], "lines": lines,
              "input_g": round(input_g, 1), "yield_g": y["yield_g"], "yield_text": y["text"],
-             "unit": y["unit"], "where": where, "date": date, "at": time.time()}
+             "unit": y["unit"], "where": where, "date": date, "at": old["at"] if old else time.time()}
+    if old and old.get("undone"):
+        entry["undone"] = True
     data = store.load(_stock_file(), {"corrections": []})
-    data.setdefault("makes", []).append(entry)
+    makes = data.setdefault("makes", [])
+    if old:
+        makes[:] = [entry if m["id"] == old["id"] else m for m in makes]
+    else:
+        makes.append(entry)
     store.save(_stock_file(), data)
     return entry
 

@@ -1093,6 +1093,17 @@ def make_bulk(body: BulkMakeBody):
     return {**_bulk_view(), "made": made}
 
 
+@app.put("/api/bulk/{make_id}")
+def edit_bulk(make_id: str, body: BulkMakeBody):
+    """Change a pot already made -- its lines, place, date or name -- in place: no second pot."""
+    try:
+        made = bulk.make(body.name, [r.model_dump() for r in body.rows], body.yield_text, body.where, body.date,
+                         replace_id=make_id)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {**_bulk_view(), "made": made}
+
+
 @app.post("/api/bulk/{make_id}/undo")
 def undo_bulk(make_id: str, body: BulkUndoBody):
     try:

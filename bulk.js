@@ -37,8 +37,9 @@ App.bulk = {
   // ── the pot being made ─────────────────────────────────────────────
   _drawMake(draft) {
     const box = this._body.querySelector(".bk-make");
-    const d = draft || { name: "", lines: [], yield_text: "", where: this._where, date: _bkToday() };
+    const d = draft || { name: "", lines: [], where: this._where, date: _bkToday() };
     this._where = d.where;
+    this._editId = d.editId || null;
     box.innerHTML = `
       <div class="bk-head">
         <span class="bk-pot">${App.icon(BK_POT)}</span>
@@ -50,10 +51,10 @@ App.bulk = {
           <button class="icon-btn where-freezer" data-where="freezer" title="The whole pot goes in the freezer">${App.icon(GP_SNOW)}</button>
         </span>
       </div>
+      ${d.editId ? `<div class="bk-editing"><span>Editing this pot — saving changes it, it doesn't make another</span><button class="icon-btn bk-edit-x" title="Cancel the edit">${App.icon(GP_X)}</button></div>` : ""}
       <div class="bk-rows"></div>
       <div class="bk-foot">
-        <input class="bk-yield" placeholder="makes — 8 cups · 3 lb · 6 blocks of 1 lb" title="How much it makes. Blank = worked out from the lines, cooked" spellcheck="false" value="${App.esc(d.yield_text)}">
-        <button class="btn-primary bk-go" title="Make it — into the ${d.where}, its ingredients out of the kitchen">${App.icon(BK_CHECK)}</button>
+        <button class="btn-primary bk-go" title="${d.editId ? "Save the changes" : "Make it — into the " + d.where + ", its ingredients out of the kitchen"}">${App.icon(BK_CHECK)}</button>
       </div>
       <div class="bk-sum dim num"></div>`;
     const rows = box.querySelector(".bk-rows");
@@ -76,7 +77,7 @@ App.bulk = {
       const rec = !it && (this._recipes || []).find(r => (r.name || "").toLowerCase() === key);
       if (!it && !rec) return;
       filledFrom = key;
-      if (it) this._fillRows(it.last.lines, it.last.yield_text || "", it.last.where);
+      if (it) this._fillRows(it.last.lines, it.last.where);
       else this._fillRows(rec.last_ingredients || rec.ingredients);
     };
     name.addEventListener("input", again);
@@ -95,8 +96,8 @@ App.bulk = {
       const blank = this._body.querySelector(".bk-rows .bk-row:last-child .bk-ing");
       if (blank) blank.focus();
     });
-    box.querySelector(".bk-yield").addEventListener("input", () => this._preview());
-    box.querySelector(".bk-yield").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); this._make(); } });
+    const x = box.querySelector(".bk-edit-x");
+    if (x) x.addEventListener("click", () => { this._draft = null; this._drawMake(null); });
     box.querySelector(".bk-date").addEventListener("change", () => this._saveDraft());
     box.querySelectorAll(".bk-where .icon-btn").forEach(b => b.addEventListener("click", () => { this._where = b.dataset.where; this._paintWhere(); this._saveDraft(); }));
     box.querySelector(".bk-go").addEventListener("click", () => this._make());
@@ -141,7 +142,7 @@ App.bulk = {
       if (onName) { const pick = App.ingSuggest.active(); if (pick) App.ingSuggest.accept(pick); App.ingSuggest.close(); }
       const blank = !row.querySelector(".bk-ing").value.trim() && !row.querySelector(".bk-amt").value.trim();
       e.preventDefault();
-      if (blank) { this._body.querySelector(".bk-yield").focus(); return; }
+      if (blank) { this._body.querySelector(".bk-go").focus(); return; }
       if (onName) { row.querySelector(".bk-amt").select(); row.querySelector(".bk-amt").focus(); return; }
       let next = row.nextElementSibling;
       if (!next) { next = this._row(null); row.after(next); }
@@ -183,7 +184,7 @@ App.bulk = {
     const box = this._body && this._body.querySelector(".bk-make");
     if (!box) return;
     this._draft = {
-      name: box.querySelector(".bk-name").value, yield_text: box.querySelector(".bk-yield").value,
+      name: box.querySelector(".bk-name").value, editId: this._editId || null,
       date: box.querySelector(".bk-date").value || _bkToday(), where: this._where,
       lines: this._readRows().map(({ name, qty, unit, ingredient_id }) => ({ name, qty, unit, ingredient_id })),
     };
@@ -203,23 +204,20 @@ App.bulk = {
       try {
         res = await App.api("/api/bulk/preview", { method: "POST", body: {
           rows: known.map(r => ({ ingredient_id: r.ingredient_id, qty: r.qty, unit: r.unit })),
-          yield_text: this._body.querySelector(".bk-yield").value } });
+          yield_text: "" } });          // what it makes is the lines added up (cooked), never typed
       } catch (e) { return; }
       if (seq !== this._pseq) return;
       rows.forEach(r => { r.el.querySelector(".mb-stat").textContent = ""; });
       known.forEach((r, i) => { r.el.querySelector(".mb-stat").textContent = _mbStat(res.rows[i], false); });
-      const yb = this._body.querySelector(".bk-yield");    // blank yield = the estimate, shown in its box
-      yb.placeholder = res.estimate_text ? `makes ≈ ${res.estimate_text}` : "makes — 8 cups · 3 lb · 6 blocks of 1 lb";
       if (!known.length) { sum.innerHTML = ""; return; }
       const t = res.total;
       const pu = res.per_unit;
       sum.innerHTML = `<span title="Everything that goes in">${App.esc(res.input_text || "—")} in · ${Math.round(t.calories_kcal)} kcal · ${t.protein_g.toFixed(0)} g P</span>`
-        + (res.estimated ? ` <span title="What it makes, worked out from the lines cooked${res.water_added_g ? " (with " + App.esc(res.water_added_text) + " of water the dry things take up)" : ""} — type a yield to say otherwise">→ ≈ ${App.esc(res.estimate_text)}</span>`
-           : res.yield_g && res.yield_g !== res.input_g ? ` <span title="What it makes">→ ${App.esc(res.yield_text_g)}</span>` : "")
+        + (res.estimated ? ` <span title="Everything added up, cooked${res.water_added_g ? " (with " + App.esc(res.water_added_text) + " of water the dry things take up)" : ""}">→ ${App.esc(res.estimate_text)}</span>` : "")
         + (pu ? ` <b class="bk-per">1 ${App.esc(pu.word)} · ${Math.round(pu.calories_kcal)} kcal · ${pu.protein_g.toFixed(1)} g P</b>`
               : res.per100 ? ` <b class="bk-per">100 g · ${Math.round(res.per100.calories_kcal)} kcal · ${res.per100.protein_g.toFixed(1)} g P</b>` : "")
         + (res.per_cup && (!pu || pu.word !== "cup") ? ` <span title="What 1 cup of it in a meal counts">· 1 cup ${Math.round(res.per_cup.calories_kcal)} kcal</span>` : "")
-        + (!res.per_cup ? ` <span class="bk-hint" title="A meal line can then say &quot;1 cup&quot; of it">· add cups to use it by the cup — "8 cups, 3 lb"</span>` : "");
+        + "";
     }, 220);
   },
 
@@ -241,14 +239,15 @@ App.bulk = {
         const id = r.ingredient_id || await App.resolveIngredientId(r.name, r.unit, this._ingredients, true);
         lines.push({ ingredient_id: id, qty: r.qty, unit: r.unit });
       }
-      const res = await App.api("/api/bulk", { method: "POST", body: {
-        name, rows: lines, yield_text: box.querySelector(".bk-yield").value, where: this._where,
-        date: box.querySelector(".bk-date").value || _bkToday() } });
+      const body = { name, rows: lines, yield_text: "", where: this._where, date: box.querySelector(".bk-date").value || _bkToday() };
+      // an edit REPLACES that pot; only a new make adds one (so changing a pot's info never doubles it)
+      const res = this._editId ? await App.api(`/api/bulk/${this._editId}`, { method: "PUT", body })
+                               : await App.api("/api/bulk", { method: "POST", body });
       this._data = res;
       const it = res.items.find(i => i.ingredient_id === res.made.ingredient_id);
       const said = it && it.have[this._where] ? it.have[this._where].text : (res.made.yield_text || "");
-      App.toast(`${name} → ${this._where === "pantry" ? "dry pantry" : this._where}${said ? " · " + said : ""}`);
-      this._draft = null;
+      App.toast(`${this._editId ? "Saved " : ""}${name} → ${this._where === "pantry" ? "dry pantry" : this._where}${said ? " · " + said : ""}`);
+      this._draft = null; this._editId = null;
       const ings = await App.api("/api/ingredients");
       this._ingredients = ings.ingredients;
       this._drawMake(null);
@@ -269,20 +268,24 @@ App.bulk = {
   // ↻: the pot it last came from, back on the left to make again
   _again(it) {
     const l = it.last;
-    this._drawMake({ name: it.name, yield_text: l.yield_text || "", where: l.where, date: _bkToday(),
-                     lines: l.lines.map(x => ({ ...x })) });
+    this._drawMake({ name: it.name, where: l.where, date: _bkToday(), lines: l.lines.map(x => ({ ...x })) });
+    this._body.querySelector(".bk-make").scrollIntoView({ block: "nearest" });
+  },
+
+  // ✎: change the pot as it is -- same pot, same date, saved over itself
+  _edit(m) {
+    this._drawMake({ name: m.name, where: m.where, date: m.date, editId: m.id, lines: m.lines.map(x => ({ ...x })) });
     this._body.querySelector(".bk-make").scrollIntoView({ block: "nearest" });
   },
 
   // a name's lines in place of the ones there, without redrawing the name box being typed in;
   // a bulk pot also brings back what it made and where it went
-  _fillRows(lines, yieldText, where) {
+  _fillRows(lines, where) {
     const box = this._body.querySelector(".bk-make");
     const rows = box.querySelector(".bk-rows");
     rows.innerHTML = "";
     lines.forEach(l => rows.appendChild(this._row({ ingredient_id: l.ingredient_id, qty: l.qty, unit: l.unit })));
     this._ensureBlank();
-    if (yieldText !== undefined) box.querySelector(".bk-yield").value = yieldText;
     if (where) { this._where = where; this._paintWhere(); }
     this._preview();
     this._saveDraft();
@@ -304,12 +307,14 @@ App.bulk = {
         <div class="bk-item-top">
           <span class="bk-item-name">${App.esc(it.name)}</span>
           ${have || `<span class="dim bk-have">none left</span>`}
-          <button class="icon-btn bk-again" title="Make it again">${App.icon(BK_AGAIN)}</button>
+          <button class="icon-btn bk-edit" title="Change this pot (saves over it, no second pot)">${App.icon('<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>')}</button>
+          <button class="icon-btn bk-again" title="Make it again (another pot)">${App.icon(BK_AGAIN)}</button>
         </div>
         <div class="bk-item-stat num" title="${it.unknown.length ? "Not counted (no nutrition known): " + App.esc(it.unknown.join(", ")) : "Everything that went in, spread over what it made"}">${stat}${it.unknown.length ? ` <span class="warn">+${it.unknown.length}?</span>` : ""}</div>
         <div class="bk-item-lines dim" title="Last made ${_gpDay(it.last.date)}${it.last.yield_text ? " — made " + App.esc(it.last.yield_text) : ""}">${lines}</div>
       </div>`);
       el.querySelector(".bk-again").addEventListener("click", () => this._again(it));
+      el.querySelector(".bk-edit").addEventListener("click", () => this._edit({ ...it.last, name: it.name }));
       wrap.appendChild(el);
     });
     const log = this._body.querySelector(".bk-log");
@@ -319,10 +324,11 @@ App.bulk = {
       const el = App.el(`<div class="bk-made${m.undone ? " undone" : ""}">
         <span class="gp-place where-${m.where}">${App.icon(GP_PLACES[m.where][0])}</span>
         <span class="bk-made-day num dim">${_gpDay(m.date)}</span>
-        <span class="bk-made-name">${App.esc(m.name)}</span>
+        <span class="bk-made-name" title="Change this pot" style="cursor:pointer">${App.esc(m.name)}</span>
         <span class="dim num">${App.esc(m.yield_text || "")}</span>
         <button class="icon-btn bk-undo" title="${m.undone ? "Put it back" : "Undo — take it back out of the kitchen"}">${App.icon(m.undone ? BK_AGAIN : BK_UNDO)}</button>
       </div>`);
+      el.querySelector(".bk-made-name").addEventListener("click", () => this._edit({ ...m, lines: m.lines.map(l => ({ ...l, name: l.name || "" })) }));
       el.querySelector(".bk-undo").addEventListener("click", async () => {
         this._data = await App.api(`/api/bulk/${m.id}/undo`, { method: "POST", body: { undone: !m.undone } });
         App.toast(m.undone ? `${m.name}: back in` : `${m.name}: undone`);
