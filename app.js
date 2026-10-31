@@ -142,8 +142,14 @@ App.position = function () {
  * 400 m of the shop's map pin counts as inside. Once per open; if the list was already touched, or
  * there's no fix, nothing happens. */
 App.listWhereIAm = async function () {
-  const pos = await App.position();
+  // a FRESH fix (the shared one may be 15 min old, still at home), asked twice before giving up
+  const fix = () => new Promise((ok) => navigator.geolocation
+    ? navigator.geolocation.getCurrentPosition((p) => ok({ lat: p.coords.latitude, lon: p.coords.longitude }),
+        () => ok(null), { timeout: 12000, maximumAge: 20000, enableHighAccuracy: true })
+    : ok(null));
+  const pos = (await fix()) || (await fix());
   if (!pos) return;
+  App.api("/api/places/here", { method: "POST", body: pos }).catch(() => {});
   const r = await App.api("/api/groceries/geofences").catch(() => null);
   const rad = Math.PI / 180;
   let best = null;
@@ -364,7 +370,13 @@ function init() {
   App.api("/api/meta").catch(() => {}); // warms the connection, surfaces a dead server early
 
   App.setView(paneView || "plan");
-  if (!paneView && (window.MealsAndroid || /Mobi|iPhone|Android/.test(navigator.userAgent))) App.listWhereIAm().catch(() => {});
+  if (!paneView && (window.MealsAndroid || /Mobi|iPhone|Android/.test(navigator.userAgent))) {
+    // on open, and again whenever the app comes back to the front (a shop is reached with the app already open)
+    let lastLook = 0;
+    const look = () => { if (Date.now() - lastLook < 60000) return; lastLook = Date.now(); App.listWhereIAm().catch(() => {}); };
+    look();
+    document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") look(); });
+  }
 
   // recipes handed over by the Recipes app: files in the inbox (laptop) or an intent text (Android shell)
   App.sharedIn = (text) => App.recipes.importShared(text);
