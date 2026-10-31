@@ -307,14 +307,14 @@ App.bulk = {
         <div class="bk-item-top">
           <span class="bk-item-name">${App.esc(it.name)}</span>
           ${have || `<span class="dim bk-have">none left</span>`}
-          <button class="icon-btn bk-edit" title="Change this pot (saves over it, no second pot)">${App.icon('<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>')}</button>
-          <button class="icon-btn bk-again" title="Make it again (another pot)">${App.icon(BK_AGAIN)}</button>
         </div>
         <div class="bk-item-stat num" title="${it.unknown.length ? "Not counted (no nutrition known): " + App.esc(it.unknown.join(", ")) : "Everything that went in, spread over what it made"}">${stat}${it.unknown.length ? ` <span class="warn">+${it.unknown.length}?</span>` : ""}</div>
         <div class="bk-item-lines dim" title="Last made ${_gpDay(it.last.date)}${it.last.yield_text ? " — made " + App.esc(it.last.yield_text) : ""}">${lines}</div>
       </div>`);
-      el.querySelector(".bk-again").addEventListener("click", () => this._again(it));
-      el.querySelector(".bk-edit").addEventListener("click", () => this._edit({ ...it.last, name: it.name }));
+      // tap anywhere on the pot: its lines and fridge / dry / freezer buttons open on the left (saves over this pot)
+      el.style.cursor = "pointer";
+      el.title = "Tap to open this pot";
+      el.addEventListener("click", () => this._edit({ ...it.last, name: it.name }));
       wrap.appendChild(el);
     });
     const log = this._body.querySelector(".bk-log");
