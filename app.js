@@ -140,7 +140,8 @@ App.position = function () {
 /* In the shop: opening the app on a phone that is at the picked grocery store or farmer's market pulls
  * up the grocery list at that shop's section (Storm 2026-10-31). Judged like the shop watch: within
  * 400 m of the shop's map pin counts as inside. Once per open; if the list was already touched, or
- * there's no fix, nothing happens. */
+ * there's no fix, nothing happens. Away from every saved home (300 m) and not at a shop: the list from the
+ * top. At home nothing opens by itself: the plan shows today, and the whole week on Fridays (plan.js). */
 App.listWhereIAm = async function () {
   // a FRESH fix (the shared one may be 15 min old, still at home), asked twice before giving up
   const fix = () => new Promise((ok) => navigator.geolocation
@@ -150,15 +151,23 @@ App.listWhereIAm = async function () {
   const pos = (await fix()) || (await fix());
   if (!pos) return;
   App.api("/api/places/here", { method: "POST", body: pos }).catch(() => {});
-  const r = await App.api("/api/groceries/geofences").catch(() => null);
+  const [r, pl] = await Promise.all([App.api("/api/groceries/geofences").catch(() => null),
+                                     App.api("/api/places").catch(() => null)]);
   const rad = Math.PI / 180;
+  const metres = (lat, lon) => {
+    const a = Math.sin((lat - pos.lat) * rad / 2) ** 2 +
+      Math.cos(pos.lat * rad) * Math.cos(lat * rad) * Math.sin((lon - pos.lon) * rad / 2) ** 2;
+    return 12742000 * Math.asin(Math.sqrt(a));
+  };
   let best = null;
   for (const f of (r && r.fences) || []) {
-    const a = Math.sin((f.lat - pos.lat) * rad / 2) ** 2 +
-      Math.cos(pos.lat * rad) * Math.cos(f.lat * rad) * Math.sin((f.lon - pos.lon) * rad / 2) ** 2;
-    const d = 12742000 * Math.asin(Math.sqrt(a));
+    const d = metres(f.lat, f.lon);
     if (d <= 400 && (!best || d < best.d)) best = { d, kind: f.kind };
   }
+  // out of the house (not within 300 m of any saved home) and not at a shop: still the list, from the top
+  const homes = (pl && pl.places) || [];
+  const away = homes.length && homes.every((h) => metres(h.lat, h.lon) > 300);
+  if (!best && away) best = { d: 0, kind: "grocery" };
   if (!best || (App.plan && App.plan._listTouched)) return;
   if (App.state.view !== "plan") App.setView("plan");
   App.plan.toggleList(true);

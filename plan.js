@@ -4,7 +4,7 @@
  * breakfast shares a grid row), so the week reads as a list rather than a
  * spreadsheet of cells you have to open.
  *
- * Saturday (the shopping day) shows all seven columns; every other day
+ * Friday shows all seven columns (Storm 2026-10-31); every other day
  * shows just that day, wide. A manual Auto·Week·Day switch overrides the
  * weekday for the session — genuinely useful, and what verification uses
  * to force either mode on a Thursday.
@@ -22,7 +22,7 @@
 window.App = window.App || {};
 
 const PLAN_MEALS = ["breakfast", "lunch", "dinner"];
-const WEEK_VIEW_WEEKDAY = 6;                 // JS getDay(): 0=Sunday..6=Saturday
+const WEEK_VIEW_WEEKDAY = 5;                 // JS getDay(): 0=Sunday..6=Saturday
 const MEAL_HOUR_BANDS = { breakfast: [0, 11], lunch: [11, 16], dinner: [16, 24] };
 
 App.plan = {
