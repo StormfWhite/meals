@@ -148,7 +148,9 @@ App.listWhereIAm = async function () {
     ? navigator.geolocation.getCurrentPosition((p) => ok({ lat: p.coords.latitude, lon: p.coords.longitude }),
         () => ok(null), { timeout: 12000, maximumAge: 20000, enableHighAccuracy: true })
     : ok(null));
-  const pos = (await fix()) || (await fix());
+  const own = () => { try { const o = window.MealsAndroid && window.MealsAndroid.here && window.MealsAndroid.here(); return o ? JSON.parse(o) : null; } catch (e) { return null; } };
+  // the page's own geolocation twice, then what the Android shell last saw (a stuck permission prompt can't block that)
+  const pos = (await fix()) || (await fix()) || own();
   if (!pos) return;
   App.api("/api/places/here", { method: "POST", body: pos }).catch(() => {});
   const [r, pl] = await Promise.all([App.api("/api/groceries/geofences").catch(() => null),
@@ -375,6 +377,50 @@ function init() {
       else App.plan.toggleList();
     }
   });
+
+  // Phone gestures (touch only; a mouse never fires these).
+  // 1. Scrolling up or down puts the keyboard away: a vertical drag of more than ~12 px while a field has focus
+  //    blurs it (Storm 2026-10-31: "if I swipe up or down to see more stuff I want the keyboard to go away").
+  // 2. The list sheet follows a finger pulled down from its top and closes; a pull down on the top bar opens it.
+  {
+    let x0 = 0, y0 = 0, on = false, pull = null;
+    const typing = () => { const e = document.activeElement; return e && /^(INPUT|TEXTAREA|SELECT)$/.test(e.tagName) && e.type !== "checkbox" ? e : null; };
+    const phone = () => window.matchMedia("(max-width: 760px)").matches;
+    document.addEventListener("touchstart", (e) => {
+      on = e.touches.length === 1; if (!on) return;
+      x0 = e.touches[0].clientX; y0 = e.touches[0].clientY;
+      const lp = document.getElementById("list-panel"), open = App.plan && App.plan._listOpen;
+      pull = null;
+      if (phone() && open && lp && lp.contains(e.target) && lp.scrollTop <= 0) pull = "close";
+      else if (phone() && !open && e.target.closest && e.target.closest("#topbar")) pull = "open";
+    }, { passive: true });
+    document.addEventListener("touchmove", (e) => {
+      if (!on) return;
+      const dx = e.touches[0].clientX - x0, dy = e.touches[0].clientY - y0;
+      if (Math.abs(dy) < 12 || Math.abs(dy) < Math.abs(dx) * 1.5) return;
+      const f = typing();
+      if (f && !(f.tagName === "TEXTAREA" && f.scrollHeight > f.clientHeight + 2)) f.blur();
+      if (pull === "close" && dy > 0) {
+        const lp = document.getElementById("list-panel");
+        if (lp.scrollTop > 0) { pull = null; lp.style.transform = ""; return; }
+        lp.style.transition = "none"; lp.style.transform = `translateY(${Math.round(dy * 0.8)}px)`;
+      }
+    }, { passive: true });
+    const end = (e) => {
+      if (!on) return; on = false;
+      const dy = (e.changedTouches && e.changedTouches[0] ? e.changedTouches[0].clientY : y0) - y0;
+      const lp = document.getElementById("list-panel");
+      if (pull === "close" && lp) {
+        lp.style.transition = "transform .18s ease";
+        if (dy > 110) { lp.style.transform = "translateY(100%)"; setTimeout(() => { App.plan.toggleList(false); lp.style.transition = ""; lp.style.transform = ""; }, 170); }
+        else lp.style.transform = "";
+        setTimeout(() => { if (lp.style.transform === "") lp.style.transition = ""; }, 220);
+      } else if (pull === "open" && dy > 60) App.plan.toggleList(true);
+      pull = null;
+    };
+    document.addEventListener("touchend", end, { passive: true });
+    document.addEventListener("touchcancel", end, { passive: true });
+  }
 
   App.api("/api/meta").catch(() => {}); // warms the connection, surfaces a dead server early
 

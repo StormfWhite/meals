@@ -34,7 +34,7 @@ body.offline #topbar::after { content: "offline · saved on this phone"; font-si
   .vsep { display: none; }
 
   /* the day: full width, roomy rows */
-  .plan-cols.one-day { padding: 8px 10px 90px; justify-content: stretch; }
+  .plan-cols.one-day { padding: 6px 8px 90px; justify-content: stretch; }
   .is-day .mb-name, .is-day .mb-ing { flex: 1 1 auto; min-width: 0; }
   .is-day .mb-amt { flex: 0 0 76px; }
   /* one thin line per ingredient: stats ride at the end, the × gives way to the swipe */
@@ -60,7 +60,7 @@ body.offline #topbar::after { content: "offline · saved on this phone"; font-si
 @media (max-width: 760px) {
   .gp-sug-toggle { display: inline-flex; }
   .gp-section:not(.sug-open) .gp-sugs { display: none; }
-  .gp-row { min-height: 40px; font-size: 15px; }
+  .gp-row { min-height: 34px; font-size: 15px; }
   .gp-row-need { font-size: 12.5px; }
   .gp-row .icon-btn { display: none; }          /* hover-only on the laptop: swipe instead */
   .gp-row .icon-btn.gp-del, .gp-row .icon-btn.gp-free-remove { display: inline-flex !important; position: static !important; transform: none !important; opacity: .6; width: 32px; height: 32px; }   /* a real delete too, beside the swipe */
