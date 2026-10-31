@@ -457,57 +457,180 @@ App.groceriesPanel = {
     this._drawScan();
   },
 
-  /* A barcode -> the add row. The camera reads it where the browser can (BarcodeDetector: the
-   * phone); anywhere else type it, or point a USB scanner at the box. The product comes from
-   * Open Food Facts straight from the page (works on the phone build too) and lands in the
-   * Pantry add row, so picking fridge / dry / freezer adds it like anything typed. */
+  /* Barcodes -> the Pantry, as fast as you can point. The camera stays open: each code it reads is looked
+   * up and ADDED on the spot (a beep, a flash, a line on the tape), and it is already reading the next one.
+   * Decoding: the browser's own BarcodeDetector where there is one, else zxing-wasm (3 ms a frame once loaded)
+   * -- so the phone shell's WebView, iPhone Safari and the laptop webcam all work. Products come from Open Food
+   * Facts; a code seen once is remembered here, so the second time is instant and works offline. A code nobody
+   * knows waits on the tape for a name typed once; the camera does not stop for it. */
+  _decoder() {
+    if (this._dec) return this._dec;
+    const FORMATS = ["EAN-13", "EAN-8", "UPC-A", "UPC-E"];
+    this._dec = (async () => {
+      if (window.BarcodeDetector) {
+        try {
+          const want = ["ean_13", "ean_8", "upc_a", "upc_e"];
+          const have = await BarcodeDetector.getSupportedFormats();
+          if (want.every(f => have.includes(f))) {
+            const det = new BarcodeDetector({ formats: want });
+            return async (video) => { const hits = await det.detect(video); return hits.length ? hits[0].rawValue : null; };
+          }
+        } catch (e) { /* fall through to the wasm one */ }
+      }
+      const Z = await import("https://cdn.jsdelivr.net/npm/zxing-wasm@3.1.5/dist/es/reader/index.js");
+      const cv = document.createElement("canvas"), cx = cv.getContext("2d", { willReadFrequently: true });
+      return async (video) => {
+        const w = 640, h = Math.round(w * video.videoHeight / video.videoWidth) || 480;
+        if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
+        cx.drawImage(video, 0, 0, w, h);
+        const hits = await Z.readBarcodes(cx.getImageData(0, 0, w, h), { formats: FORMATS, maxNumberOfSymbols: 1 });
+        return hits.length ? hits[0].text : null;
+      };
+    })();
+    this._dec.catch(() => { this._dec = null; });     // offline the first time: try again next open
+    return this._dec;
+  },
+
+  _upc: {
+    all() { try { return JSON.parse(localStorage.getItem("meals.v1.upc") || "{}"); } catch (e) { return {}; } },
+    get(code) { return this.all()[code] || null; },
+    put(code, v) {
+      const all = this.all(); all[code] = v;
+      const keys = Object.keys(all); if (keys.length > 400) delete all[keys[0]];
+      try { localStorage.setItem("meals.v1.upc", JSON.stringify(all)); } catch (e) {}
+    },
+  },
+
+  /* name + amount for a code: remembered, else Open Food Facts (6 s at most). null = nobody knows it. */
+  async _product(code) {
+    const known = this._upc.get(code);
+    if (known) return known;
+    const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 6000);
+    try {
+      const r = await fetch(`https://world.openfoodfacts.org/api/v2/product/${code}.json?fields=product_name,brands,quantity,product_quantity`, { signal: ctl.signal });
+      const p = (await r.json()).product;
+      if (!p || !p.product_name) return null;
+      const brand = (p.brands || "").split(",")[0].trim();
+      const full = brand && !p.product_name.toLowerCase().includes(brand.toLowerCase()) ? `${brand} ${p.product_name}` : p.product_name;
+      const grams = Number(p.product_quantity) || 0;
+      const out = { name: full, qty: grams ? `${Math.round(grams)} g` : ((p.quantity || "").trim() || "1") };
+      this._upc.put(code, out);
+      return out;
+    } catch (e) { return null; } finally { clearTimeout(t); }
+  },
+
+  /* "Goya Black Beans 15.5 oz" is the catalog's "Black beans": the longest catalog name whose every word
+   * is in the product's name wins; otherwise the product's own name makes a new ingredient. */
+  _catalogName(product) {
+    const words = new Set(product.toLowerCase().replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter(Boolean));
+    let best = null;
+    for (const i of this._ingredients || []) {
+      const ws = (i.name || "").toLowerCase().replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter(Boolean);
+      if (ws.length && (i.name || "").length >= 4 && ws.every(w => words.has(w)) && (!best || i.name.length > best.length)) best = i.name;
+    }
+    return best || product;
+  },
+
   async _barcode() {
     if (!this._stockOpen) this._toggleStock(true);
     const box = this._container.querySelector(".gp-scan");
     box.hidden = false;
-    box.innerHTML = `<div class="gp-scan-head"><span class="field-label">${App.icon(GP_BARCODE)} Barcode</span>
-        <button class="icon-btn gp-scan-x" title="Close">${App.icon(GP_X)}</button></div>
-      <video class="gp-bar-video" playsinline muted hidden></video>
-      <input class="gp-bar-code num" inputmode="numeric" placeholder="digits under the bars" spellcheck="false" autocomplete="off">
-      <div class="gp-bar-out dim"></div>`;
-    const video = box.querySelector("video"), input = box.querySelector(".gp-bar-code"), out = box.querySelector(".gp-bar-out");
-    let stream = null, live = true;
-    const close = () => { live = false; if (stream) stream.getTracks().forEach(t => t.stop()); box.hidden = true; box.innerHTML = ""; };
+    const placeBtns = Object.keys(GP_PLACES).map(w => `<button class="icon-btn where-${w}" data-where="${w}" title="${GP_PLACES[w][1]}">${App.icon(GP_PLACES[w][0])}</button>`).join("");
+    box.innerHTML = `<div class="gp-scan-head"><span class="field-label">${App.icon(GP_BARCODE)} Scanning</span>
+        <span class="gp-bar-n num"></span><span class="gp-stock-pick gp-bar-where">${placeBtns}</span>
+        <button class="icon-btn gp-scan-x" title="Done">${App.icon(GP_X)}</button></div>
+      <div class="gp-bar-view"><video class="gp-bar-video" playsinline muted></video><div class="gp-bar-frame"></div><div class="gp-bar-msg dim">Starting the camera…</div></div>
+      <div class="gp-bar-tape"></div>
+      <input class="gp-bar-code num" inputmode="numeric" placeholder="or type the digits · Enter" spellcheck="false" autocomplete="off">`;
+    const view = box.querySelector(".gp-bar-view"), video = box.querySelector("video"), msg = box.querySelector(".gp-bar-msg");
+    const tape = box.querySelector(".gp-bar-tape"), input = box.querySelector(".gp-bar-code"), counter = box.querySelector(".gp-bar-n");
+    let stream = null, live = true, where = this._scanWhere || null, added = 0;
+    const paintWhere = () => box.querySelectorAll(".gp-bar-where button").forEach(b => b.classList.toggle("on", b.dataset.where === where));
+    paintWhere();
+    box.querySelectorAll(".gp-bar-where button").forEach(b => b.addEventListener("click", () => {
+      where = where === b.dataset.where ? null : b.dataset.where; this._scanWhere = where; paintWhere();
+    }));
+    const close = () => { live = false; if (stream) stream.getTracks().forEach(t => t.stop()); box.hidden = true; box.innerHTML = ""; this.refresh(); };
     box.querySelector(".gp-scan-x").addEventListener("click", close);
-    const lookup = async (code) => {
-      code = code.replace(/\D/g, "");
-      if (code.length < 8) return;
-      out.textContent = "Looking it up…";
+
+    let ctx = null;                        // one shared audio context: a beep must not wait on creating one
+    const beep = () => {
       try {
-        const r = await fetch(`https://world.openfoodfacts.org/api/v2/product/${code}.json?fields=product_name,brands,quantity,product_quantity`);
-        const p = (await r.json()).product;
-        if (!p || !p.product_name) { out.textContent = `${code}: not in Open Food Facts — type the name`; return; }
-        const brand = (p.brands || "").split(",")[0].trim();
-        const name = brand && !p.product_name.toLowerCase().includes(brand.toLowerCase()) ? `${brand} ${p.product_name}` : p.product_name;
-        const grams = Number(p.product_quantity) || 0;
-        this._container.querySelector(".gp-stock-name").value = name;
-        this._container.querySelector(".gp-stock-qty").value = grams ? `${Math.round(grams)} g` : (p.quantity || "");
-        out.textContent = `${name} · ${p.quantity || "size unknown"} — now pick fridge, dry or freezer`;
-        close_after();
-      } catch (e) { out.textContent = "Couldn't reach Open Food Facts"; }
+        ctx = ctx || new (window.AudioContext || window.webkitAudioContext)();
+        const o = ctx.createOscillator(), gn = ctx.createGain();
+        o.frequency.value = 1040; o.connect(gn); gn.connect(ctx.destination);
+        gn.gain.setValueAtTime(0.12, ctx.currentTime); gn.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.09);
+        o.start(); o.stop(ctx.currentTime + 0.1);
+      } catch (e) {}
+      if (navigator.vibrate) navigator.vibrate(25);
+      view.classList.remove("hit"); void view.offsetWidth; view.classList.add("hit");
     };
-    const close_after = () => { live = false; if (stream) stream.getTracks().forEach(t => t.stop()); video.hidden = true; };
-    input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); lookup(input.value); } });
-    input.addEventListener("input", () => { if (/^\d{12,14}$/.test(input.value.trim())) lookup(input.value); });   // a USB scanner types the digits
-    input.focus();
-    if (window.BarcodeDetector && navigator.mediaDevices?.getUserMedia) {
-      try {
-        const det = new BarcodeDetector({ formats: ["ean_13", "ean_8", "upc_a", "upc_e"] });
-        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-        video.srcObject = stream; video.hidden = false; await video.play();
-        const tick = async () => {
-          if (!live) return;
-          try { const hits = await det.detect(video); if (hits.length) { lookup(hits[0].rawValue); return; } } catch (e) {}
-          setTimeout(tick, 250);
-        };
-        tick();
-      } catch (e) { out.textContent = "Camera not available — type the digits"; }
-    } else out.textContent = "No camera scanning here — type the digits (or use a USB scanner)";
+    const where_ = () => where;
+    const addLine = (code) => {
+      const row = App.el(`<div class="gp-bar-row pending"><span class="gp-bar-code-n num">${code}</span><span class="gp-bar-what">looking it up…</span></div>`);
+      tape.prepend(row);
+      while (tape.children.length > 12) tape.lastChild.remove();
+      return row;
+    };
+    const done = (row, name, qty, at) => {
+      row.className = "gp-bar-row ok";
+      row.innerHTML = `<span class="gp-bar-tick">${App.icon(GP_CHECK)}</span><span class="gp-bar-what"><b>${App.esc(name)}</b> <span class="dim num">${App.esc(qty)}</span></span>${at ? `<span class="gp-bar-at where-${at}">${App.icon(GP_PLACES[at][0])}</span>` : ""}`;
+      counter.textContent = ++added;
+    };
+    const unknown = (row, code) => {
+      row.className = "gp-bar-row nope";
+      row.innerHTML = `<span class="gp-bar-code-n num">${code}</span><span class="gp-bar-what">not found — type its name below</span>`;
+      row.dataset.code = code;
+    };
+    const take = async (row, code, p) => {
+      const name = this._catalogName(p.name), at = where_();
+      const ok = await this._addStock(name, p.qty || "1", at, true);
+      if (ok) { done(row, name, p.qty || "1", at); this.refresh(); }
+      else { row.className = "gp-bar-row nope"; row.innerHTML = `<span class="gp-bar-code-n num">${code}</span><span class="gp-bar-what">couldn't add ${App.esc(name)}</span>`; }
+    };
+    const recent = new Map();
+    const onCode = (raw) => {
+      const code = String(raw).replace(/\D/g, "");
+      if (code.length < 8) return;
+      const now = Date.now(), last = recent.get(code);
+      recent.set(code, now);
+      if (last && now - last < 1500) return;       // still in view: one scan, however long it is held there
+      beep();
+      const row = addLine(code);
+      this._product(code).then(p => { if (!live) return; p ? take(row, code, p) : unknown(row, code); });
+    };
+    input.addEventListener("keydown", (e) => { if (e.key === "Enter") {
+      e.preventDefault();
+      const v = input.value.trim(); input.value = "";
+      if (!v) return;
+      if (/^\d{8,14}$/.test(v)) { onCode(v); return; }
+      // text = the name for the oldest code that wasn't found
+      const row = tape.querySelector(".gp-bar-row.nope[data-code]");
+      if (row) { const code = row.dataset.code; const p = { name: v, qty: "1" }; this._upc.put(code, p); delete row.dataset.code; take(row, code, p); }
+    } });
+    input.addEventListener("input", () => { if (/^\d{12,14}$/.test(input.value.trim())) { const v = input.value.trim(); input.value = ""; onCode(v); } });   // a USB scanner types the digits
+
+    let decode;
+    try { decode = await this._decoder(); } catch (e) { msg.textContent = "Couldn't load the scanner — type the digits"; return; }
+    if (!live) return;
+    if (!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) { msg.textContent = "No camera here — type the digits (or use a USB scanner)"; return; }
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } } });
+      if (!live) { stream.getTracks().forEach(t => t.stop()); return; }
+      try { await stream.getVideoTracks()[0].applyConstraints({ advanced: [{ focusMode: "continuous" }] }); } catch (e) {}
+      video.srcObject = stream; await video.play(); msg.hidden = true;
+    } catch (e) { msg.textContent = "Camera not allowed — type the digits"; return; }
+    let busy = false;
+    const loop = async () => {
+      if (!live) return;
+      if (!busy && video.readyState >= 2 && video.videoWidth) {
+        busy = true;
+        try { const code = await decode(video); if (code) onCode(code); } catch (e) {}
+        busy = false;
+      }
+      if (video.requestVideoFrameCallback) video.requestVideoFrameCallback(loop); else requestAnimationFrame(loop);
+    };
+    loop();
   },
 
   /* One item into the Pantry -- typed in the add row or ticked from a photo. True = it's in. */

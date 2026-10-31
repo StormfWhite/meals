@@ -1079,3 +1079,27 @@ button.mb-tag { cursor: pointer; font: inherit; font-size: 10px; }
   background: color-mix(in srgb, var(--panel-2) 55%, transparent); border-radius: 5px; }
 .list-panel .gp-row:not(.gp-stock-row) .gp-row-qty { width: 66px; text-align: right; }
 .list-panel .gp-row:not(.gp-stock-row) > .icon-btn.gp-low { position: static; transform: none; right: auto; opacity: 1; margin: 0 -2px 0 2px; background: none; }
+
+/* ── barcode scanner: camera on top, a tape of what was just added underneath ── */
+.gp-bar-n { margin-left: auto; font-weight: 700; color: var(--accent); }
+.gp-bar-where { display: inline-flex; gap: 0; }
+.gp-bar-where .icon-btn { opacity: .55; }
+.gp-bar-where .icon-btn.on { opacity: 1; }
+.gp-bar-view { position: relative; margin: 4px 0; border-radius: 10px; overflow: hidden; background: #111; aspect-ratio: 16 / 9; max-height: 34vh; width: 100%; }
+.gp-bar-view video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.gp-bar-frame { position: absolute; left: 12%; right: 12%; top: 26%; bottom: 26%; border: 2px solid rgba(255,255,255,.75); border-radius: 10px;
+  box-shadow: 0 0 0 9999px rgba(0,0,0,.28); pointer-events: none; transition: border-color .12s; }
+.gp-bar-view.hit .gp-bar-frame { border-color: var(--good, #3ecf8e); animation: gp-hit .35s ease-out; }
+@keyframes gp-hit { 0% { transform: scale(1.04); } 100% { transform: scale(1); } }
+.gp-bar-msg { position: absolute; inset: auto 0 8px 0; text-align: center; font-size: 11.5px; color: #ddd; }
+.gp-bar-msg[hidden] { display: none; }
+.gp-bar-tape { display: flex; flex-direction: column; gap: 1px; max-height: 26vh; overflow: auto; scrollbar-width: none; }
+.gp-bar-row { display: flex; align-items: center; gap: 7px; padding: 3px 6px; border-radius: 6px; font-size: 12px; min-width: 0; animation: gp-in .18s ease-out; }
+@keyframes gp-in { from { opacity: 0; transform: translateY(-4px); } }
+.gp-bar-row.pending { color: var(--text-dim); }
+.gp-bar-row.nope { color: var(--warn); background: color-mix(in srgb, var(--warn) 10%, transparent); }
+.gp-bar-what { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gp-bar-code-n { font-size: 10.5px; color: var(--text-dim); }
+.gp-bar-tick { color: var(--good, #3ecf8e); display: inline-flex; }
+.gp-bar-tick svg, .gp-bar-at svg { width: 12px; height: 12px; }
+.gp-bar-at { display: inline-flex; opacity: .8; }

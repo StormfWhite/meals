@@ -1,11 +1,18 @@
 // Meals: the app shell and Pyodide cached so the planner opens fast and offline.
-const VERSION = "m2";
+const VERSION = "m3";
 self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", (e) => e.waitUntil(caches.keys()
   .then((ks) => Promise.all(ks.filter((k) => k !== VERSION && k !== "pyodide" && k !== "meal-photos").map((k) => caches.delete(k)))).then(() => self.clients.claim())));
 self.addEventListener("fetch", (e) => {
   const u = new URL(e.request.url);
   if (e.request.method !== "GET") return;
+  if (u.hostname.endsWith("jsdelivr.net") && u.pathname.includes("/zxing-wasm@")) {   // the barcode decoder: versioned, so keep it (works offline in the shop)
+    e.respondWith(caches.open("pyodide").then((c) => c.match(e.request).then((hit) => hit || fetch(e.request).then((r) => {
+      if (r.ok) c.put(e.request, r.clone());
+      return r;
+    }))));
+    return;
+  }
   if (u.hostname === "cdn.jsdelivr.net" && u.pathname.startsWith("/pyodide/")) {   // versioned: cache first, forever
     e.respondWith(caches.open("pyodide").then((c) => c.match(e.request).then((hit) => hit || fetch(e.request).then((r) => {
       if (r.ok) c.put(e.request, r.clone());
