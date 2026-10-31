@@ -96,22 +96,6 @@ App.groceriesPanel = {
     return Math.max((this._tripKinds || {})[kind] || 0, own);
   },
 
-  async _autoRestock(week) {
-    const KEY = `meals.v1.autolow.${week}`;
-    let done = [];
-    try { done = JSON.parse(localStorage.getItem(KEY) || "[]"); } catch (e) {}
-    // Only what keeps (shelf-stable, 3+ weeks): a perishable shouldn't be bought just because the last ran
-    // out -- it'd sit "on hand" and go bad. Those stay in the Pantry's Running low, one tap away.
-    const need = this._stock.filter(i => i.low && !i.on_list && !i.made && (i.keep_days || 0) >= 21 && !done.includes(i.ingredient_id));
-    if (!need.length) return false;
-    try { localStorage.setItem(KEY, JSON.stringify(done.concat(need.map(i => i.ingredient_id)))); } catch (e) { return false; }   // can't remember = don't loop
-    for (const item of need) {
-      try { await App.api(`/api/groceries/${week}/extra`, { method: "POST", body: { ingredient_id: item.ingredient_id, qty: null } }); } catch (e) {}
-    }
-    App.toast(need.length === 1 ? `${need[0].name} added — running out` : `${need.length} running-out items added to the list`);
-    return true;
-  },
-
   async _reload(quick = false) {
     if (!this._container || !this._container.isConnected) return;
     const gw = this._weekStart, mw = this._marketWeek, two = mw !== gw;
@@ -130,8 +114,7 @@ App.groceriesPanel = {
     this._tripAt = Math.max(...Object.values(gRes.trip_at || {}), 0);
     this._stock = stockRes.items;
     this._meals = stockRes.meals || [];
-    // What's running out goes on the list by itself (once per item per week, so one that's swiped off stays off).
-    if (await this._autoRestock(gw)) { this._reload(); return; }
+    // The list is only what the planned meals need; what's running out waits in the Pantry's Running low.
     const low = this._stock.filter(i => i.low && !i.on_list).length;
     const pb = document.getElementById("pantry-count");
     if (pb) { pb.textContent = low ? String(low) : ""; pb.classList.toggle("on", low > 0); }
