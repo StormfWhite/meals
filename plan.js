@@ -375,7 +375,7 @@ App.plan = {
       },
       cachedSources: (key) => (self._srcCache || {})[key] || null,
       onStatsChanged: () => self._paintDayTotals(),
-      removeBlock: (key) => { self._blocks = self._blocks.filter(b => b.key !== key); self._paintDayTotals(); },
+      removeBlock: (key) => { self._blocks = self._blocks.filter(b => b.key !== key); self._paintDayTotals(); self._syncSides(key.split(":")[0]); },
       listWeek: () => self._listWeek,
       reloadWeek: () => self.render(document.getElementById("body")),
       fillWeek: (fromKey, recipeId, meal, servings) => self._fillWeek(fromKey, recipeId, meal, servings),
@@ -484,6 +484,11 @@ App.plan = {
           cell.appendChild(strip);
         }
         cell.appendChild(this._addMealButton(host, cell, date, meal));
+        if (meal === "dinner") {
+          let t;
+          cell.addEventListener("input", (e) => { if (e.target.classList.contains("mb-name")) { clearTimeout(t); t = setTimeout(() => this._syncSides(date), 350); } });
+          cell.classList.toggle("has-side", this._indicesFor(date, "dinner").length > 1);
+        }
         holder.appendChild(cell);
       });
       holder.appendChild(App.el(`
@@ -673,8 +678,9 @@ App.plan = {
       const list = d ? d.sides || [] : [];
       if (d) this._rememberSides(strip.dataset.date, list);
       const sig = JSON.stringify(list);
-      if (strip._sig === sig) return;                  // same ideas already showing: leave them be
-      this._paintSides(strip, list);
+      if (strip._sig !== sig) this._paintSides(strip, list);      // (same ideas already showing: leave them be)
+      // a side that was still drawing when the ideas were painted: fold them away now
+      if (!strip.hidden && this._dinnerHasSide(strip.dataset.date, strip.parentNode)) this._syncSides(strip.dataset.date);
     });
   },
 
@@ -711,12 +717,39 @@ App.plan = {
     return new Promise(r => setTimeout(() => { strip.hidden = true; strip.innerHTML = ""; strip.classList.remove("leaving"); r(); }, 280));
   },
 
+  /* A dinner has a side once an extra block is named (or saved); an empty extra block doesn't count, nor does a removed one. */
+  _dinnerHasSide(date, cell) {
+    const saved = this._indicesFor(date, "dinner").length > 1;
+    if (!cell) return saved;
+    const extras = Array.from(cell.querySelectorAll(".mb")).slice(1);
+    const named = extras.some(el => el.querySelector(".mb-name").value.trim());
+    // a block still drawing has an empty name box but a saved slot; only someone typing in an extra block makes the box the truth
+    const typing = extras.some(el => el.contains(document.activeElement) && document.activeElement.classList.contains("mb-name"));
+    return typing ? named : (named || saved);
+  },
+
+  /* Keep the ideas in step with the dinner: a side named or added -> they fold away and the line + appears under it;
+   * the side removed or left blank -> they come back. */
+  _syncSides(date) {
+    if (this._isWeekMode()) return;
+    const cell = document.querySelector(`.meal-cell[data-date="${date}"][data-meal="dinner"]`);
+    const strip = cell && cell.querySelector(".side-strip");
+    if (!strip) return;
+    const has = this._dinnerHasSide(date, cell);
+    cell.classList.toggle("has-side", has);
+    if (has) { if (!strip.hidden && !strip.classList.contains("leaving")) this._leaveStrip(strip); return; }
+    if (!strip.hidden || strip.classList.contains("leaving")) return;
+    this._paintSides(strip, this._cachedSides(date));
+    strip.classList.add("entering");
+    requestAnimationFrame(() => requestAnimationFrame(() => strip.classList.remove("entering")));
+    this._paintDayTotals(true);                 // and fresh ideas for what the day is now
+  },
+
   _paintSides(strip, list) {
     strip._sig = JSON.stringify(list);
     strip.innerHTML = "";
     // once the dinner has a side (or a new block is open) the ideas are done: the line + under the last block adds more
-    const cell = strip.parentNode;
-    if (this._indicesFor(strip.dataset.date, "dinner").length > 1 || (cell && cell.querySelectorAll(".mb").length > 1)) { strip.hidden = true; return; }
+    if (this._dinnerHasSide(strip.dataset.date, strip.parentNode)) { strip.hidden = true; return; }
     // day view: the ideas always end in a blank + = another dinner block (the plus that used to sit under dinner)
     const dayView = !this._isWeekMode();
     strip.hidden = !list.length && !dayView;
@@ -724,9 +757,11 @@ App.plan = {
     const blank = () => {
       const b = App.el(`<button class="ss-blank" title="Add another dinner block">${App.icon(GP_PLUS)}</button>`);
       b.addEventListener("click", () => {
-        const add = strip.parentNode.querySelector(".meal-add");
-        this._leaveStrip(strip);
-        if (add) add.click();
+        const cell = strip.parentNode;
+        const empty = Array.from(cell.querySelectorAll(".mb")).slice(1).find(el => !el.querySelector(".mb-name").value.trim());
+        if (empty) { empty.querySelector(".mb-name").focus(); return; }       // one is already waiting
+        const add = cell.querySelector(".meal-add");
+        if (add) add.click();          // a new empty block; the ideas stay until it is named
       });
       strip.appendChild(b);
     };
