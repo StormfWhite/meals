@@ -57,7 +57,7 @@ App.plan = {
     const pos = keep ? { c: prev.scrollTop, cl: prev.scrollLeft, b: body.scrollTop, l: panel ? panel.scrollTop : 0 } : null;
     if (!keep) {
       clearInterval(this._bandTimer);
-      body.innerHTML = `<div class="pad"><div class="loading-state"><div class="spin"></div>Loading…</div></div>`;
+      if (!this._fast) body.innerHTML = `<div class="pad"><div class="loading-state"><div class="spin"></div>Loading…</div></div>`;
     }
     try {
       const drew = await this._load(body, soft && keep);
@@ -91,7 +91,33 @@ App.plan = {
     };
   },
 
+  /* Going to the next / previous day inside the week already loaded needs no fetching: the day is drawn from
+   * memory at once, the shopping list panel is kept as it is, and a quiet refresh a moment later picks up anything
+   * changed elsewhere. Anything else (another week, week view, first draw) takes the normal path. */
+  _canFast(date) {
+    return !this._isWeekMode() && !!this._drawnFor && !!this._weeks && !!this._recipes && !!this._options
+      && !!this._weeks[this._wkOf(date)] && this._wkOf(date) === this._wkOf(this._date);
+  },
+
+  _stepDay(body, step) {
+    const to = _planShift(this._date, step);
+    this._fast = this._canFast(to);
+    this._date = to;
+    return this.render(body);
+  },
+
   async _load(body, soft = false) {
+    if (this._fast) {
+      this._fast = false;
+      const old = body.querySelector("#list-panel");
+      if (old) { old.remove(); this._reusePanel = old; }
+      this._merge();
+      this._draw(body);
+      this._drawnFor = `${this._date}|${this._isWeekMode()}`;
+      clearTimeout(this._quietTimer);
+      this._quietTimer = setTimeout(() => this.render(body, true), 1200);     // pick up anything changed elsewhere
+      return;
+    }
     const today = _planToday();
     const day = await App.api(`/api/board/day/${this._date}`);
     // Week view is the seven days going forward from the day on screen, so it can straddle two
@@ -201,8 +227,7 @@ App.plan = {
         this.flush();
         setTimeout(() => {
           this._slideIn = step;
-          this._date = _planShift(this._date, step);
-          this.render(body);
+          this._stepDay(body, step);
         }, 170);
       } else {
         cols.style.transform = "";
@@ -437,7 +462,11 @@ App.plan = {
     `;
 
     const cols = body.querySelector("#plan-cols");
-    this._wireSplit(body.querySelector("#split-handle"), body.querySelector("#list-panel"));
+    let panel = body.querySelector("#list-panel");
+    const reused = this._reusePanel || null;
+    this._reusePanel = null;
+    if (reused) { panel.replaceWith(reused); panel = reused; }            // the list stays put (and scrolled) between days
+    this._wireSplit(body.querySelector("#split-handle"), panel);
     // The arithmetic that keeps seven columns and the docked list on a
     // 1366-wide screen with no sideways scroll, measured in the real shell:
     //   1366 - 250 (list) - 15 (scrollbar gutter) = 1101 usable
@@ -503,7 +532,7 @@ App.plan = {
     this._paintPick();
     this._drawNav();
     this.refreshSources();
-    App.groceriesPanel.mount(body.querySelector("#list-panel"), this._listWeek,
+    if (!reused) App.groceriesPanel.mount(body.querySelector("#list-panel"), this._listWeek,
       (n) => this._setBadge(n), "Next week", _planRange(this._listWeek, _planShift(this._listWeek, 6)), this._marketWeek);
     this._refreshAllStats();
 
@@ -601,8 +630,9 @@ App.plan = {
     `);
     const body = document.getElementById("body");
     const step = weekMode ? 7 : 1;
-    nav.querySelector("#plan-prev").addEventListener("click", () => { this._date = _planShift(this._date, -step); this.render(body); });
-    nav.querySelector("#plan-next").addEventListener("click", () => { this._date = _planShift(this._date, step); this.render(body); });
+    const go = (n) => { if (weekMode) { this._date = _planShift(this._date, n); this.render(body); } else this._stepDay(body, n); };
+    nav.querySelector("#plan-prev").addEventListener("click", () => go(-step));
+    nav.querySelector("#plan-next").addEventListener("click", () => go(step));
     nav.querySelector("#plan-import").addEventListener("click", () => App.recipes.openImportFrom(() => this.render(body)));
     nav.querySelector("#plan-today").addEventListener("click", () => { this._date = _planToday(); this._band = null; this.render(body); });
     nav.querySelector("#plan-mode").addEventListener("click", (e) => {
