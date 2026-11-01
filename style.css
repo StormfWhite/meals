@@ -680,11 +680,11 @@ input.gp-row-name:focus { background: var(--panel); border-color: var(--border);
 .meal-add:hover { color: var(--accent); border-color: var(--accent); }
 .meal-add svg { width: 12px; height: 12px; }
 /* day view: a hairline across the card with a + in the middle, always showing -- under each meal, last one included */
-.is-day .meal-add { display: flex; align-items: center; justify-content: center; gap: 8px; border: 0; background: none; opacity: 1;
-  height: 18px; padding: 0; margin: 2px 0; border-radius: 0; }
+.is-day .meal-add { display: flex; align-items: center; justify-content: center; border: 0; background: none; opacity: 1;
+  width: 100%; height: 34px; min-height: 34px; padding: 0; margin: 0; border-radius: 0; color: var(--text-dim); }
 .is-day .meal-add::before, .is-day .meal-add::after { content: ""; flex: 1; height: 1px; background: var(--border); }
-.is-day .meal-add svg { flex: none; width: 14px; height: 14px; padding: 2px; border-radius: 50%; border: 1px solid var(--border); background: var(--panel); }
-.is-day .meal-add:hover svg { border-color: var(--accent); }
+.is-day .meal-add svg { flex: none; width: 26px; height: 26px; padding: 0; margin: 0 6px; border: 0; background: none; stroke-width: 2; }
+.is-day .meal-add:hover { color: var(--accent); }
 .mb-also {
   width: 13px; height: 13px; display: flex; align-items: center; justify-content: center;
   font-size: 13px; font-weight: 700; line-height: 1;
