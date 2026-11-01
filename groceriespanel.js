@@ -862,6 +862,9 @@ App.groceriesPanel = {
     // this week's meals take some: what's left after them
     const left = (item) => item.uses_g > 0.5 && item.left_text      // "→ 0" says nothing "out this week" doesn't
       ? `<span class="gp-stock-left dim num" title="Left after this week's meals">→ ${App.esc(item.left_text || "0")}</span>` : "";
+    // and from which meals: "− 1 c · Dal, Tacos" under the row
+    const usedBy = (item, frozen) => item.uses_g > 0.5 && item.used_by && item.used_by.length && (!frozen || !(item.fridge_g > 0.5))
+      ? `<div class="gp-stock-uses dim" title="This week's meals take this out of what's on hand">−${App.esc(item.uses_text)} · ${item.used_by.map(App.esc).join(", ")}</div>` : "";
     const rmBtn = `<button class="icon-btn gp-stock-rm" title="Remove (used up)">${App.icon(GP_X)}</button>`;
     const keyOf = (item, frozen) => item.ingredient_id + (frozen ? ":f" : "");
 
@@ -912,7 +915,8 @@ App.groceriesPanel = {
     const row = (item, frozen, extra = "") => {
       if (this._stockEdit === keyOf(item, frozen)) return editor(item, frozen);
       const text = frozen ? item.freezer_text : item.fridge_text;
-      const el = App.el(`<div class="gp-row gp-stock-row" title="Click to change the name, amount or place">
+      const uses = usedBy(item, frozen);
+      const el = App.el(`<div class="gp-row gp-stock-row${uses ? " has-uses" : ""}" title="Click to change the name, amount or place">
         ${gpPlace(frozen ? "freezer" : item.where)}
         <span class="gp-row-name">${App.esc(item.name)}</span>
         <span class="gp-stock-amt num">${App.esc(text || "—")}</span>
@@ -920,6 +924,7 @@ App.groceriesPanel = {
         ${when(item)}
         ${extra}
         ${rmBtn}
+        ${uses}
       </div>`);
       el.addEventListener("click", (e) => {
         if (e.target.closest("button")) return;

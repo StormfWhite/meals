@@ -465,6 +465,8 @@ button.mb-tag:hover { color: var(--good); border-color: var(--good); }
 .gp-stock-when { font-size: 10.5px; white-space: nowrap; color: var(--text-dim); }
 .gp-stock-when.warn { color: var(--warn); }
 .gp-stock-left { font-size: 10.5px; white-space: nowrap; }
+.gp-stock-row.has-uses { position: relative; padding-bottom: 14px; }
+.gp-stock-uses { position: absolute; left: 28px; right: 6px; bottom: 1px; font-size: 10.5px; line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* fridge / dry / freezer: their own shape AND colour, everywhere they appear */
 .where-fridge { color: var(--fridge); }
 .where-pantry { color: var(--dry); }

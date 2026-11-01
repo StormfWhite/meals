@@ -785,6 +785,7 @@ class Ledger:
         listed = {i["ingredient_id"] for i in groceries.get_week_groceries(week, with_prices=False)
                   if not i.get("covered")}
         soon = _add_days(week, LOW_DAYS)
+        meals_of, _ = groceries.week_ingredient_meals(week)
         out = []
         for ing_id, lots in self.state(week).items():
             ing = self.ings.get(ing_id)
@@ -803,6 +804,8 @@ class Ledger:
                         # what this week's meals take, and what's left after them
                         "uses_g": round(max(0.0, fridge + frozen - look["left_g"]), 1),
                         "left_text": us_amount(look["left_g"]),
+                        "uses_text": us_amount(max(0.0, fridge + frozen - look["left_g"])),
+                        "used_by": meals_of.get(ing_id, []),
                         "low": bool(look["runs_out"] and look["runs_out"] <= soon),
                         "on_list": ing_id in listed, "keep_days": days, "freezes": freezes,
                         "made": bool(ing.get("made"))})
