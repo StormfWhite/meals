@@ -294,7 +294,7 @@ App.bulk = {
   // ── everything made in bulk ────────────────────────────────────────
   _drawItems() {
     const wrap = this._body.querySelector(".bk-items");
-    const items = this._data.items;
+    const items = this._data.items.filter(i => !i.gone);       // used up over a week ago: gone from the list
     wrap.innerHTML = items.length ? "" : `<div class="gp-empty">Nothing made in bulk yet. What's made here goes straight into the kitchen and shows up as an ingredient in meals — "1 cup black beans" counts everything that went into the pot.</div>`;
     items.forEach(it => {
       const have = Object.entries(it.have).map(([w, h]) =>

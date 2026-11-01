@@ -10,6 +10,7 @@ module lands.
 from __future__ import annotations
 
 import base64
+import datetime
 import json
 import re
 import time
@@ -1110,7 +1111,9 @@ def _bulk_view() -> dict:
             if g > 0.5:
                 have[where] = {"g": round(g, 1), "text": stock.made_text(ing, g) or stock.us_amount(g)}
         per100 = nutrition.nutrients_per_100g(ing)
-        items.append({"ingredient_id": ing["id"], "name": ing["name"], "have": have,
+        # nothing left of it and last made over a week ago: off the made list (still offered when naming a pot)
+        gone = not have and last.get("date", "") < (datetime.date.today() - datetime.timedelta(days=7)).isoformat()
+        items.append({"ingredient_id": ing["id"], "name": ing["name"], "have": have, "gone": gone,
                       "per100": per100, "per_unit": _per_unit(per100, last.get("unit")),
                       "unknown": [names.get(i, "?") for i in (per100 or {}).get("unknown", [])],
                       "last": {**last, "lines": [{**l, "name": names.get(l["ingredient_id"], "?")}
