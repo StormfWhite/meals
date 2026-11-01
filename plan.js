@@ -677,15 +677,28 @@ App.plan = {
   /* Side ideas under a lone dinner main (sides.py): what the day is low in, and what we usually eat
    * with this main, learned from past plans. + puts it in as the dinner's next block; x says not
    * with this main for a few weeks. Gone once the dinner has a side. */
+  /* The ideas fold away smoothly (CSS .leaving), resolving when the fold is done. */
+  _leaveStrip(strip) {
+    strip.classList.add("leaving");
+    return new Promise(r => setTimeout(() => { strip.hidden = true; strip.innerHTML = ""; strip.classList.remove("leaving"); r(); }, 280));
+  },
+
   _paintSides(strip, list) {
     strip.innerHTML = "";
+    // once the dinner has a side (or a new block is open) the ideas are done: the line + under the last block adds more
+    const cell = strip.parentNode;
+    if (this._indicesFor(strip.dataset.date, "dinner").length > 1 || (cell && cell.querySelectorAll(".mb").length > 1)) { strip.hidden = true; return; }
     // day view: the ideas always end in a blank + = another dinner block (the plus that used to sit under dinner)
     const dayView = !this._isWeekMode();
     strip.hidden = !list.length && !dayView;
     const date = strip.dataset.date;
     const blank = () => {
       const b = App.el(`<button class="ss-blank" title="Add another dinner block">${App.icon(GP_PLUS)}</button>`);
-      b.addEventListener("click", () => { const add = strip.parentNode.querySelector(".meal-add"); if (add) add.click(); });
+      b.addEventListener("click", () => {
+        const add = strip.parentNode.querySelector(".meal-add");
+        this._leaveStrip(strip);
+        if (add) add.click();
+      });
       strip.appendChild(b);
     };
     if (!list.length) { if (dayView) blank(); return; }
@@ -710,10 +723,12 @@ App.plan = {
       const add = async () => {
         if (addBtn.disabled) return;
         addBtn.disabled = true;
+        const folded = this._leaveStrip(strip);
         try {
           await Promise.all(this._blocks.map(x => x.flush()));
           await App.api("/api/sides/accept", { method: "POST", body: s.kind === "recipe"
             ? { date, recipe_id: s.recipe_id } : { date, name: s.name, grams: s.grams } });
+          await folded;
           await this.render(document.getElementById("body"));
         } catch (e) { addBtn.disabled = false; App.toast(`Couldn't add ${s.name}`); }
       };
