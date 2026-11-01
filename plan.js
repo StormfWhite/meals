@@ -705,15 +705,19 @@ App.plan = {
           <span class="ss-helps num">${App.esc(helps(s))}</span>
           <button class="icon-btn ss-no" title="Not with this">${App.icon(GP_X)}</button>
         </div>`);
-      row.querySelector(".ss-add").addEventListener("click", async (ev) => {
-        ev.currentTarget.disabled = true;
+      // the whole row is the button: tap anywhere on it (not the x) to add the side
+      const addBtn = row.querySelector(".ss-add");
+      const add = async () => {
+        if (addBtn.disabled) return;
+        addBtn.disabled = true;
         try {
           await Promise.all(this._blocks.map(x => x.flush()));
           await App.api("/api/sides/accept", { method: "POST", body: s.kind === "recipe"
             ? { date, recipe_id: s.recipe_id } : { date, name: s.name, grams: s.grams } });
           await this.render(document.getElementById("body"));
-        } catch (e) { ev.currentTarget.disabled = false; App.toast(`Couldn't add ${s.name}`); }
-      });
+        } catch (e) { addBtn.disabled = false; App.toast(`Couldn't add ${s.name}`); }
+      };
+      row.addEventListener("click", (ev) => { if (!ev.target.closest(".ss-no")) add(); });
       // swipe it away on the phone (the x is only for a mouse), or click the x
       const dismiss = async () => {
         (wrap.isConnected ? wrap : row).remove();

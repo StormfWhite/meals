@@ -265,25 +265,27 @@ svg.icon { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-w
 .side-strip[hidden] { display: none; }
 .ss-head { display: inline-flex; color: var(--accent); }
 .ss-head svg { width: 12px; height: 12px; }
-.ss-row { display: flex; align-items: center; gap: 5px; min-width: 0; font-size: 11px; }
-.ss-add, .ss-no, .ss-mark { width: 18px; height: 18px; padding: 0; flex: none; display: inline-flex; align-items: center; justify-content: center; }
+.ss-row { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 13px; min-height: 30px; padding: 0 2px; border-radius: 6px; cursor: pointer; }
+.ss-row:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.ss-row:active { background: color-mix(in srgb, var(--accent) 18%, transparent); }
+.ss-add, .ss-no, .ss-mark { width: 22px; height: 22px; padding: 0; flex: none; display: inline-flex; align-items: center; justify-content: center; }
 .ss-add { color: var(--accent); }
 .ss-no { color: var(--text-dim); opacity: 0; }
 .ss-row:hover .ss-no, .ss-row:focus-within .ss-no { opacity: 1; }
-.ss-row svg { width: 11px; height: 11px; }
+.ss-row svg { width: 14px; height: 14px; }
 .ss-mark { color: var(--text-dim); width: 12px; }
 .ss-name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 0 1 auto; }
 .ss-por { color: var(--text-dim); white-space: nowrap; }
-.ss-helps { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--good); font-size: 10.5px; }
+.ss-helps { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--good); font-size: 12px; }
 .is-week .ss-helps { display: none; }          /* a week column is narrow: what it adds is in the tooltip */
 .is-week .side-strip { padding: 2px 3px 2px 4px; }
 /* touch: swipe a suggestion away instead of an x, and keep it tight */
 @media (hover: none), (max-width: 760px) {
   .ss-no { display: none; }
   .side-strip { padding: 2px 4px 2px 5px; gap: 0; }
-  .ss-row { font-size: 10.5px; gap: 4px; }
-  .ss-add { width: 16px; height: 16px; }
-  .ss-helps { font-size: 10px; }
+  .ss-row { font-size: 13px; gap: 5px; min-height: 32px; }
+  .ss-add { width: 18px; height: 18px; }
+  .ss-helps { font-size: 11.5px; }
 }
 
 /* ── one meal (mealblock.js) ─────────────────────────────────────────── */
