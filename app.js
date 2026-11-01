@@ -152,9 +152,20 @@ App.listWhereIAm = async function () {
   // the page's own geolocation twice, then what the Android shell last saw (a stuck permission prompt can't block that)
   const pos = (await fix()) || (await fix()) || own();
   if (!pos) return;
-  App.api("/api/places/here", { method: "POST", body: pos }).catch(() => {});
-  const [r, pl] = await Promise.all([App.api("/api/groceries/geofences").catch(() => null),
-                                     App.api("/api/places").catch(() => null)]);
+  // which home is active only needs the server when the phone has moved a long way since it last said
+  let said = null; try { said = JSON.parse(localStorage.getItem("meals.v1.said") || "null"); } catch (e) {}
+  if (!said || Math.hypot((said.lat - pos.lat) * 111000, (said.lon - pos.lon) * 92000) > 2000) {
+    App.api("/api/places/here", { method: "POST", body: pos }).catch(() => {});
+    try { localStorage.setItem("meals.v1.said", JSON.stringify(pos)); } catch (e) {}
+  }
+  // the shops and homes barely change: asked for once an hour (each call on the phone is seconds of Python)
+  let cached = null;
+  try { cached = JSON.parse(localStorage.getItem("meals.v1.where") || "null"); } catch (e) {}
+  if (!cached || Date.now() - cached.at > 3600_000) {
+    const [r1, p1] = await Promise.all([App.api("/api/groceries/geofences").catch(() => null), App.api("/api/places").catch(() => null)]);
+    if (r1 && p1) { cached = { at: Date.now(), r: r1, pl: p1 }; try { localStorage.setItem("meals.v1.where", JSON.stringify(cached)); } catch (e) {} }
+  }
+  const r = cached && cached.r, pl = cached && cached.pl;
   const rad = Math.PI / 180;
   const metres = (lat, lon) => {
     const a = Math.sin((lat - pos.lat) * rad / 2) ** 2 +
@@ -250,6 +261,7 @@ App.esc = function (s) {
 };
 
 App.setView = function (view) {
+  if (App.state.view !== view && App.plan) App.plan._static = null;   // lists may have changed elsewhere: ask again next time
   App.state.view = view;
   document.querySelectorAll(".nav-icon").forEach(b => b.classList.toggle("on", b.dataset.view === view));
   document.getElementById("back-btn").hidden = view === "plan";
@@ -422,7 +434,9 @@ function init() {
     document.addEventListener("touchcancel", end, { passive: true });
   }
 
-  App.api("/api/meta").catch(() => {}); // warms the connection, surfaces a dead server early
+  // (the phone answers from Python in its own browser: every call there costs seconds on the one thread, so it makes none it doesn't need)
+  const onPhonePy = typeof loadPyodide === "function";
+  if (!onPhonePy) App.api("/api/meta").catch(() => {}); // warms the connection, surfaces a dead server early
 
   App.setView(paneView || "plan");
   if (!paneView && (window.MealsAndroid || /Mobi|iPhone|Android/.test(navigator.userAgent))) {
@@ -442,7 +456,7 @@ function init() {
     if (r.ops && App.bangers) App.bangers._refresh();         // stars / deletes / new recipes from over there
     if (r.ops) App.toast("Recipes updated from the Recipes app");
   }).catch(() => {});
-  if (!paneView) pickUp();                 // once now; after that the server tells us (below)
+  if (!paneView && !onPhonePy) pickUp();   // once now; after that the server tells us (below)
 
   // phone / web build: coming back to the front after a new version was published reloads the page.
   // (An Android shell resumes the SAME page, so "closing and reopening" never fetched the update.)
@@ -482,7 +496,8 @@ function init() {
         if (!paneView) pickUp();
       }, 30000);
     };
-    if (window.EventSource) {
+    if (onPhonePy) { /* the phone hears about changes from its own Dropbox watch (bridge.js): no polling of Python */ }
+    else if (window.EventSource) {
       const es = new EventSource("/api/events");
       let opened = false, quiet;
       es.addEventListener("hello", () => { if (opened) { redrawIfIdle(); if (!paneView) pickUp(); } opened = true; });

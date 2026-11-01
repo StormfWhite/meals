@@ -147,7 +147,6 @@ body.offline #topbar::after { content: "offline · saved on this phone"; font-si
   .is-day .mb-head { min-height: 16px; }
   .is-day .mb-name-row { gap: 2px; }
   .is-day .mb-name { padding-top: 3px; padding-bottom: 3px; }
-  .is-day .mb:not(:focus-within) :is(.mb-banger, .mb-repeat, .mb-clear):not(.on) { display: none; }
   .is-day .mb-rows { gap: 0; }
   .is-day .mb-row input { padding-top: 1px; padding-bottom: 1px; }
   .is-day .mb-amt { flex: 0 0 84px; }
@@ -161,8 +160,6 @@ body.offline #topbar::after { content: "offline · saved on this phone"; font-si
   .is-day .meal-add { position: absolute; right: 6px; top: 3px; width: 20px; height: 20px; min-height: 0; padding: 0; margin: 0;
     display: inline-flex; align-items: center; justify-content: center; opacity: .55; z-index: 3; }
   .is-day .mb-total { margin-right: 24px; }
-  .is-day .mb-foot:has(> .mb-bulk:only-child):not(:focus-within) { display: none; }
-  .is-day .mb:focus-within .mb-foot { display: flex; }
   #nav .icon-btn { width: 32px; }
   #nav .btn-mini { padding: 6px 7px; }
   .seg-mini button { padding: 6px 6px; }
@@ -207,4 +204,12 @@ body.offline #topbar::after { content: "offline · saved on this phone"; font-si
   .gp-row { min-height: 0; }
   /* ingredient lines in a meal: a touch taller than the first purge, so each is easy to tap and edit */
   .is-day .mb-row input { height: 31px; }
+}
+
+/* every meal button is always there on the phone's day view (Storm 2026-10-31: "show all the buttons, not only on tap") */
+@media (max-width: 760px) {
+  .is-day .mb-name-row .icon-btn { opacity: .8 !important; display: inline-flex !important; width: 26px; height: 28px; flex: none; }
+  .is-day .mb-name-row .icon-btn.on, .is-day .mb-name-row .mb-repeat.on { opacity: 1 !important; }
+  .is-day .mb-name-row .icon-btn svg { width: 15px; height: 15px; }
+  .is-day .mb-foot { display: flex; }
 }

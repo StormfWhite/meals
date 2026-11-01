@@ -106,7 +106,8 @@ App.mealBlock = {
     const rowsWrap = el.querySelector(".mb-rows");
     const linkWrap = el.querySelector(".mb-link");
     const footWrap = el.querySelector(".mb-foot");
-    let sources = null;      // this slot's entry from /api/board/{week}/sources (stock.slot_sources)
+    let sources = host.cachedSources ? host.cachedSources(key) : null;   // what the last look said: the icons show at once, not after a round trip
+    // this slot's entry from /api/board/{week}/sources (stock.slot_sources)
     const totalEl = el.querySelector(".mb-total");
 
     // ── reading the DOM ──────────────────────────────────────────────

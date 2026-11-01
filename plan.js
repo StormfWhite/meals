@@ -100,18 +100,23 @@ App.plan = {
     const weekMode = this._isWeekMode();
     this._window = weekMode ? Array.from({ length: 7 }, (_, i) => _planShift(this._date, i)) : null;
     const wss = weekMode ? Array.from(new Set(this._window.map(d => this._wkOf(d)))) : [day.week_start];
+    // On the phone every call is seconds of Python on the one thread, so what rarely changes (the recipe and ingredient
+    // lists, the dropdown options, who's eating) is reused for 90 s between redraws (App.setView drops it).
+    const phone = typeof loadPyodide === "function";
+    const S = phone && this._static && Date.now() - this._static.at < 90000 ? this._static : null;
     const [weeks, recipesRes, ingredientsRes, ob, ol, od, todayDay, membersRes] = await Promise.all([
       Promise.all(wss.map(w => App.api(`/api/board?week=${w}`))),
-      App.api("/api/recipes"),
-      App.api("/api/ingredients"),
-      App.api("/api/board/meal-options?meal=breakfast"),
-      App.api("/api/board/meal-options?meal=lunch"),
-      App.api("/api/board/meal-options?meal=dinner"),
+      S ? S.recipes : App.api("/api/recipes"),
+      S ? S.ingredients : App.api("/api/ingredients"),
+      S ? S.ob : App.api("/api/board/meal-options?meal=breakfast"),
+      S ? S.ol : App.api("/api/board/meal-options?meal=lunch"),
+      S ? S.od : App.api("/api/board/meal-options?meal=dinner"),
       // the list is the coming week's wherever the plan has been steered to,
       // so it's anchored to today, not to the week on screen
       this._date === today ? Promise.resolve(day) : App.api(`/api/board/day/${today}`),
-      App.api("/api/household/members").catch(() => ({ members: [] })),
+      S ? S.members : App.api("/api/household/members").catch(() => ({ members: [] })),
     ]);
+    if (phone && !S) this._static = { at: Date.now(), recipes: recipesRes, ingredients: ingredientsRes, ob, ol, od, members: membersRes };
     this._members = (membersRes.members || []).filter(m => m.active !== false);
     // The list is for the week you SHOP for: normally the coming one
     // (reup day is Sunday, so on Saturday the week on screen is the one
@@ -368,6 +373,7 @@ App.plan = {
         App.groceriesPanel.refresh(true);          // quick: only the buy rows + stock, so the list follows a meal change at once
         self.refreshSources();
       },
+      cachedSources: (key) => (self._srcCache || {})[key] || null,
       onStatsChanged: () => self._paintDayTotals(),
       removeBlock: (key) => { self._blocks = self._blocks.filter(b => b.key !== key); self._paintDayTotals(); },
       listWeek: () => self._listWeek,
@@ -389,6 +395,7 @@ App.plan = {
         for (const w of Object.keys(this._weeks)) Object.assign(slots, (await App.api(`/api/board/${w}/sources`)).slots);
       } catch (e) { return; }
       if (this._week !== week && (!this._week || this._week.week_start !== week.week_start)) return;
+      this._srcCache = { ...(this._srcCache || {}), ...slots };
       this._blocks.forEach(b => b.applySources(slots[b.key]));
     }, 350);
   },
