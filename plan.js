@@ -480,7 +480,7 @@ App.plan = {
         // dinner gets a strip of side ideas under its main (sides.py); filled in by _paintSides
         if (meal === "dinner") {
           const strip = App.el(`<div class="side-strip" data-date="${date}" ${weekMode ? "hidden" : ""}></div>`);
-          this._paintSides(strip, []);          // day view: the blank + at once; the ideas arrive with the day's numbers
+          this._paintSides(strip, this._cachedSides(date));   // the last ideas for this main at once; fresh ones follow
           cell.appendChild(strip);
         }
         cell.appendChild(this._addMealButton(host, cell, date, meal));
@@ -620,10 +620,10 @@ App.plan = {
       const p = res.blocks[b.key];
       b.applyPreview(p && p.rows.length ? p : null);
     });
-    this._paintDayTotals();
+    this._paintDayTotals(true);          // first numbers of a draw: ask for the day's gaps / sides at once
   },
 
-  _paintDayTotals() {
+  _paintDayTotals(now) {
     const days = {};
     document.querySelectorAll(".day-col-foot").forEach(foot => {
       const date = foot.dataset.date;
@@ -652,7 +652,7 @@ App.plan = {
       days[date] = { meals: mine.map(b => ({ totals: b.totals, eaters: b.eaters(), servings: b.portions() })), ingredient_ids: [...new Set(mine.flatMap(b => b.knownRows().map(r => r.ingredient_id)))] };
     });
     clearTimeout(this._gapsTimer);
-    this._gapsTimer = setTimeout(() => this._refreshGaps(days), 400);
+    this._gapsTimer = setTimeout(() => this._refreshGaps(days), now ? 0 : 400);
   },
 
   /* What the day is low in, and whole foods that would fill it (gaps.py): the foot gets a
@@ -670,8 +670,36 @@ App.plan = {
     });
     document.querySelectorAll(".side-strip").forEach(strip => {
       const d = res.days[strip.dataset.date];
-      this._paintSides(strip, d ? d.sides || [] : []);
+      const list = d ? d.sides || [] : [];
+      if (d) this._rememberSides(strip.dataset.date, list);
+      const sig = JSON.stringify(list);
+      if (strip._sig === sig) return;                  // same ideas already showing: leave them be
+      this._paintSides(strip, list);
     });
+  },
+
+  /* The ideas last shown for a date's dinner main, kept in localStorage so they are there the instant the day draws
+   * (the numbers behind them take a moment, longer on the phone). Only used while the main is the same one. */
+  _mainOf(date) {
+    const s = this._week && this._week.slots ? this._week.slots[`${date}:dinner`] : null;
+    return s ? s.recipe_id : null;
+  },
+  _cachedSides(date) {
+    try {
+      const all = JSON.parse(localStorage.getItem("meals.v1.sides") || "{}");
+      const e = all[date], main = this._mainOf(date);
+      return e && main && e.main === main ? e.list : [];
+    } catch (err) { return []; }
+  },
+  _rememberSides(date, list) {
+    try {
+      const main = this._mainOf(date);
+      if (!main) return;
+      const all = JSON.parse(localStorage.getItem("meals.v1.sides") || "{}");
+      all[date] = { main, list };
+      Object.keys(all).sort().slice(0, -30).forEach(k => delete all[k]);
+      localStorage.setItem("meals.v1.sides", JSON.stringify(all));
+    } catch (err) {}
   },
 
   /* Side ideas under a lone dinner main (sides.py): what the day is low in, and what we usually eat
@@ -684,6 +712,7 @@ App.plan = {
   },
 
   _paintSides(strip, list) {
+    strip._sig = JSON.stringify(list);
     strip.innerHTML = "";
     // once the dinner has a side (or a new block is open) the ideas are done: the line + under the last block adds more
     const cell = strip.parentNode;
@@ -738,6 +767,7 @@ App.plan = {
         (wrap.isConnected ? wrap : row).remove();
         if (!strip.querySelector(".ss-row")) strip.hidden = true;
         try { await App.api("/api/sides/dismiss", { method: "POST", body: { date, side_key: key } }); } catch (e) { return; }
+        this._rememberSides(date, list.filter(x => x !== s));
         App.undoToast(`${s.name} hidden`, async () => {
           await App.api("/api/sides/undismiss", { method: "POST", body: { date, side_key: key } });
           this._gapsSeq = (this._gapsSeq || 0) + 1; this._paintDayTotals();
