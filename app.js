@@ -404,7 +404,7 @@ function init() {
       const lp = document.getElementById("list-panel"), open = App.plan && App.plan._listOpen;
       pull = null;
       if (phone() && open && lp && lp.contains(e.target) && lp.scrollTop <= 0) pull = "close";
-      else if (phone() && !open && e.target.closest && e.target.closest("#topbar")) pull = "open";
+      else if (phone() && e.target.closest && e.target.closest("#topbar")) pull = open ? "shut" : "open";   // the top bar: swipe down opens the list, or closes it when it is open
     }, { passive: true });
     document.addEventListener("touchmove", (e) => {
       if (!on) return;
@@ -428,6 +428,7 @@ function init() {
         else lp.style.transform = "";
         setTimeout(() => { if (lp.style.transform === "") lp.style.transition = ""; }, 220);
       } else if (pull === "open" && dy > 60) App.plan.toggleList(true);
+      else if (pull === "shut" && dy > 40) App.plan.toggleList(false);
       pull = null;
     };
     document.addEventListener("touchend", end, { passive: true });
