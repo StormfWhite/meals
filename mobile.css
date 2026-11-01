@@ -228,3 +228,28 @@ body.offline #topbar::after { content: "offline · saved on this phone"; font-si
   .is-day .mb-foot { min-height: 0; padding: 0; justify-content: flex-end; }
   .is-day .mb-foot .icon-btn { opacity: .8 !important; display: inline-flex !important; height: 26px; }
 }
+
+/* Edge to edge on every screen (Storm 2026-10-31: "edge to edge for everything, I like that design always"):
+ * no page padding, no card margins or rounded corners; panels are separated by a hairline only. */
+@media (max-width: 760px) {
+  #body > .pad, .pad { padding: 0 !important; }
+  .pad > * { margin-left: 0; margin-right: 0; }
+  .pad .modal-section, .pad .modal-hint, .pad > .seg, .pad .field-label, .pad h2 { padding-left: 8px; padding-right: 8px; }
+  .pad .modal-section { padding-top: 6px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+  .item-row { border-radius: 0 !important; margin: 0 !important; padding: 5px 8px !important; border-left: 0 !important; border-right: 0 !important; }
+  .stat-grid { margin: 0 !important; padding: 0 8px; }
+  .bk { padding: 0 0 70px !important; gap: 0 !important; max-width: none !important; }
+  .bk-make, .bk-side { margin: 0 !important; border-radius: 0 !important; border-left: 0 !important; border-right: 0 !important; padding: 6px 8px !important; }
+  .bk-item { padding: 4px 8px !important; }
+  .bk-made { padding-left: 8px; padding-right: 8px; }
+  .seg:not(.seg-mini) { border-radius: 0; }
+  .modal-panel { width: 100vw !important; max-width: none !important; border-radius: 0 !important; }
+  .card, .panel, section { border-radius: 0; }
+}
+@media (max-width: 760px) {
+  body:not([data-view="plan"]) #nav { display: none; }      /* the view's own title row: the icons already say where you are */
+  .pad .modal-section { padding-left: 0 !important; padding-right: 0 !important; }
+  .pad .modal-section > :not(.item-row):not(.rows):not(.seg) { margin-left: 8px; margin-right: 8px; }
+  .pad .modal-section > .item-row { margin: 0 !important; }
+  .bk-sum:empty, .bk-foot:empty { display: none; }
+}

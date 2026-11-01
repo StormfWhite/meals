@@ -263,6 +263,7 @@ App.esc = function (s) {
 App.setView = function (view) {
   if (App.state.view !== view && App.plan) App.plan._static = null;   // lists may have changed elsewhere: ask again next time
   App.state.view = view;
+  document.body.dataset.view = view;
   document.querySelectorAll(".nav-icon").forEach(b => b.classList.toggle("on", b.dataset.view === view));
   document.getElementById("back-btn").hidden = view === "plan";
   document.getElementById("brand").hidden = view !== "plan";
