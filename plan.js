@@ -479,7 +479,8 @@ App.plan = {
         });
         // dinner gets a strip of side ideas under its main (sides.py); filled in by _paintSides
         if (meal === "dinner") {
-          const strip = App.el(`<div class="side-strip" data-date="${date}" hidden></div>`);
+          const strip = App.el(`<div class="side-strip" data-date="${date}" ${weekMode ? "hidden" : ""}></div>`);
+          this._paintSides(strip, []);          // day view: the blank + at once; the ideas arrive with the day's numbers
           cell.appendChild(strip);
         }
         cell.appendChild(this._addMealButton(host, cell, date, meal));
@@ -678,9 +679,16 @@ App.plan = {
    * with this main for a few weeks. Gone once the dinner has a side. */
   _paintSides(strip, list) {
     strip.innerHTML = "";
-    strip.hidden = !list.length;
+    // day view: the ideas always end in a blank + = another dinner block (the plus that used to sit under dinner)
+    const dayView = !this._isWeekMode();
+    strip.hidden = !list.length && !dayView;
     const date = strip.dataset.date;
-    if (!list.length) return;
+    const blank = () => {
+      const b = App.el(`<button class="ss-blank" title="Add another dinner block">${App.icon(GP_PLUS)}</button>`);
+      b.addEventListener("click", () => { const add = strip.parentNode.querySelector(".meal-add"); if (add) add.click(); });
+      strip.appendChild(b);
+    };
+    if (!list.length) { if (dayView) blank(); return; }
     const why = (s) => s.why.kind === "pair" ? `Went with ${s.why.main} ${s.why.n}×`
       : s.why.kind === "like" ? `Went with ${s.why.main}, a similar meal`
       : s.why.kind === "usual" ? "A usual side" : "Fills what's low";
@@ -720,6 +728,7 @@ App.plan = {
       const wrap = App.swipeAway(row, dismiss);
       strip.appendChild(wrap);
     });
+    if (dayView) blank();
   },
 
   _paintGaps(foot, day) {
