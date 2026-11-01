@@ -159,7 +159,7 @@ body.offline #topbar::after { content: "offline · saved on this phone"; font-si
 }
 @media (max-width: 760px) {
   /* "another meal here": a thin divider with a + in the middle (style.css), kept slim on a phone */
-  .is-day .meal-add { height: 26px; min-height: 26px; }
+  .is-day .meal-add { height: 34px; min-height: 34px; }
   .is-day .mb-total { margin-right: 24px; }
   #nav .icon-btn { width: 32px; }
   #nav .btn-mini { padding: 6px 7px; }
