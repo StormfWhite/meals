@@ -680,13 +680,13 @@ input.gp-row-name:focus { background: var(--panel); border-color: var(--border);
 .meal-add:hover { color: var(--accent); border-color: var(--accent); }
 .meal-add svg { width: 12px; height: 12px; }
 /* day view: a hairline across the card with a + in the middle, always showing -- under each meal, last one included */
-/* a thin line that takes no room (the meals keep their spacing); the + is big and overlaps the cards above and below it */
-.is-day .meal-add { position: relative; display: block; border: 0; background: var(--border); opacity: 1; overflow: visible;
-  width: 100%; height: 1px; min-height: 1px; padding: 0; margin: 0; border-radius: 0; color: var(--text-dim); z-index: 4; }
-.is-day .meal-add svg { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 30px; height: 30px; box-sizing: border-box;
-  padding: 5px; margin: 0; border: 1px solid var(--border); border-radius: 50%; background: var(--panel); color: var(--accent);
-  stroke-width: 2.2; box-shadow: 0 1px 4px rgba(0,0,0,.14); }
-.is-day .meal-add:hover svg { background: var(--accent); color: #fff; border-color: var(--accent); }
+/* the button as it always looked (dashed outline, dim, accent on hover), bigger and padding-free; its negative margin
+   cancels its height, so the meals keep their spacing and it overlaps the cards above and below */
+.is-day .meal-add { position: relative; display: flex; align-items: center; justify-content: center; opacity: 1; z-index: 4;
+  width: 100%; height: 26px; min-height: 26px; padding: 0; margin: -8px 0; border-radius: 7px;
+  border: 1px dashed var(--border); background: var(--panel); color: var(--text-dim); }
+.is-day .meal-add svg { width: 20px; height: 20px; padding: 0; margin: 0; }
+.is-day .meal-add:hover { color: var(--accent); border-color: var(--accent); }
 .mb-also {
   width: 13px; height: 13px; display: flex; align-items: center; justify-content: center;
   font-size: 13px; font-weight: 700; line-height: 1;
