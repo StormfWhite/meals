@@ -15,6 +15,7 @@
  * caret mid-edit) — it patches its own header/stats and hands the updated
  * week back to the host, which owns the day and week rollups.
  */
+const _mbInsideOpen = new Set();   // bulk-made ingredients whose insides are unfolded in meal rows
 window.App = window.App || {};
 
 const MB_LABELS = { breakfast: "Breakfast", lunch: "Lunch", dinner: "Dinner" };
@@ -688,6 +689,27 @@ App.mealBlock = {
     const scaled = (t, k) => t && k !== 1 ? {
       ...Object.fromEntries(["calories_kcal", "protein_g", "fiber_g"].map(n => [n, (t[n] || 0) * k])),
       vitamins: Object.fromEntries(Object.entries(t.vitamins || {}).map(([n, v]) => [n, v * k])) } : t;
+    /* A bulk-made ingredient (a pot of beans, a soup) can be opened to show what's in the share this meal
+     * uses: lightly, folded by default, and remembered open per ingredient. */
+    const paintInside = (row, pr) => {
+      let box = row.querySelector(".mb-inside"), btn = row.querySelector(".mb-inside-btn");
+      const parts = pr && pr.inside;
+      if (!parts || !parts.length) { if (box) box.remove(); if (btn) btn.remove(); row.classList.remove("has-inside", "inside-open"); return; }
+      if (!box) {
+        btn = App.el(`<button class="icon-btn mb-inside-btn" tabindex="-1" title="What's in it">${App.icon('<path d="m9 6 6 6-6 6"/>')}</button>`);
+        box = App.el(`<div class="mb-inside"></div>`);
+        row.insertBefore(btn, row.querySelector(".mb-stat"));
+        row.appendChild(box);
+        btn.addEventListener("click", () => {
+          const open = row.classList.toggle("inside-open");
+          if (open) _mbInsideOpen.add(pr.ingredient_id); else _mbInsideOpen.delete(pr.ingredient_id);
+        });
+      }
+      row.dataset.insideId = pr.ingredient_id;
+      row.classList.add("has-inside");
+      row.classList.toggle("inside-open", _mbInsideOpen.has(pr.ingredient_id));
+      box.innerHTML = parts.map(p => `<span>${App.esc(p.name)} <i>${App.esc(p.text)}</i></span>`).join("");
+    };
     let lastPreview = null;
     const applyPreview = (preview) => {
       lastPreview = preview;
@@ -701,6 +723,7 @@ App.mealBlock = {
         };
         if (!preview || !priceable(r)) { statEl.textContent = ""; statEl.title = ""; return; }
         const pr = preview.rows[i++];
+        paintInside(row, pr);
         statEl.textContent = pr ? _mbStat(pr, host.compact) : "";
         statEl.title = pr ? `${Math.round(pr.calories_kcal)} kcal · ${pr.protein_g.toFixed(1)} g protein · ${pr.fiber_g.toFixed(1)} g fiber` : "";
       });

@@ -1020,7 +1020,9 @@ class PreviewBody(BaseModel):
 def preview_nutrition(body: PreviewBody):
     """Live nutrition for a draft ingredient list that hasn't been saved as
     a recipe yet -- the meal editor calls this on every row edit."""
-    return nutrition.preview_totals([r.model_dump() for r in body.rows], ingredients.by_id())
+    by_id = ingredients.by_id()
+    rows = [r.model_dump() for r in body.rows]
+    return bulk.with_inside(nutrition.preview_totals(rows, by_id), rows, by_id)
 
 
 class PreviewBatchBody(BaseModel):
@@ -1032,7 +1034,9 @@ def preview_nutrition_batch(body: PreviewBatchBody):
     """One request for every meal block on screen -- the week view draws 21
     of them and would otherwise fire 21 separate previews on load."""
     blocks = {key: [r.model_dump() for r in rows] for key, rows in body.blocks.items()}
-    return {"blocks": nutrition.preview_batch(blocks, ingredients.by_id())}
+    by_id = ingredients.by_id()
+    out = nutrition.preview_batch(blocks, by_id)
+    return {"blocks": {k: bulk.with_inside(v, blocks[k], by_id) for k, v in out.items()}}
 
 
 # ── bulk makes (bulk.py) ─────────────────────────────────────────────────

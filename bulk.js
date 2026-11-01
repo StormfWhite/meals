@@ -294,6 +294,7 @@ App.bulk = {
   // ── everything made in bulk ────────────────────────────────────────
   _drawItems() {
     const wrap = this._body.querySelector(".bk-items");
+    if (!wrap) return;                    // the view is being redrawn from scratch: that draw shows these
     const items = this._data.items.filter(i => !i.gone);       // used up over a week ago: gone from the list
     wrap.innerHTML = items.length ? "" : `<div class="gp-empty">Nothing made in bulk yet. What's made here goes straight into the kitchen and shows up as an ingredient in meals — "1 cup black beans" counts everything that went into the pot.</div>`;
     items.forEach(it => {
@@ -303,21 +304,41 @@ App.bulk = {
       const stat = pu ? `1 ${App.esc(pu.word)} · ${Math.round(pu.calories_kcal)} kcal · ${pu.protein_g.toFixed(1)} g P`
         : p ? `100 g · ${Math.round(p.calories_kcal)} kcal · ${p.protein_g.toFixed(1)} g P` : "nutrition unknown";
       const lines = it.last.lines.map(l => `${App.esc(l.name)} ${App.esc(_mbFormatAmount(l.qty, l.unit))}`).join(" · ");
+      const here = it.have.freezer ? "freezer" : it.have.fridge ? "fridge" : it.have.pantry ? "pantry" : it.last.where;
       const el = App.el(`<div class="bk-item${Object.keys(it.have).length ? "" : " gone"}">
         <div class="bk-item-top">
           <span class="bk-item-name">${App.esc(it.name)}</span>
           ${have || `<span class="dim bk-have">none left</span>`}
         </div>
+        <span class="gp-stock-pick bk-item-where" title="Where it is — tap to move it (saves at once)">
+          ${[["fridge", GP_FRIDGE, "Fridge"], ["pantry", GP_DRY, "Dry pantry"], ["freezer", GP_SNOW, "Freezer"]].map(([w, ic, t]) =>
+            `<button class="icon-btn where-${w}${w === here ? " on" : ""}" data-where="${w}" title="${t}">${App.icon(ic)}</button>`).join("")}
+        </span>
         <div class="bk-item-stat num" title="${it.unknown.length ? "Not counted (no nutrition known): " + App.esc(it.unknown.join(", ")) : "Everything that went in, spread over what it made"}">${stat}${it.unknown.length ? ` <span class="warn">+${it.unknown.length}?</span>` : ""}</div>
         <div class="bk-item-lines dim" title="Last made ${_gpDay(it.last.date)}${it.last.yield_text ? " — made " + App.esc(it.last.yield_text) : ""}">${lines}</div>
       </div>`);
       // tap anywhere on the pot: its lines and fridge / dry / freezer buttons open on the left (saves over this pot)
       el.style.cursor = "pointer";
       el.title = "Tap to open this pot";
-      el.addEventListener("click", () => this._edit({ ...it.last, name: it.name }));
+      el.addEventListener("click", (e) => { if (!e.target.closest(".bk-item-where")) this._edit({ ...it.last, name: it.name }); });
+      // fridge / dry / freezer: tapping one moves what's there and saves at once
+      el.querySelectorAll(".bk-item-where .icon-btn").forEach(b => b.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        const to = b.dataset.where;
+        if (to === here) return;
+        el.querySelectorAll(".bk-item-where .icon-btn").forEach(x => x.classList.toggle("on", x === b));
+        try {
+          if (Object.keys(it.have).length) await App.api(`/api/stock/${this._data.week}/${it.ingredient_id}/where`, { method: "PUT", body: { to, frozen: !!it.have.freezer } });
+          this._data = await App.api("/api/bulk");
+          this._drawItems();
+          if (App.plan && App.plan.refreshSources) App.plan.refreshSources();
+          App.toast(`${it.name} → ${to === "pantry" ? "dry pantry" : to}`);
+        } catch (err) { App.toast(err.message); this._drawItems(); }
+      }));
       wrap.appendChild(el);
     });
     const log = this._body.querySelector(".bk-log");
+    if (!log) return;
     const makes = this._data.makes;
     log.innerHTML = makes.length ? `<div class="field-label">Made</div>` : "";
     makes.forEach(m => {

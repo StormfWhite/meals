@@ -235,6 +235,39 @@ def latest(ingredient_id: str, include_undone: bool = True) -> Optional[dict]:
     return max(mine, key=lambda m: (m["date"], m.get("at", 0))) if mine else None
 
 
+def inside(ing: dict, grams: float, by_id: Optional[dict] = None) -> list[dict]:
+    """What `grams` of a bulk-made ingredient is made of: the lines of its latest pot, scaled to
+    that share of what the pot made -- [{name, text}], for the meal row's "inside" fold-out."""
+    by_id = by_id or ingredients.by_id()
+    last = latest(ing["id"], include_undone=False)
+    made = ing.get("made") or {}
+    pot = float(made.get("yield_g") or 0)
+    if not last or pot <= 0 or not grams:
+        return []
+    frac = grams / pot
+    out = []
+    for l in last.get("lines", []):
+        li = by_id.get(l["ingredient_id"])
+        g = nutrition.qty_to_grams(li, l["qty"], l["unit"]) if li else None
+        if li is None or not g:
+            continue
+        from . import stock
+        out.append({"name": li["name"], "text": stock.us_amount(g * frac) or "a pinch"})
+    return out
+
+
+def with_inside(result: dict, rows: list[dict], by_id: dict) -> dict:
+    """preview_totals' answer, each row of a bulk-made ingredient carrying its `inside`."""
+    for pr, item in zip(result["rows"], rows):
+        ing = by_id.get(item["ingredient_id"])
+        if ing and ing.get("made"):
+            g = nutrition.qty_to_grams(ing, item["qty"], item["unit"])
+            parts = inside(ing, g, by_id) if g else []
+            if parts:
+                pr["inside"] = parts
+    return result
+
+
 _depth = 0
 
 
