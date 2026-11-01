@@ -253,10 +253,17 @@ App.mealBlock = {
       markDestination(row);
       row.querySelector(".mb-ing").addEventListener("change", () => markDestination(row));
       const removeRow = () => {
+        const parent = row.parentNode, next = row.nextSibling;
+        const name = row.querySelector(".mb-ing").value.trim();
         row.remove();
         ensureBlankRow();
         markDirty();
         commit();
+        if (name && parent) App.undoToast(`${name} removed`, () => {
+          row.style.transform = ""; row.style.opacity = "";
+          parent.insertBefore(row, next && next.parentNode === parent ? next : null);
+          ensureBlankRow(); markDirty(); commit();
+        });
       };
       row.querySelector(".mb-row-x").addEventListener("click", removeRow);
       // on a phone: swipe the line away (the ✕ is hover-only); the blank line at the end stays put

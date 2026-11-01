@@ -259,6 +259,32 @@ svg.icon { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-w
 .is-week .dg-helps { flex: 1 0 100%; flex-wrap: wrap; gap: 0 6px; padding-left: 24px; }
 .is-week .day-low { margin-left: 0; }
 
+/* ── side ideas under a dinner main (plan.js _paintSides, sides.py) ───── */
+.side-strip { display: flex; flex-direction: column; gap: 1px; margin-top: 2px; padding: 3px 4px 3px 6px; border-left: 2px solid var(--accent);
+  border-radius: 0 6px 6px 0; background: color-mix(in srgb, var(--accent) 6%, transparent); min-width: 0; }
+.ss-head { display: inline-flex; color: var(--accent); }
+.ss-head svg { width: 12px; height: 12px; }
+.ss-row { display: flex; align-items: center; gap: 5px; min-width: 0; font-size: 11px; }
+.ss-add, .ss-no, .ss-mark { width: 18px; height: 18px; padding: 0; flex: none; display: inline-flex; align-items: center; justify-content: center; }
+.ss-add { color: var(--accent); }
+.ss-no { color: var(--text-dim); opacity: 0; }
+.ss-row:hover .ss-no, .ss-row:focus-within .ss-no { opacity: 1; }
+.ss-row svg { width: 11px; height: 11px; }
+.ss-mark { color: var(--text-dim); width: 12px; }
+.ss-name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 0 1 auto; }
+.ss-por { color: var(--text-dim); white-space: nowrap; }
+.ss-helps { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--good); font-size: 10.5px; }
+.is-week .ss-helps { display: none; }          /* a week column is narrow: what it adds is in the tooltip */
+.is-week .side-strip { padding: 2px 3px 2px 4px; }
+/* touch: swipe a suggestion away instead of an x, and keep it tight */
+@media (hover: none), (max-width: 760px) {
+  .ss-no { display: none; }
+  .side-strip { padding: 2px 4px 2px 5px; gap: 0; }
+  .ss-row { font-size: 10.5px; gap: 4px; }
+  .ss-add { width: 16px; height: 16px; }
+  .ss-helps { font-size: 10px; }
+}
+
 /* ── one meal (mealblock.js) ─────────────────────────────────────────── */
 .mb {
   min-width: 0; display: flex; flex-direction: column; gap: 3px;
@@ -629,6 +655,8 @@ input.gp-row-name:focus { background: var(--panel); border-color: var(--border);
   box-shadow: 0 6px 24px rgba(0,0,0,0.3);
 }
 #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+#toast.has-undo { pointer-events: auto; display: flex; align-items: center; gap: 12px; }
+.toast-undo { background: none; border: 0; padding: 0 2px; font: inherit; font-weight: 700; color: var(--accent-2, #8ab4ff); cursor: pointer; }
 
 /* ── a slot that holds more than one meal (plan.js) ───────────────────── */
 /* The cell is what keeps every day's breakfast on the same grid row while
@@ -642,6 +670,12 @@ input.gp-row-name:focus { background: var(--panel); border-color: var(--border);
 .meal-cell:hover .meal-add, .meal-cell:focus-within .meal-add { opacity: 1; }
 .meal-add:hover { color: var(--accent); border-color: var(--accent); }
 .meal-add svg { width: 12px; height: 12px; }
+/* day view: a hairline across the card with a + in the middle, always showing -- under each meal, last one included */
+.is-day .meal-add { display: flex; align-items: center; justify-content: center; gap: 8px; border: 0; background: none; opacity: 1;
+  height: 18px; padding: 0; margin: 2px 0; border-radius: 0; }
+.is-day .meal-add::before, .is-day .meal-add::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+.is-day .meal-add svg { flex: none; width: 14px; height: 14px; padding: 2px; border-radius: 50%; border: 1px solid var(--border); background: var(--panel); }
+.is-day .meal-add:hover svg { border-color: var(--accent); }
 .mb-also {
   width: 13px; height: 13px; display: flex; align-items: center; justify-content: center;
   font-size: 13px; font-weight: 700; line-height: 1;

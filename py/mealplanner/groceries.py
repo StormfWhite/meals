@@ -395,6 +395,27 @@ def _planned_grams(week_start_iso: str) -> dict[str, float]:
     return out
 
 
+_UNDO: dict = {}      # (week, key) -> what the last removal took off, for the Undo toast (in memory: it lasts seconds)
+
+
+def restore_item(week_start_iso: str, ingredient_id: str) -> list[dict]:
+    """Undo remove_item: the hand-add and/or the hidden amount come back as they were."""
+    snap = _UNDO.pop((week_start_iso, ingredient_id), None)
+    if snap is None:
+        return get_week_groceries(week_start_iso)
+    data = _load()
+    week = data["weeks"].setdefault(week_start_iso, {"items": {}, "extra_items": {}, "free_list": []})
+    if snap["extra"] is not None:
+        week.setdefault("extra_items", {})[ingredient_id] = snap["extra"]
+    item = week.setdefault("items", {}).setdefault(ingredient_id, {})
+    if snap["has_removed"]:
+        item["removed_g"] = snap["removed_g"]
+    else:
+        item.pop("removed_g", None)
+    _save(data)
+    return get_week_groceries(week_start_iso)
+
+
 def remove_item(week_start_iso: str, ingredient_id: str) -> list[dict]:
     """Take a row off this week's list whatever put it there (the swipe, the x):
     a hand-add is dropped, and a planned need is hidden at today's amount --
@@ -403,6 +424,9 @@ def remove_item(week_start_iso: str, ingredient_id: str) -> list[dict]:
     planned = _planned_grams(week_start_iso)
     data = _load()
     week = data["weeks"].setdefault(week_start_iso, {"items": {}, "extra_items": {}, "free_list": []})
+    prior = (week.get("items") or {}).get(ingredient_id) or {}
+    _UNDO[(week_start_iso, ingredient_id)] = {"extra": (week.get("extra_items") or {}).get(ingredient_id),
+                                              "has_removed": "removed_g" in prior, "removed_g": prior.get("removed_g")}
     week.setdefault("extra_items", {}).pop(ingredient_id, None)
     if ingredient_id in planned:
         week.setdefault("items", {}).setdefault(ingredient_id, {})["removed_g"] = round(planned[ingredient_id], 1)
@@ -602,10 +626,25 @@ def delete_free_item(week_start_iso: str, item_id: str) -> list[dict]:
     data = _load()
     week = data["weeks"].get(week_start_iso, {})
     before = len(week.get("free_list", []))
-    week["free_list"] = [i for i in week.get("free_list", []) if i["id"] != item_id]
+    old = week.get("free_list", [])
+    at = next((n for n, i in enumerate(old) if i["id"] == item_id), None)
+    if at is not None:
+        _UNDO[(week_start_iso, "free:" + item_id)] = (at, old[at])
+    week["free_list"] = [i for i in old if i["id"] != item_id]
     _save(data)
     if len(week["free_list"]) == before:
         raise KeyError(item_id)
+    return week["free_list"]
+
+
+def restore_free_item(week_start_iso: str, item_id: str) -> list[dict]:
+    """Undo delete_free_item: the line goes back where it was."""
+    snap = _UNDO.pop((week_start_iso, "free:" + item_id), None)
+    data = _load()
+    week = data["weeks"].setdefault(week_start_iso, {"items": {}, "extra_items": {}, "free_list": []})
+    if snap and not any(i["id"] == item_id for i in week.setdefault("free_list", [])):
+        week["free_list"].insert(min(snap[0], len(week["free_list"])), snap[1])
+        _save(data)
     return week["free_list"]
 
 

@@ -477,6 +477,8 @@ App.plan = {
           cell.appendChild(blk.el);
           this._blocks.push(blk);
         });
+        // dinner gets a strip of side ideas under its main (sides.py); filled in by _paintSides
+        if (meal === "dinner") cell.appendChild(App.el(`<div class="side-strip" data-date="${date}" hidden></div>`));
         cell.appendChild(this._addMealButton(host, cell, date, meal));
         holder.appendChild(cell);
       });
@@ -661,6 +663,59 @@ App.plan = {
     document.querySelectorAll(".day-col-foot").forEach(foot => {
       const d = res.days[foot.dataset.date];
       if (d) this._paintGaps(foot, d);
+    });
+    document.querySelectorAll(".side-strip").forEach(strip => {
+      const d = res.days[strip.dataset.date];
+      this._paintSides(strip, d ? d.sides || [] : []);
+    });
+  },
+
+  /* Side ideas under a lone dinner main (sides.py): what the day is low in, and what we usually eat
+   * with this main, learned from past plans. + puts it in as the dinner's next block; x says not
+   * with this main for a few weeks. Gone once the dinner has a side. */
+  _paintSides(strip, list) {
+    strip.innerHTML = "";
+    strip.hidden = !list.length;
+    if (!list.length) return;
+    const date = strip.dataset.date;
+    const why = (s) => s.why.kind === "pair" ? `Went with ${s.why.main} ${s.why.n}×`
+      : s.why.kind === "like" ? `Went with ${s.why.main}, a similar meal`
+      : s.why.kind === "usual" ? "A usual side" : "Fills what's low";
+    const helps = (s) => s.helps.map(h => `+${h.amount}${h.unit === "g" ? "g" : " " + h.unit} ${h.label}`).join(" · ");
+    strip.appendChild(App.el(`<div class="ss-head" title="Sides that fit this dinner">${App.icon(GP_SIDE)}</div>`));
+    list.forEach(s => {
+      const key = s.kind === "recipe" ? "r:" + s.recipe_id : "f:" + s.name.toLowerCase();
+      const row = App.el(`
+        <div class="ss-row${s.learned ? " learned" : ""}" title="${App.esc(why(s))}${s.kind === "food" && s.buy ? " · not bought yet" : ""}${s.helps.length ? "\n" + App.esc(helps(s)) : ""}">
+          <button class="icon-btn ss-add" title="Add as a side">${App.icon(GP_PLUS)}</button>
+          <span class="ss-name">${App.esc(s.name)}</span>
+          ${s.learned ? `<span class="ss-mark">${App.icon(GP_USUAL)}</span>` : ""}
+          ${s.kind === "food" ? `<span class="ss-por num">${App.esc(s.portion)}</span>` : ""}
+          <span class="ss-helps num">${App.esc(helps(s))}</span>
+          <button class="icon-btn ss-no" title="Not with this">${App.icon(GP_X)}</button>
+        </div>`);
+      row.querySelector(".ss-add").addEventListener("click", async (ev) => {
+        ev.currentTarget.disabled = true;
+        try {
+          await Promise.all(this._blocks.map(x => x.flush()));
+          await App.api("/api/sides/accept", { method: "POST", body: s.kind === "recipe"
+            ? { date, recipe_id: s.recipe_id } : { date, name: s.name, grams: s.grams } });
+          await this.render(document.getElementById("body"));
+        } catch (e) { ev.currentTarget.disabled = false; App.toast(`Couldn't add ${s.name}`); }
+      });
+      // swipe it away on the phone (the x is only for a mouse), or click the x
+      const dismiss = async () => {
+        (wrap.isConnected ? wrap : row).remove();
+        if (!strip.querySelector(".ss-row")) strip.hidden = true;
+        try { await App.api("/api/sides/dismiss", { method: "POST", body: { date, side_key: key } }); } catch (e) { return; }
+        App.undoToast(`${s.name} hidden`, async () => {
+          await App.api("/api/sides/undismiss", { method: "POST", body: { date, side_key: key } });
+          this._gapsSeq = (this._gapsSeq || 0) + 1; this._paintDayTotals();
+        });
+      };
+      row.querySelector(".ss-no").addEventListener("click", dismiss);
+      const wrap = App.swipeAway(row, dismiss);
+      strip.appendChild(wrap);
     });
   },
 

@@ -51,6 +51,9 @@ body.offline #topbar::after { content: "offline · saved on this phone"; font-si
     border-left: 0; border-top: 1px solid var(--border); box-shadow: 0 -8px 30px rgba(0,0,0,.18);
     padding-bottom: env(safe-area-inset-bottom);
   }
+  /* the pull bar: drag it down to close the sheet from anywhere in the list, however far it is scrolled */
+  .plan.list-open .list-panel::before { content: ""; display: block; position: sticky; top: 0; z-index: 5; height: 22px; margin-bottom: -2px;
+    background: linear-gradient(rgba(150,150,150,.55), rgba(150,150,150,.55)) center / 44px 5px no-repeat, var(--panel); border-radius: 12px 12px 0 0; }
   .modal-panel { width: calc(100vw - 20px) !important; max-width: none !important; max-height: 85vh; overflow: auto; }
   #bangers-dock { max-width: 100vw; }
   .ing-suggest, .ingsuggest, [class*="suggest-pop"] { max-width: calc(100vw - 16px); }
@@ -155,10 +158,8 @@ body.offline #topbar::after { content: "offline · saved on this phone"; font-si
   .is-day .mb-foot { min-height: 0; }
 }
 @media (max-width: 760px) {
-  /* "another meal here" sits in the card's corner instead of taking a row of its own */
-  .is-day .meal-cell { position: relative; }
-  .is-day .meal-add { position: absolute; right: 6px; top: 3px; width: 20px; height: 20px; min-height: 0; padding: 0; margin: 0;
-    display: inline-flex; align-items: center; justify-content: center; opacity: .55; z-index: 3; }
+  /* "another meal here": a thin divider with a + in the middle (style.css), kept slim on a phone */
+  .is-day .meal-add { min-height: 0; height: 18px; }
   .is-day .mb-total { margin-right: 24px; }
   #nav .icon-btn { width: 32px; }
   #nav .btn-mini { padding: 6px 7px; }
@@ -222,7 +223,6 @@ body.offline #topbar::after { content: "offline · saved on this phone"; font-si
   .is-day .mb { border-radius: 0 !important; border-width: 0 0 1px 0 !important; margin: 0 !important; padding: 3px 4px 3px !important; }
   .is-day .mb.now { box-shadow: none; border-left: 3px solid var(--accent) !important; }
   .is-day .day-col-foot { margin: 0 !important; border-radius: 0 !important; border-width: 0 0 1px 0 !important; }
-  .is-day .meal-add { right: 4px; top: 2px; }
 }
 @media (max-width: 760px) {
   .is-day .mb-foot { min-height: 0; padding: 0; justify-content: flex-end; }

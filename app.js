@@ -75,9 +75,25 @@ App.showPhoto = async function (name) {
 App.toast = function (msg) {
   const el = document.getElementById("toast");
   el.textContent = msg;
+  el.classList.remove("has-undo");
   el.classList.add("show");
   clearTimeout(App._toastTimer);
   App._toastTimer = setTimeout(() => el.classList.remove("show"), 2200);
+};
+
+/* A toast with an Undo button, for anything just removed (swipe, x). `undo` puts it back; the button stays for 7 s. */
+App.undoToast = function (msg, undo) {
+  const el = document.getElementById("toast");
+  el.innerHTML = `<span></span><button class="toast-undo" type="button">Undo</button>`;
+  el.firstChild.textContent = msg;
+  el.classList.add("show", "has-undo");
+  clearTimeout(App._toastTimer);
+  const hide = () => { el.classList.remove("show", "has-undo"); };
+  el.querySelector(".toast-undo").addEventListener("click", async () => {
+    hide();
+    try { await undo(); } catch (e) { App.toast("Couldn't undo"); }
+  }, { once: true });
+  App._toastTimer = setTimeout(hide, 7000);
 };
 
 App.openModal = function (html) {
@@ -360,7 +376,7 @@ function init() {
   document.getElementById("back-btn").addEventListener("click", () => App.setView("plan"));
   // the Pantry lives in the list panel (groceriespanel.js): open the list, then it
   document.getElementById("pantry-btn").addEventListener("click", () => {
-    const open = () => { App.plan.toggleList(true); App.groceriesPanel.openPantry(); };
+    const open = () => { App.plan.toggleList(true); App.groceriesPanel.openPantry({ focus: true }); };
     if (App.state.view !== "plan") { App.setView("plan"); setTimeout(open, 60); return; }
     open();
   });
@@ -396,7 +412,7 @@ function init() {
   //    blurs it (Storm 2026-10-31: "if I swipe up or down to see more stuff I want the keyboard to go away").
   // 2. The list sheet follows a finger pulled down from its top and closes; a pull down on the top bar opens it.
   {
-    let x0 = 0, y0 = 0, on = false, pull = null;
+    let x0 = 0, y0 = 0, on = false, pull = null, grab = false;
     const typing = () => { const e = document.activeElement; return e && /^(INPUT|TEXTAREA|SELECT)$/.test(e.tagName) && e.type !== "checkbox" ? e : null; };
     const phone = () => window.matchMedia("(max-width: 760px)").matches;
     document.addEventListener("touchstart", (e) => {
@@ -404,7 +420,9 @@ function init() {
       x0 = e.touches[0].clientX; y0 = e.touches[0].clientY;
       const lp = document.getElementById("list-panel"), open = App.plan && App.plan._listOpen;
       pull = null;
-      if (phone() && open && lp && lp.contains(e.target) && lp.scrollTop <= 0) pull = "close";
+      grab = false;
+      if (phone() && open && lp && lp.contains(e.target) && e.touches[0].clientY - lp.getBoundingClientRect().top < 26) { pull = "close"; grab = true; }   // the pull bar: works at any scroll
+      else if (phone() && open && lp && lp.contains(e.target) && lp.scrollTop <= 0) pull = "close";
       else if (phone() && e.target.closest && e.target.closest("#topbar")) pull = open ? "shut" : "open";   // the top bar: swipe down opens the list, or closes it when it is open
     }, { passive: true });
     document.addEventListener("touchmove", (e) => {
@@ -415,7 +433,7 @@ function init() {
       if (f && !(f.tagName === "TEXTAREA" && f.scrollHeight > f.clientHeight + 2)) f.blur();
       if (pull === "close" && dy > 0) {
         const lp = document.getElementById("list-panel");
-        if (lp.scrollTop > 0) { pull = null; lp.style.transform = ""; return; }
+        if (lp.scrollTop > 0 && !grab) { pull = null; lp.style.transform = ""; return; }
         lp.style.transition = "none"; lp.style.transform = `translateY(${Math.round(dy * 0.8)}px)`;
       }
     }, { passive: true });

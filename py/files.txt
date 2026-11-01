@@ -28,6 +28,7 @@ mealplanner/recipe_import.py
 mealplanner/recipes.py
 mealplanner/routines.py
 mealplanner/scan_relay.py
+mealplanner/sides.py
 mealplanner/stats.py
 mealplanner/stock.py
 mealplanner/store.py

@@ -24,7 +24,7 @@ from pydantic import BaseModel
 
 from mealplanner import (barcodes, watch, inbox_import, bangers, aisles, batches, board, bulk, config, fdc, gaps, groceries, household, ingredients,
                          catalog, learning, nutrition, pantry_scan, places, prices, recipe_import, recipes, routines,
-                         stats, stock,
+                         stats, sides, stock,
                          suggest)
 from mealplanner.paths import DATA_DIR, ensure_dirs
 
@@ -344,6 +344,7 @@ def set_shop_list(ingredient_id: str, body: ShopListBody):
         ing = ingredients.update(ingredient_id, shop_list=body.shop_list)
     except KeyError:
         raise HTTPException(404, "no such ingredient")
+    aisles.learn(ing["name"], body.shop_list)       # the move is a rule for the next new thing like it
     return {"ingredient": ing}
 
 
@@ -970,6 +971,46 @@ def nutrition_gap_buy(body: GapBuyBody):
     return {"ingredient": ing}
 
 
+class SideAcceptBody(BaseModel):
+    date: str
+    recipe_id: Optional[str] = None      # a side we've made before ...
+    name: Optional[str] = None           # ... or a whole food, with its portion
+    grams: Optional[float] = None
+
+
+@app.post("/api/sides/accept")
+def side_accept(body: SideAcceptBody):
+    """The + on a suggested side: it becomes the dinner's next block (sides.accept)."""
+    try:
+        return sides.accept(body.date, body.recipe_id, body.name, body.grams)
+    except (KeyError, ValueError) as e:
+        raise HTTPException(404 if isinstance(e, KeyError) else 400, str(e))
+
+
+class SideDismissBody(BaseModel):
+    date: str
+    side_key: str                        # "r:<recipe id>" or "f:<food name, lower case>"
+
+
+@app.post("/api/sides/dismiss")
+def side_dismiss(body: SideDismissBody):
+    """The x on a suggested side: not offered with this main for a few weeks."""
+    main = sides.main_of(body.date)
+    if main is None:
+        raise HTTPException(404, "no main")
+    sides.dismiss(main["recipe_id"], body.side_key)
+    return {"ok": True}
+
+
+@app.post("/api/sides/undismiss")
+def side_undismiss(body: SideDismissBody):
+    main = sides.main_of(body.date)
+    if main is None:
+        raise HTTPException(404, "no main")
+    sides.undismiss(main["recipe_id"], body.side_key)
+    return {"ok": True}
+
+
 class PreviewBody(BaseModel):
     rows: list[RecipeIngredient] = []
 
@@ -1401,6 +1442,17 @@ def put_grocery_amount(week: str, ingredient_id: str, body: AmountBody):
 def remove_grocery_item(week: str, ingredient_id: str):
     """The swipe: off this week's list, whether a meal or a hand-add put it there."""
     return {"items": groceries.remove_item(week, ingredient_id)}
+
+
+@app.post("/api/groceries/{week}/items/{ingredient_id}/restore")
+def restore_grocery_item(week: str, ingredient_id: str):
+    """The Undo after a swipe off the list."""
+    return {"items": groceries.restore_item(week, ingredient_id)}
+
+
+@app.post("/api/groceries/{week}/free-list/{item_id}/restore")
+def restore_free_list_item(week: str, item_id: str):
+    return {"items": groceries.restore_free_item(week, item_id)}
 
 
 # ── the usuals (learned from what's hand-added week after week) ────────────

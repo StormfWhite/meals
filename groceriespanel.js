@@ -37,6 +37,7 @@ const GP_COPY = '<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15
 const GP_X = '<path d="M18 6 6 18M6 6l12 12"/>';
 const GP_MEAL = '<path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"/>';
 const GP_PLUS = '<path d="M12 5v14M5 12h14"/>';
+const GP_SIDE = '<path d="M3 12h18a9 9 0 0 1-18 0Z"/><path d="M8 8c0-1.6 1.6-1.6 1.6-3.2M13 8c0-1.6 1.6-1.6 1.6-3.2"/>';
 const GP_DOWN = '<path d="m6 9 6 6 6-6"/>';
 const GP_AISLE = '<path d="M4 3v18M20 3v18"/><path d="M4 8h5M4 14h5M15 8h5M15 14h5"/>';
 const GP_SNOW = '<path d="M12 2v20M4.9 7l14.2 10M4.9 17 19.1 7"/><path d="m9 4 3 2 3-2M9 20l3-2 3 2"/>';
@@ -173,7 +174,11 @@ App.groceriesPanel = {
     const marketTrip = this._tripOf("market");
     freeItems = freeItems.filter(i => !(i.checked && marketTrip && Date.now() - marketTrip < 18 * 3600_000));
     freeItems.forEach(item => freeRows.appendChild(App.swipeAway(this._freeRow(item), async () => {
-      await App.api(`/api/groceries/${this._marketWeek}/free-list/${item.id}`, { method: "DELETE" });
+      const wk = this._marketWeek;
+      await App.api(`/api/groceries/${wk}/free-list/${item.id}`, { method: "DELETE" });
+      App.undoToast(`${item.text || "Item"} removed`, async () => {
+        await App.api(`/api/groceries/${wk}/free-list/${item.id}/restore`, { method: "POST" }); this._reload();
+      });
       this._reload();
     })));
     ["grocery", "market"].forEach(kind => {
@@ -365,15 +370,18 @@ App.groceriesPanel = {
           row.insertBefore(sub, math || null);
         }
         wrap.appendChild(App.swipeAway(row, async () => {
-          await App.api(`/api/groceries/${this._wk(item.shop_list)}/items/${item.ingredient_id}`, { method: "DELETE" });
-          App.toast(`${item.name} off the list`);
+          const wk = this._wk(item.shop_list);
+          await App.api(`/api/groceries/${wk}/items/${item.ingredient_id}`, { method: "DELETE" });
+          App.undoToast(`${item.name} off the list`, async () => {
+            await App.api(`/api/groceries/${wk}/items/${item.ingredient_id}/restore`, { method: "POST" }); this._reload();
+          });
           this._reload();
         }));
       });
     });
     if (boughtN) {
       const note = App.el(`<button class="gp-group gp-bought-note">${App.icon(GP_CHECK)}<span>${boughtN} bought — in your Pantry</span></button>`);
-      note.addEventListener("click", () => this.openPantry());
+      note.addEventListener("click", () => this.openPantry({ focus: false }));
       wrap.appendChild(note);
     }
     // what the meals take from the pantry or freezer: nothing to buy, said where it comes from
@@ -396,7 +404,7 @@ App.groceriesPanel = {
   // the Pantry button: open it and bring it into view
   /* The Pantry button: unfold the Pantry and scroll to its head, where the camera is. The list may still be drawing
    * when this is called (it was just opened), so it tries again for a few seconds. */
-  openPantry() {
+  openPantry(opts = {}) {
     this._stockOpen = true;
     let tries = 0;
     const go = () => {
@@ -404,6 +412,9 @@ App.groceriesPanel = {
       if (!head) { if (tries++ < 20) setTimeout(go, 150); return; }
       if (!this._container.querySelector(".gp-stock").classList.contains("open")) this._toggleStock(true);
       head.scrollIntoView({ block: "start", behavior: "smooth" });
+      // the Pantry button means "add a pantry item": the cursor goes in the pantry's add box, not a grocery one
+      const box = this._container.querySelector(".gp-stock-name");
+      if (box && opts.focus !== false) box.focus({ preventScroll: true });
     };
     go();
   },
@@ -932,9 +943,13 @@ App.groceriesPanel = {
         this._drawStock();
       });
       el.querySelector(".gp-stock-rm").addEventListener("click", async () => {
-        App.toast(`${item.name}: removed`); await put(item, { grams: 0, frozen });
+        const was = frozen ? item.freezer_g : item.fridge_g;
+        App.undoToast(`${item.name}: removed`, () => put(item, { grams: was, frozen })); await put(item, { grams: 0, frozen });
       });
-      return App.swipeAway(el, async () => { App.toast(`${item.name}: used up`); await put(item, { grams: 0, frozen }); });
+      return App.swipeAway(el, async () => {
+        const was = frozen ? item.freezer_g : item.fridge_g;
+        App.undoToast(`${item.name}: used up`, () => put(item, { grams: was, frozen })); await put(item, { grams: 0, frozen });
+      });
     };
 
     // running low first: each one a tap from the list
@@ -976,8 +991,9 @@ App.groceriesPanel = {
         ${rmBtn}
       </div>`);
       el.querySelector(".gp-meal-dn").addEventListener("click", () => setN(Math.max(0, m.n - 1)));
-      el.querySelector(".gp-stock-rm").addEventListener("click", () => { App.toast(`${m.name}: gone`); setN(0); });
-      return App.swipeAway(el, () => { App.toast(`${m.name}: gone`); return setN(0); });
+      const gone = () => { App.undoToast(`${m.name}: gone`, () => setN(m.n)); return setN(0); };
+      el.querySelector(".gp-stock-rm").addEventListener("click", gone);
+      return App.swipeAway(el, gone);
     };
     const rest = items.filter(i => !i.low);
     ["fridge", "pantry"].forEach(where => {

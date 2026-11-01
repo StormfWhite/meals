@@ -21,7 +21,7 @@ import re
 from pathlib import Path
 from typing import Optional
 
-from . import household, ingredients, nutrition, suggest
+from . import household, ingredients, nutrition, sides, suggest
 
 # key, label, unit, adult daily amount (the general adult RDA/AI, the higher one where men and
 # women differ -- a household member's own targets win, see people())
@@ -232,14 +232,23 @@ def for_days(days: dict[str, dict], on_hand: Optional[set] = None,
                for f in whole_foods()
                if f["fdc_id"] not in owned_fdc and f["name"].lower() not in owned_names]
     out = {}
+    side_model, side_dismissed = sides.Model(today), sides._dismissed()
+
+    def side_list(date, low, day, foods=None):
+        """The dinner's side suggestions (sides.py): learned pairs + whatever closes the gaps."""
+        try:
+            return sides.for_day(date, low, side_model, foods, set(day.get("ingredient_ids") or []), side_dismissed)
+        except Exception:                # a side hint must never break the day's low check
+            return []
+
     for date, day in days.items():
         meals = day.get("meals") or [{"totals": day.get("totals") or {}}]
         low = lows(meals, ppl)
         if low is None:
-            out[date] = {"judged": False, "low": [], "have": [], "buy": []}
+            out[date] = {"judged": False, "low": [], "have": [], "buy": [], "sides": side_list(date, [], day)}
             continue
         if not low:
-            out[date] = {"judged": True, "low": [], "have": [], "buy": []}
+            out[date] = {"judged": True, "low": [], "have": [], "buy": [], "sides": side_list(date, [], day)}
             continue
         in_day = set(day.get("ingredient_ids") or [])
         # the same food under another name ("yogurt" / "fage yogurt") counts as in the day too
@@ -261,15 +270,22 @@ def for_days(days: dict[str, dict], on_hand: Optional[set] = None,
         for l in low:
             h, b = suggest([l])
             focus[l["key"]] = {"have": h[:FOCUS_N], "buy": b[:FOCUS_N]}
+        # whole foods stand in as sides while the plan history is thin: the best two owned + two to buy
+        by_ing = {o["ingredient_id"]: o for o in candidates}
+        foods = [{**by_ing[h["ingredient_id"]], "kind": "have", "in_stock": h["in_stock"]}
+                 for h in have[:2] if h.get("ingredient_id") in by_ing]
+        by_name = {b["name"]: b for b in buyable}
+        foods += [{**by_name[b["name"]], "kind": "buy"} for b in buy[:2] if b["name"] in by_name]
         out[date] = {"judged": True, "low": [{k: v for k, v in l.items() if k not in ("short", "scale", "ratio")} for l in low],
-                     "have": have[:per_kind], "buy": buy[:per_kind], "focus": focus}
+                     "have": have[:per_kind], "buy": buy[:per_kind], "focus": focus,
+                     "sides": side_list(date, low, day, foods)}
     return {"people": [{"name": p["name"], "share": p["share"]} for p in ppl], "days": out}
 
 
-def buy(name: str, week: str, market_week: Optional[str] = None) -> dict:
-    """The + on a food to buy: the catalog ingredient (made from its USDA record the first time,
-    so its nutrition is known at once) plus a hand-add on that list."""
-    from . import aisles, fdc, groceries   # groceries imports a lot
+def ensure_ingredient(name: str) -> dict:
+    """The catalog ingredient for a suggested whole food (made from its USDA record the first
+    time, so its nutrition is known at once)."""
+    from . import aisles, fdc
     f = next((f for f in whole_foods() if f["name"].lower() == name.strip().lower()), None)
     ing = next((i for i in ingredients.by_id().values() if i["name"].strip().lower() == name.strip().lower()), None)
     if ing is None:
@@ -282,7 +298,13 @@ def buy(name: str, week: str, market_week: Optional[str] = None) -> dict:
         ing = ingredients.update(ing["id"], fdc_description=f["description"])
         if not ing.get("shop_list_locked"):
             ingredients.update(ing["id"], shop_list=aisles.classify(ing["name"], category), lock_shop_list=False)
-    ing = ingredients.get(ing["id"])
+    return ingredients.get(ing["id"])
+
+
+def buy(name: str, week: str, market_week: Optional[str] = None) -> dict:
+    """The + on a food to buy: the ingredient (ensure_ingredient) plus a hand-add on that list."""
+    from . import aisles, groceries   # groceries imports a lot
+    ing = ensure_ingredient(name)
     # the farmer's market list runs on its own week (the panel's marketWeek)
     to_market = ing.get("shop_list") == aisles.MARKET and market_week
     groceries.add_extra_item(market_week if to_market else week, ing["id"])
