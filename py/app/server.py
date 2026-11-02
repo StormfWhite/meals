@@ -29,7 +29,8 @@ from mealplanner import (barcodes, watch, inbox_import, bangers, aisles, batches
                          suggest)
 from mealplanner.paths import DATA_DIR, ensure_dirs
 
-WEB_DIR = Path(__file__).parent / "web"
+import os
+WEB_DIR = Path(os.environ.get("MEALS_WEB_DIR") or Path(__file__).parent / "web")
 PHOTOS_DIR = DATA_DIR / "photos"
 
 ensure_dirs()

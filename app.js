@@ -480,7 +480,7 @@ function init() {
 
   // phone / web build: coming back to the front after a new version was published reloads the page.
   // (An Android shell resumes the SAME page, so "closing and reopening" never fetched the update.)
-  if (!/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) {
+  if (onPhonePy) {
     let mine = null;
     const stamp = () => fetch("version.txt", { cache: "no-store" }).then((r) => (r.ok ? r.text() : null)).catch(() => null);
     stamp().then((t) => { mine = t; });
@@ -495,7 +495,7 @@ function init() {
   // The server watches them (inotify, no polling) and holds one event stream open to each window: it
   // sends "data" / "inbox" the moment something changes, so an idle window does nothing at all.
   // Never redraws under a focused field. (The phone build has its own Dropbox long-poll in bridge.js.)
-  if (/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) {
+  if (!onPhonePy) {   // the laptop window, or any browser/phone served by the one server (jorm)
     let wanted = false;
     const redrawIfIdle = () => {
       const a = document.activeElement;

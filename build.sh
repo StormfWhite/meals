@@ -16,6 +16,18 @@ sed -e 's|href="/|href="|g; s|src="/|src="|g' \
     -e 's|<link rel="stylesheet" href="style.css">|<link rel="stylesheet" href="style.css">\n<link rel="stylesheet" href="mobile.css">\n<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">\n<meta name="apple-mobile-web-app-capable" content="yes">\n<meta name="mobile-web-app-capable" content="yes">\n<meta name="apple-mobile-web-app-title" content="Meals">\n<link rel="manifest" href="manifest.webmanifest">\n<link rel="apple-touch-icon" href="icon-180.png">\n<link rel="icon" href="icon-192.png">|' \
     -e 's|<script src="app.js"></script>|<script src="https://cdn.jsdelivr.net/pyodide/v0.27.7/full/pyodide.js"></script>\n<script src="bridge.js"></script>\n<script src="app.js"></script>|' \
     "$SRC/app/web/index.html" > "$OUT/index.html"
+# On the tailnet the phone uses the ONE shared server on jorm (nothing to sync); anywhere else this
+# page carries on with its own offline copy. "?local" skips the hop.
+python3 - "$OUT/index.html" <<'PY'
+import sys
+p = sys.argv[1]; s = open(p).read()
+hop = """<script>(function(){var J="https://jorm.tail74ab32.ts.net:8443/";if(/[?&]local\\b/.test(location.search)||location.hostname.indexOf("github.io")<0)return;
+var c=new AbortController(),t=setTimeout(function(){c.abort()},2500);
+fetch(J+"api/meta",{mode:"no-cors",signal:c.signal,cache:"no-store"}).then(function(){clearTimeout(t);location.replace(J)}).catch(function(){});})();</script>
+"""
+s = s.replace("<head>", "<head>\n" + hop, 1) if "<head>" in s else hop + s
+open(p, "w").write(s)
+PY
 # py.zip: everything Python needs in ONE download, already compiled -- our package + server and the
 # three pure-Python wheels unpacked beside them, each with its .pyc (Pyodide 0.27 = CPython 3.12, same
 # bytecode as this machine's 3.12; unchecked-hash so the browser never re-reads the source to validate).
