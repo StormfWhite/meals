@@ -524,6 +524,7 @@ App.plan = {
         <div class="day-col-foot" data-date="${date}" style="${at(5)}">
           <span class="field-label">Day</span><span class="v num">—</span>
           <button class="day-low" hidden></button>
+          <div class="day-bars" hidden></div>
           <div class="day-gaps" hidden></div>
         </div>
       `));
@@ -658,13 +659,34 @@ App.plan = {
     this._paintDayTotals(true);          // first numbers of a draw: ask for the day's gaps / sides at once
   },
 
+  /* Calories, protein and fibre against each person's own target: one thin bar per person under a tiny label.
+   * Green once the target is reached; calories turn red a good way past it. (Targets: household members.) */
+  _paintBars(foot, perPerson, people) {
+    const box = foot.querySelector(".day-bars");
+    foot.classList.toggle("has-bars", !!perPerson);
+    box.hidden = !perPerson;
+    if (!perPerson) { box.innerHTML = ""; return; }
+    const rows = [["calories_kcal", "kcal", "kcal"], ["protein_g", "P", "g protein"], ["fiber_g", "F", "g fibre"]];
+    box.innerHTML = rows.map(([key, tag, unit]) => {
+      const tracks = perPerson.map((t, i) => {
+        const goal = people && people[i] && people[i].targets ? people[i].targets[key] : 0;
+        const pct = goal ? Math.round(100 * t[key] / goal) : 0;
+        const cls = pct >= 100 ? (key === "calories_kcal" && pct > 125 ? " over" : " done") : "";
+        const who = t.name ? `${t.name}: ` : "";
+        return { pct, html: `<span class="db-track" title="${App.esc(who)}${Math.round(t[key])} of ${goal || "?"} ${unit}"><i class="${cls}" style="width:${Math.min(100, pct)}%"></i></span>`, label: goal ? pct : null };
+      });
+      const nums = tracks.filter(x => x.label !== null).map(x => x.label).join(" · ");
+      return `<div class="db-row"><span class="db-tag">${tag}</span><span class="db-tracks">${tracks.map(x => x.html).join("")}</span><span class="db-num num">${nums ? nums + "%" : ""}</span></div>`;
+    }).join("");
+  },
+
   _paintDayTotals(now) {
     const days = {};
     document.querySelectorAll(".day-col-foot").forEach(foot => {
       const date = foot.dataset.date;
       const mine = this._blocks.filter(b => b.date === date && b.totals);
       const v = foot.querySelector(".v");
-      if (mine.length === 0) { v.textContent = "—"; v.title = ""; this._paintGaps(foot, null); return; }
+      if (mine.length === 0) { v.textContent = "—"; v.title = ""; this._paintBars(foot, null); this._paintGaps(foot, null); return; }
       // per PERSON, like each meal's header: one portion (the pot over its count) of every meal
       // that person eats -- household.portion on the server
       const people = (this._members || []).filter(m => m.active !== false);
@@ -684,6 +706,7 @@ App.plan = {
       v.textContent = same ? line(perPerson[0])
         : perPerson.map(t => `${t.name} ${Math.round(t.calories_kcal).toLocaleString()}`).join(" · ") + " kcal";
       v.title = perPerson.map(t => `${t.name ? t.name + ": " : "Each: "}${Math.round(t.calories_kcal)} kcal · ${t.protein_g.toFixed(1)} g protein · ${t.fiber_g.toFixed(1)} g fiber`).join("\n");
+      this._paintBars(foot, perPerson, people);
       days[date] = { meals: mine.map(b => ({ totals: b.totals, eaters: b.eaters(), servings: b.portions() })), ingredient_ids: [...new Set(mine.flatMap(b => b.knownRows().map(r => r.ingredient_id)))] };
     });
     clearTimeout(this._gapsTimer);

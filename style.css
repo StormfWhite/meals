@@ -1184,3 +1184,16 @@ button.mb-tag { cursor: pointer; font: inherit; font-size: 10px; }
 
 /* seasonings sit after the ingredients, set off by a hairline */
 .mb-row.seasoning-first { border-top: 1px solid var(--border); margin-top: 2px; padding-top: 1px; }
+
+/* day foot: calories / protein / fibre bars, one thin track per person (plan.js _paintBars) */
+.day-bars { flex: 1 0 100%; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.day-bars[hidden] { display: none; }
+.day-col-foot.has-bars > .v, .day-col-foot.has-bars > .field-label { display: none; }
+.db-row { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 10px; color: var(--text-dim); }
+.db-tag { width: 30px; flex: none; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; }
+.db-tracks { flex: 1; min-width: 40px; display: flex; flex-direction: column; gap: 2px; }
+.db-track { display: block; height: 4px; border-radius: 2px; background: var(--border); overflow: hidden; }
+.db-track i { display: block; height: 100%; border-radius: 2px; background: var(--accent); transition: width .3s ease; }
+.db-track i.done { background: var(--good); }
+.db-track i.over { background: var(--bad); }
+.db-num { flex: none; min-width: 52px; text-align: right; font-weight: 650; color: var(--text); white-space: nowrap; }
