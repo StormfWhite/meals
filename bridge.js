@@ -158,6 +158,10 @@
   const synced = {};   // name → bytes as last agreed with Dropbox
   const eq = (a, b) => { if (!a || !b || a.length !== b.length) return false; for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false; return true; };
   const isData = (n) => /^[\w.-]+\.(json|sqlite)$/.test(n);
+  // The USDA lookup cache is 2.6 MB and every lookup on either side rewrites it: syncing it made each
+  // pull/push move megabytes (the lag, the stale screen, the "conflicted copy" files). Each device
+  // keeps its own -- fetched once if missing, never pulled again, never pushed.
+  const LOCAL_ONLY = /^fdc_cache\.sqlite$/;
 
   const T0 = performance.now(), marks = [];
   const mark = (m) => marks.push([m, Math.round(performance.now() - T0)]);
@@ -244,6 +248,7 @@ async def _call(method, path, body):
     for (;;) {
       for (const e of page.entries) {
         if (e[".tag"] !== "file" || !isData(e.name) || S.revs[e.name] === e.rev) continue;
+        if (LOCAL_ONLY.test(e.name) && readFile(e.name)) continue;
         const r = await content("files/download", { path: e.path_lower });
         const b = new Uint8Array(await r.arrayBuffer());
         S.revs[e.name] = e.rev; synced[e.name] = b; await idbPut(e.name, b);
@@ -268,7 +273,7 @@ async def _call(method, path, body):
       let conflict = false;
       for (const n of localNames()) {
         const b = readFile(n);
-        if (!b || eq(b, synced[n])) continue;
+        if (!b || eq(b, synced[n]) || LOCAL_ONLY.test(n)) continue;
         const mode = S.revs[n] ? { ".tag": "update", update: S.revs[n] } : "add";
         try {
           const r = await content("files/upload", { path: `${FOLDER}/${n}`, mode, autorename: false, mute: true }, b);
