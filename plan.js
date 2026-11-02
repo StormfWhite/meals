@@ -524,8 +524,8 @@ App.plan = {
         <div class="day-col-foot" data-date="${date}" style="${at(5)}">
           <span class="field-label">Day</span><span class="v num">—</span>
           <button class="day-low" hidden></button>
-          <div class="day-bars" hidden></div>
           <div class="day-gaps" hidden></div>
+          <div class="day-bars" hidden></div>
         </div>
       `));
     });
@@ -659,25 +659,33 @@ App.plan = {
     this._paintDayTotals(true);          // first numbers of a draw: ask for the day's gaps / sides at once
   },
 
-  /* Calories, protein and fibre against each person's own target: one thin bar per person under a tiny label.
+  /* Calories, protein and fiber against each person's own target, at the end of the row of progress bars: one thin track per person.
    * Green once the target is reached; calories turn red a good way past it. (Targets: household members.) */
   _paintBars(foot, perPerson, people) {
-    const box = foot.querySelector(".day-bars");
-    foot.classList.toggle("has-bars", !!perPerson);
-    box.hidden = !perPerson;
-    if (!perPerson) { box.innerHTML = ""; return; }
-    const rows = [["calories_kcal", "kcal", "kcal"], ["protein_g", "P", "g protein"], ["fiber_g", "F", "g fibre"]];
-    box.innerHTML = rows.map(([key, tag, unit]) => {
-      const tracks = perPerson.map((t, i) => {
-        const goal = people && people[i] && people[i].targets ? people[i].targets[key] : 0;
-        const pct = goal ? Math.round(100 * t[key] / goal) : 0;
-        const cls = pct >= 100 ? (key === "calories_kcal" && pct > 125 ? " over" : " done") : "";
-        const who = t.name ? `${t.name}: ` : "";
-        return { pct, html: `<span class="db-track" title="${App.esc(who)}${Math.round(t[key])} of ${goal || "?"} ${unit}"><i class="${cls}" style="width:${Math.min(100, pct)}%"></i></span>`, label: goal ? pct : null };
-      });
-      const nums = tracks.filter(x => x.label !== null).map(x => x.label).join(" · ");
-      return `<div class="db-row"><span class="db-tag">${tag}</span><span class="db-tracks">${tracks.map(x => x.html).join("")}</span><span class="db-num num">${nums ? nums + "%" : ""}</span></div>`;
-    }).join("");
+    if (perPerson) {
+      const rows = [["calories_kcal", "kcal", "kcal"], ["protein_g", "protein", "g protein"], ["fiber_g", "fiber", "g fiber"]];
+      foot._barsHtml = rows.map(([key, tag, unit]) => {
+        const per = perPerson.map((t, i) => {
+          const goal = people && people[i] && people[i].targets ? people[i].targets[key] : 0;
+          const pct = goal ? Math.round(100 * t[key] / goal) : null;
+          const cls = pct >= 100 ? (key === "calories_kcal" && pct > 125 ? " over" : " done") : "";
+          return { pct, cls, tip: `${t.name ? t.name + ": " : ""}${Math.round(t[key])} of ${goal || "?"} ${unit}` };
+        });
+        const nums = per.filter(x => x.pct !== null).map(x => x.pct).join(" · ");
+        return `<span class="db-chip" title="${App.esc(per.map(x => x.tip).join("\n"))}"><span>${tag}</span><span class="db-bar">${per.map(x => `<b><i class="${x.cls}" style="width:${Math.min(100, x.pct || 0)}%"></i></b>`).join("")}</span><span class="num">${nums ? nums + "%" : ""}</span></span>`;
+      }).join("");
+    } else foot._barsHtml = "";
+    this._placeBars(foot);
+  },
+
+  /* They go on the end of the gaps row (choline, iron … then kcal, protein, fiber) when that row is showing,
+   * else on a row of their own. */
+  _placeBars(foot) {
+    foot.querySelectorAll(".dg-lows .db-chip").forEach(e => e.remove());
+    const own = foot.querySelector(".day-bars"), lows = foot.querySelector(".day-gaps:not([hidden]) .dg-lows");
+    const html = foot._barsHtml || "";
+    if (lows && html) { lows.insertAdjacentHTML("beforeend", html); own.hidden = true; own.innerHTML = ""; return; }
+    own.innerHTML = html; own.hidden = !html;
   },
 
   _paintDayTotals(now) {
@@ -874,6 +882,7 @@ App.plan = {
     if (!day || !day.judged || !day.low.length) {
       chip.hidden = true; box.hidden = true; box.innerHTML = "";
       if (day && day.judged) { chip.hidden = false; chip.className = "day-low ok"; chip.innerHTML = `${App.icon('<path d="M20 6 9 17l-5-5"/>')}`; chip.title = "Nothing low today"; }
+      this._placeBars(foot);
       return;
     }
     const whoText = (l) => l.who && l.who.length ? ` (${l.who.join(", ")})` : "";
@@ -904,6 +913,7 @@ App.plan = {
       <div class="dg-lows">${day.low.map(l => `
         <span class="dg-low" data-key="${App.esc(l.key)}" title="${l.have} of ${l.target} ${l.unit}${App.esc(whoText(l))} — tap for more that fill it"><span>${App.esc(l.label)}${l.who && l.who.length ? ` <span class="dg-who">${App.esc(l.who.join(", "))}</span>` : ""}</span><span class="dg-bar"><i style="width:${Math.min(100, l.pct)}%"></i></span><span class="num">${l.pct}%</span></span>`).join("")}</div>
       <div class="dg-list"></div>`;
+    this._placeBars(foot);
     let picked = null;
     box.querySelectorAll(".dg-low").forEach(el => el.addEventListener("click", () => {
       picked = picked === el.dataset.key ? null : el.dataset.key;
@@ -927,6 +937,7 @@ App.plan = {
     const open = this._gapsOpen[date] ?? !this._isWeekMode();
     box.hidden = !open;
     foot.classList.toggle("gaps-open", open);
+    this._placeBars(foot);
     if (!chip._wired) {
       chip._wired = true;
       chip.addEventListener("click", () => {
@@ -934,6 +945,7 @@ App.plan = {
         this._gapsOpen[foot.dataset.date] = box.hidden;
         box.hidden = !box.hidden;
         foot.classList.toggle("gaps-open", !box.hidden);
+        this._placeBars(foot);
       });
     }
   },
