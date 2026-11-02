@@ -18,7 +18,7 @@ import uuid
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, FileResponse, PlainTextResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -55,23 +55,32 @@ def stamp():
 
 
 @app.get("/api/events")
-def events():
+async def events(request: Request):
     """Server-sent events: one line when the plan's data changes or the Recipes app leaves something.
-    Fed by an inotify thread (watch.py), so nothing here polls; a window just holds the connection open.
-    A comment line every few minutes tells a dropped connection from a quiet one."""
+    Fed by an inotify thread (watch.py), so nothing here waits on files; this loop only compares a counter
+    every quarter second and gives up the moment the window is gone -- it holds NO worker thread (a blocking
+    stream per window used up the pool and froze the server). A comment line every 25 s keeps proxies open."""
     if not watch.start():
         raise HTTPException(503, "no file watching here")
 
-    def stream():
-        seen = watch.version
+    async def stream():
+        import asyncio
+        seen, idle = watch.version, 0.0
         yield "retry: 3000\n\nevent: hello\ndata: {}\n\n"
         while True:
-            seen, got = watch.wait(seen, 300)
-            if not got:
-                yield ": still here\n\n"
+            await asyncio.sleep(0.25)
+            if await request.is_disconnected():
+                return
+            if watch.version != seen:
+                seen, got = watch.wait(seen, 0)
+                idle = 0.0
+                for k in sorted(got):
+                    yield f"event: {k}\ndata: {{}}\n\n"
                 continue
-            for k in sorted(got):
-                yield f"event: {k}\ndata: {{}}\n\n"
+            idle += 0.25
+            if idle >= 25:
+                idle = 0.0
+                yield ": still here\n\n"
     return StreamingResponse(stream(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 

@@ -257,3 +257,7 @@ body.offline #topbar::after { content: "offline · saved on this phone"; font-si
 /* iPhone home-screen app: the top bar's own colour reaches up under the status bar (it used to be the page
  * colour there, so the strip looked washed-out / blurred, and scrolled content showed through it). */
 @media (max-width: 760px) { #topbar { padding-top: calc(env(safe-area-inset-top) + 1px); } }
+
+/* the day strip scrolls sideways by itself (finger drags the real days); rows still swipe away on their own */
+@media (max-width: 760px) { .plan-cols.one-day.strip { touch-action: pan-x pan-y; padding-left: 0 !important; padding-right: 0 !important; }
+  .plan-cols.strip > .day-col { padding: 0 6px; } }

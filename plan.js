@@ -82,7 +82,7 @@ App.plan = {
   /* One week-shaped object for the blocks to read: the window's dates, every loaded week's slots. */
   _merge() {
     const keys = Object.keys(this._weeks).sort();
-    const first = this._weeks[keys[0]];
+    const first = this._weeks[this._baseWs] || this._weeks[keys[0]];
     this._week = {
       week_start: first.week_start,
       dates: this._window || first.dates,
@@ -96,7 +96,15 @@ App.plan = {
    * changed elsewhere. Anything else (another week, week view, first draw) takes the normal path. */
   _canFast(date) {
     return !this._isWeekMode() && !!this._drawnFor && !!this._weeks && !!this._recipes && !!this._options
-      && !!this._weeks[this._wkOf(date)] && this._wkOf(date) === this._wkOf(this._date);
+      && !!this._weeks[this._wkOf(date)];
+  },
+
+  /* the ‹ › buttons: glide the strip to the next day (it lands like a swipe), else the plain step */
+  _glide(body, step) {
+    const cols = document.getElementById("plan-cols");
+    const pane = this._stripOn && cols ? cols.querySelector(`:scope > .day-col[data-date="${_planShift(this._date, step)}"]`) : null;
+    if (!pane) return this._stepDay(body, step);
+    cols.scrollTo({ left: pane.offsetLeft, behavior: "smooth" });
   },
 
   _stepDay(body, step) {
@@ -443,6 +451,150 @@ App.plan = {
     await this.render(document.getElementById("body"));
   },
 
+  /* One day's column: head, the three meal cells, the foot. `flow` = stacked in its own column (week view and the
+   * phone's day strip); otherwise placed on the single explicit grid of the day view. */
+  _buildDay(date, holder, flow, ci, weekMode) {
+    const host = this._host();
+      const isToday = date === _planToday();
+      const at = (row) => flow ? "" : `grid-column:${ci + 1};grid-row:${row};`;
+      holder.appendChild(App.el(`
+        <div class="day-col-head ${isToday ? "today" : ""}" style="${at(1)}">
+          <span class="dow">${_planDow(date)}</span>
+          <span class="dnum">${_planDayNum(date)}</span>
+          ${isToday ? '<span class="today-dot"></span>' : ""}
+        </div>
+      `));
+      PLAN_MEALS.forEach((meal, mi) => {
+        // One cell per day+meal, holding one meal or several. Breakfast is
+        // a smoothie AND fried eggs often enough that the slot has to
+        // stretch; the cell is what keeps every day's breakfast on the
+        // same grid row while it does.
+        const cell = App.el(`<div class="meal-cell" data-date="${date}" data-meal="${meal}"></div>`);
+        if (!flow) { cell.style.gridColumn = String(ci + 1); cell.style.gridRow = String(mi + 2); }
+        this._indicesFor(date, meal).forEach(index => {
+          const blk = App.mealBlock.create(host, date, meal, index);
+          cell.appendChild(blk.el);
+          this._blocks.push(blk);
+        });
+        // dinner gets a strip of side ideas under its main (sides.py); filled in by _paintSides
+        if (meal === "dinner") {
+          const strip = App.el(`<div class="side-strip" data-date="${date}" ${weekMode ? "hidden" : ""}></div>`);
+          this._paintSides(strip, this._cachedSides(date));   // the last ideas for this main at once; fresh ones follow
+          cell.appendChild(strip);
+        }
+        cell.appendChild(this._addMealButton(host, cell, date, meal));
+        if (meal === "dinner") {
+          let t;
+          cell.addEventListener("input", (e) => { if (e.target.classList.contains("mb-name")) { clearTimeout(t); t = setTimeout(() => this._syncSides(date), 350); } });
+          cell.classList.toggle("has-side", this._indicesFor(date, "dinner").length > 1);
+        }
+        holder.appendChild(cell);
+      });
+      holder.appendChild(App.el(`
+        <div class="day-col-foot" data-date="${date}" style="${at(5)}">
+          <span class="field-label">Day</span><span class="v num">—</span>
+          <button class="day-low" hidden></button>
+          <div class="day-gaps" hidden></div>
+          <div class="day-bars" hidden></div>
+        </div>
+      `));
+  },
+
+  // ── the phone's day strip ─────────────────────────────────────────
+  /* Phone, day view: the previous, this and the next day sit side by side in one sideways-scrolling strip that
+   * snaps to a day (native scrolling: the finger drags the real days, with momentum, like a calendar app).
+   * When it settles on another day the strip shifts by one: the far day goes, a new neighbour is built. */
+  _strip() {
+    return !this._isWeekMode() && window.matchMedia("(max-width: 760px)").matches
+      && ("ontouchstart" in window || navigator.maxTouchPoints > 0);
+  },
+
+  _stripDates() {
+    return [-1, 0, 1].map(n => _planShift(this._date, n)).filter(d => this._weeks && this._weeks[this._wkOf(d)]);
+  },
+
+  _centerStrip(cols, smooth) {
+    const pane = cols.querySelector(`:scope > .day-col[data-date="${this._date}"]`);
+    if (!pane) return;
+    this._stripBusy = true;
+    cols.style.scrollSnapType = "none";
+    cols.scrollTo({ left: pane.offsetLeft, behavior: smooth ? "smooth" : "auto" });
+    requestAnimationFrame(() => requestAnimationFrame(() => { cols.style.scrollSnapType = ""; this._stripBusy = false; }));
+  },
+
+  _wireStrip(cols, body) {
+    let t = 0;
+    const settle = () => {
+      if (this._stripBusy || !cols.isConnected) return;
+      const panes = [...cols.querySelectorAll(":scope > .day-col")];
+      if (!panes.length) return;
+      const near = panes.reduce((b, p) => Math.abs(p.offsetLeft - cols.scrollLeft) < Math.abs(b.offsetLeft - cols.scrollLeft) ? p : b);
+      if (near.dataset.date !== this._date && Math.abs(near.offsetLeft - cols.scrollLeft) < 4) this._landOn(body, cols, near.dataset.date);
+    };
+    cols.addEventListener("scroll", () => { clearTimeout(t); t = setTimeout(settle, 90); }, { passive: true });
+    cols.addEventListener("scrollend", () => { clearTimeout(t); settle(); });
+  },
+
+  /* The strip came to rest on `date`: that is the day now. Shift the panes (no redraw of the day you are on). */
+  _landOn(body, cols, date) {
+    this.flush();
+    this._date = date;
+    this._baseWs = this._wkOf(date);
+    this._merge();
+    this._syncPanes(cols);
+    const label = document.querySelector(".plan-date");
+    if (label) label.textContent = _planFull(date);
+    this._drawnFor = `${this._date}|false`;
+    this._focusBand(false);
+    this._prefetchWeeks(cols);
+    clearTimeout(this._quietTimer);
+    this._quietTimer = setTimeout(() => this.render(body, true), 1500);
+  },
+
+  /* Panes for yesterday, today, tomorrow of the day on screen: drop the rest, build what is missing,
+   * keep the current one where it is. */
+  _syncPanes(cols) {
+    const want = this._stripDates();
+    const have = new Map([...cols.querySelectorAll(":scope > .day-col")].map(c => [c.dataset.date, c]));
+    have.forEach((el, d) => { if (!want.includes(d)) { el.remove(); have.delete(d); } });
+    this._blocks = this._blocks.filter(b => want.includes(b.date));
+    const before = this._blocks.length;
+    want.forEach((d, i) => {
+      if (have.has(d)) return;
+      const holder = App.el(`<div class="day-col" data-date="${d}"></div>`);
+      this._buildDay(d, holder, true, i, false);
+      have.set(d, holder);
+    });
+    want.forEach(d => cols.appendChild(have.get(d)));
+    this._centerStrip(cols, false);
+    const fresh = this._blocks.slice(before);
+    if (fresh.length) this._statsFor(fresh);
+    else this._paintDayTotals();
+  },
+
+  /* The weeks either side of the day on screen, fetched quietly so the strip has a neighbour on Saturday/Sunday too. */
+  async _prefetchWeeks(cols) {
+    const need = [...new Set([-1, 1].map(n => this._wkOf(_planShift(this._date, n))))].filter(w => !this._weeks[w]);
+    if (!need.length) return;
+    try {
+      const got = await Promise.all(need.map(w => App.api(`/api/board?week=${w}`)));
+      need.forEach((w, i) => { this._weeks[w] = got[i]; });
+    } catch (e) { return; }
+    if (!cols.isConnected) return;
+    this._merge();
+    this._syncPanes(cols);
+  },
+
+  async _statsFor(blocksList) {
+    const blocks = {};
+    blocksList.forEach(b => { blocks[b.key] = b.knownRows(); });
+    try {
+      const res = await App.api("/api/nutrition/preview-batch", { method: "POST", body: { blocks } });
+      blocksList.forEach(b => { const p = res.blocks[b.key]; b.applyPreview(p && p.rows.length ? p : null); });
+    } catch (e) { /* the numbers follow on the next change */ }
+    this._paintDayTotals(true);
+  },
+
   _draw(body) {
     const weekMode = this._isWeekMode();
     const dates = weekMode ? this._week.dates : [this._date];
@@ -477,58 +629,21 @@ App.plan = {
     cols.style.gridTemplateColumns = weekMode
       ? `repeat(${dates.length}, minmax(120px, 1fr))`
       : "minmax(0, 780px)";
-    if (!weekMode) this._wireDaySwipe(cols, body);
+    if (!weekMode && !this._strip()) this._wireDaySwipe(cols, body);
     this._wireDrag(cols);
 
-    dates.forEach((date, ci) => {
-      const isToday = date === _planToday();
-      // Week view: each day is its own column so it only takes the height it needs (a busy Monday
-      // doesn't stretch Tuesday's rows). Day view keeps the single explicit grid.
-      const holder = weekMode ? App.el(`<div class="day-col" style="grid-column:${ci + 1};"></div>`) : cols;
-      if (weekMode) cols.appendChild(holder);
-      const at = (row) => weekMode ? "" : `grid-column:${ci + 1};grid-row:${row};`;
-      holder.appendChild(App.el(`
-        <div class="day-col-head ${isToday ? "today" : ""}" style="${at(1)}">
-          <span class="dow">${_planDow(date)}</span>
-          <span class="dnum">${_planDayNum(date)}</span>
-          ${isToday ? '<span class="today-dot"></span>' : ""}
-        </div>
-      `));
-      PLAN_MEALS.forEach((meal, mi) => {
-        // One cell per day+meal, holding one meal or several. Breakfast is
-        // a smoothie AND fried eggs often enough that the slot has to
-        // stretch; the cell is what keeps every day's breakfast on the
-        // same grid row while it does.
-        const cell = App.el(`<div class="meal-cell" data-date="${date}" data-meal="${meal}"></div>`);
-        if (!weekMode) { cell.style.gridColumn = String(ci + 1); cell.style.gridRow = String(mi + 2); }
-        this._indicesFor(date, meal).forEach(index => {
-          const blk = App.mealBlock.create(host, date, meal, index);
-          cell.appendChild(blk.el);
-          this._blocks.push(blk);
-        });
-        // dinner gets a strip of side ideas under its main (sides.py); filled in by _paintSides
-        if (meal === "dinner") {
-          const strip = App.el(`<div class="side-strip" data-date="${date}" ${weekMode ? "hidden" : ""}></div>`);
-          this._paintSides(strip, this._cachedSides(date));   // the last ideas for this main at once; fresh ones follow
-          cell.appendChild(strip);
-        }
-        cell.appendChild(this._addMealButton(host, cell, date, meal));
-        if (meal === "dinner") {
-          let t;
-          cell.addEventListener("input", (e) => { if (e.target.classList.contains("mb-name")) { clearTimeout(t); t = setTimeout(() => this._syncSides(date), 350); } });
-          cell.classList.toggle("has-side", this._indicesFor(date, "dinner").length > 1);
-        }
-        holder.appendChild(cell);
-      });
-      holder.appendChild(App.el(`
-        <div class="day-col-foot" data-date="${date}" style="${at(5)}">
-          <span class="field-label">Day</span><span class="v num">—</span>
-          <button class="day-low" hidden></button>
-          <div class="day-gaps" hidden></div>
-          <div class="day-bars" hidden></div>
-        </div>
-      `));
+    const strip = this._strip();
+    this._stripOn = strip;
+    cols.classList.toggle("strip", strip);
+    if (strip) { cols.style.gridTemplateColumns = "none"; this._wireStrip(cols, body); }
+    const shown = strip ? this._stripDates() : dates;
+    shown.forEach((date, ci) => {
+      const flow = weekMode || strip;
+      const holder = flow ? App.el(`<div class="day-col" data-date="${date}" ${weekMode ? `style="grid-column:${ci + 1};"` : ""}></div>`) : cols;
+      if (flow) cols.appendChild(holder);
+      this._buildDay(date, holder, flow, ci, weekMode);
     });
+    if (strip) { this._centerStrip(cols, false); setTimeout(() => this._prefetchWeeks(cols), 400); }
 
     this._paintPick();
     this._drawNav();
@@ -631,7 +746,7 @@ App.plan = {
     `);
     const body = document.getElementById("body");
     const step = weekMode ? 7 : 1;
-    const go = (n) => { if (weekMode) { this._date = _planShift(this._date, n); this.render(body); } else this._stepDay(body, n); };
+    const go = (n) => { if (weekMode) { this._date = _planShift(this._date, n); this.render(body); } else this._glide(body, n); };
     nav.querySelector("#plan-prev").addEventListener("click", () => go(-step));
     nav.querySelector("#plan-next").addEventListener("click", () => go(step));
     nav.querySelector("#plan-import").addEventListener("click", () => App.recipes.openImportFrom(() => this.render(body)));

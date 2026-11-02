@@ -1196,3 +1196,9 @@ button.mb-tag { cursor: pointer; font: inherit; font-size: 10px; }
 .db-bar i { display: block; height: 100%; background: var(--accent); }
 .db-bar i.done { background: var(--good); }
 .db-bar i.over { background: var(--bad); }
+
+/* phone day view: previous / this / next day side by side, one swipe-snapped strip (plan.js _strip) */
+.plan-cols.strip { display: flex; flex-direction: row; gap: 0; padding-left: 0; padding-right: 0; position: relative;
+  overflow-x: auto; overflow-y: auto; scroll-snap-type: x mandatory; overscroll-behavior-x: contain; align-items: flex-start; }
+.plan-cols.strip > .day-col { flex: 0 0 100%; min-width: 0; box-sizing: border-box; display: flex; flex-direction: column; gap: 7px;
+  padding: 0 8px; scroll-snap-align: start; scroll-snap-stop: always; }

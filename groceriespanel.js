@@ -1209,8 +1209,11 @@ App.groceriesPanel = {
       // gone from the screen at once; the list math (slow on a phone) catches up behind it
       const box = row.closest(".gp-swipe") || row;
       box.style.display = "none";
-      await App.api(`/api/groceries/${this._wk(item.shop_list)}/items/${item.ingredient_id}`, { method: "DELETE" });
-      App.toast(`${item.name} off the list`);
+      const wk = this._wk(item.shop_list);
+      await App.api(`/api/groceries/${wk}/items/${item.ingredient_id}`, { method: "DELETE" });
+      App.undoToast(`${item.name} off the list`, async () => {
+        await App.api(`/api/groceries/${wk}/items/${item.ingredient_id}/restore`, { method: "POST" }); this._reload();
+      });
       this._reload();
     });
 
@@ -1341,7 +1344,11 @@ App.groceriesPanel = {
     });
     row.querySelector(".gp-free-remove").addEventListener("click", async () => {
       (row.closest(".gp-swipe") || row).style.display = "none";    // at once; the redraw catches up
-      await App.api(`/api/groceries/${this._marketWeek}/free-list/${item.id}`, { method: "DELETE" });
+      const wk = this._marketWeek;
+      await App.api(`/api/groceries/${wk}/free-list/${item.id}`, { method: "DELETE" });
+      App.undoToast(`${item.text || "Item"} removed`, async () => {
+        await App.api(`/api/groceries/${wk}/free-list/${item.id}/restore`, { method: "POST" }); this._reload();
+      });
       this._reload();
     });
     return row;

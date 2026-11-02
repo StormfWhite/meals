@@ -260,10 +260,12 @@ App.mealBlock = {
         ensureBlankRow();
         markDirty();
         commit();
-        if (name && parent) App.undoToast(`${name} removed`, () => {
+        if (name && parent) App.undoToast(`${name} removed`, async () => {
           row.style.transform = ""; row.style.opacity = "";
           parent.insertBefore(row, next && next.parentNode === parent ? next : null);
-          ensureBlankRow(); markDirty(); commit();
+          ensureBlankRow(); markDirty();
+          await commit();
+          host.reloadWeek();      // the screen may have been redrawn since: draw the day again from what was just saved
         });
       };
       row.querySelector(".mb-row-x").addEventListener("click", removeRow);
