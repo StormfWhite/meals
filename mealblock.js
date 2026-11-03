@@ -15,6 +15,21 @@
  * caret mid-edit) — it patches its own header/stats and hands the updated
  * week back to the host, which owns the day and week rollups.
  */
+/* The last numbers each meal block had, kept so the day's bars are there in the very first frame of a draw
+ * (Storm 2026-11-03: "not load in the progress bars later but instantly on load"). Valid only for the same lines. */
+let _mbPvMap = null, _mbPvTimer = null;
+const _mbPv = () => {
+  if (!_mbPvMap) { try { _mbPvMap = JSON.parse(localStorage.getItem("meals.v1.pv") || "{}"); } catch (e) { _mbPvMap = {}; } }
+  return _mbPvMap;
+};
+const _mbPvSave = (key, sig, preview) => {
+  const m = _mbPv();
+  delete m[key];
+  m[key] = { sig, preview };
+  Object.keys(m).slice(0, -140).forEach(k => delete m[k]);
+  clearTimeout(_mbPvTimer);
+  _mbPvTimer = setTimeout(() => { try { localStorage.setItem("meals.v1.pv", JSON.stringify(m)); } catch (e) {} }, 1500);
+};
 const _mbInsideOpen = new Set();   // bulk-made ingredients whose insides are unfolded in meal rows
 window.App = window.App || {};
 
@@ -500,53 +515,115 @@ App.mealBlock = {
      * in bulk how many servings we are storing in the fridge or freezer"). The lines above are
      * what goes in the pot -- the list buys exactly those; the servings put away then feed later
      * meals of the same name, whose ingredients drop off the list (batches.py). */
-    let bulkOpen = false;
+    let bulkOpen = false, takeOpen = false;
+    const XICON = App.icon('<path d="M18 6 6 18M6 6l12 12"/>');
+    const OKICON = App.icon('<path d="M20 6 9 17l-5-5"/>');
+    const PLACES3 = ["fridge", "pantry", "freezer"];
+    // the share of the pot that is EATEN: what was put away (grams, of the cooked pot) is not
+    const eatenFrac = () => {
+      const st = (slot() || {}).store;
+      return st && st.g && st.pot_g ? Math.max(0, 1 - st.g / st.pot_g) : 1;
+    };
+    const closeEd = () => { bulkOpen = false; takeOpen = false; };
+    const placePick = (where) => `<span class="gp-stock-pick">${PLACES3.map(w =>
+      `<button class="icon-btn where-${w}${w === where ? " on" : ""}" data-where="${w}" title="${GP_PLACES[w][1]}">${App.icon(GP_PLACES[w][0])}</button>`).join("")}</span>`;
     const drawFoot = () => {
       footWrap.innerHTML = "";
       const s = slot();
       if (!s) return;
       const st = s.store;
       const stored = sources && sources.stored;
+      const put = st && st.g ? (sources && sources.put) || { text: `${Math.round(st.g)} g` } : null;
       if (bulkOpen) {
+        // Making extra: how much of the cooked pot goes away, and where (Storm 2026-11-03: "say how many g I
+        // put away and have that subtracted from what we ate … whatever button I push of fridge/freezer/pantry")
         let where = st ? st.where : "freezer";
+        const pot = (sources && sources.put && sources.put.pot_g) || (st && st.pot_g);
         const ed = App.el(`<div class="mb-bulk-ed">
           ${App.icon(MB_BULK)}
-          <button class="icon-btn mb-bulk-dn" title="Fewer">−</button>
-          <input class="mb-bulk-n num" type="number" min="0" step="1" value="${st ? st.n : 4}" title="Servings put away">
-          <button class="icon-btn mb-bulk-up" title="More">+</button>
-          <span class="gp-stock-pick">${["fridge", "freezer"].map(w =>
-            `<button class="icon-btn where-${w}${w === where ? " on" : ""}" data-where="${w}" title="${GP_PLACES[w][1]}">${App.icon(GP_PLACES[w][0])}</button>`).join("")}</span>
-          <button class="icon-btn mb-bulk-ok" title="Save">${App.icon('<path d="M20 6 9 17l-5-5"/>')}</button>
-          ${st ? `<button class="icon-btn mb-bulk-off" title="Not a batch">${App.icon('<path d="M18 6 6 18M6 6l12 12"/>')}</button>` : ""}
+          <input class="mb-bulk-n" type="text" inputmode="text" enterkeyhint="done" autocomplete="off" spellcheck="false"
+            placeholder="${pot ? `of ~${Math.round(pot)} g — 600 g, 1 lb, 2 cups` : "how much? 600 g, 1 lb"}" value="${put ? App.esc(put.text) : ""}" title="How much of the pot goes away (not eaten)">
+          ${placePick(where)}
+          <button class="icon-btn mb-bulk-ok" title="Save">${OKICON}</button>
+          ${st ? `<button class="icon-btn mb-bulk-off" title="Not putting any away">${XICON}</button>` : ""}
         </div>`);
         const n = ed.querySelector(".mb-bulk-n");
-        ed.querySelector(".mb-bulk-dn").addEventListener("click", () => { n.value = Math.max(0, (Number(n.value) || 0) - 1); });
-        ed.querySelector(".mb-bulk-up").addEventListener("click", () => { n.value = (Number(n.value) || 0) + 1; });
         ed.querySelectorAll(".gp-stock-pick button").forEach(b => b.addEventListener("click", () => {
           where = b.dataset.where;
           ed.querySelectorAll(".gp-stock-pick button").forEach(x => x.classList.toggle("on", x === b));
+          if (n.value.trim()) save(n.value.trim());          // an amount is there: the place button finishes it
+          else n.focus();
         }));
-        const save = async (count) => {
-          bulkOpen = false;
+        const save = async (text) => {
+          closeEd();
           try {
             host.onWeekChanged(await App.api(`/api/board/${host.weekFor(key)}/slots/${key}/store`,
-              { method: "PUT", body: { n: count, where } }));
-            App.toast(count ? `${count} serving${count === 1 ? "" : "s"} into the ${where}` : "Not a batch");
+              { method: "PUT", body: { text, where } }));
+            applyPreview(lastPreview); host.onStatsChanged();
+            App.toast(text ? `${text} into the ${GP_PLACES[where][1].toLowerCase()}` : "Nothing put away");
           } catch (err) { App.toast(err.message); drawFoot(); }
         };
-        ed.querySelector(".mb-bulk-ok").addEventListener("click", () => save(Math.max(0, Number(n.value) || 0)));
-        ed.querySelector(".mb-bulk-off")?.addEventListener("click", () => save(0));
+        ed.querySelector(".mb-bulk-ok").addEventListener("click", () => save(n.value.trim()));
+        ed.querySelector(".mb-bulk-off")?.addEventListener("click", () => save(""));
         n.addEventListener("keydown", (e) => {
-          if (e.key === "Enter" || e.keyCode === 13) { e.preventDefault(); save(Math.max(0, Number(n.value) || 0)); }
-          else if (e.key === "Escape") { e.stopPropagation(); bulkOpen = false; drawFoot(); }
+          if (e.key === "Enter" || e.keyCode === 13) { e.preventDefault(); save(n.value.trim()); }
+          else if (e.key === "Escape") { e.stopPropagation(); closeEd(); drawFoot(); }
         });
         footWrap.appendChild(ed);
         requestAnimationFrame(() => { n.focus(); n.select(); });
         return;
       }
-      const btn = st
-        ? App.el(`<button class="mb-tag mb-bulk-on where-${st.where}" title="Making it in bulk — tap to change">${App.icon(GP_PLACES[st.where][0])}+${st.n} into the ${st.where}${stored && stored.left !== st.n ? ` · ${stored.left} left` : ""}</button>`)
-        : App.el(`<button class="icon-btn mb-bulk" title="Making it in bulk? Servings to put in the fridge or freezer">${App.icon(MB_BULK)}</button>`);
+      if (takeOpen && sources && sources.bulk) {
+        // A meal named like something made in bulk eats it from there: nothing typed = the usual serving
+        const bk = sources.bulk;
+        const ed = App.el(`<div class="mb-bulk-ed mb-take-ed">
+          ${App.icon(GP_PLACES[bk.where][0])}
+          <input class="mb-bulk-n mb-take-n" type="text" enterkeyhint="done" autocomplete="off" spellcheck="false"
+            placeholder="${App.esc(bk.auto_text)}" title="Leave blank for the usual amount, or say it: 5 cups, 300 g">
+          <button class="icon-btn mb-bulk-ok" title="Take it">${OKICON}</button>
+          <button class="icon-btn mb-bulk-off" title="Cancel">${XICON}</button>
+        </div>`);
+        const n = ed.querySelector(".mb-take-n");
+        const go = async () => {
+          const text = n.value.trim();
+          closeEd();
+          try {
+            host.onWeekChanged(await App.api(`/api/board/${host.weekFor(key)}/slots/${key}/take`, { method: "PUT", body: { text } }));
+            draw();
+            refreshStats();
+          } catch (err) { App.toast(err.message); drawFoot(); }
+        };
+        ed.querySelector(".mb-bulk-ok").addEventListener("click", go);
+        ed.querySelector(".mb-bulk-off").addEventListener("click", () => { closeEd(); drawFoot(); });
+        n.addEventListener("keydown", (e) => {
+          if (e.key === "Enter" || e.keyCode === 13) { e.preventDefault(); go(); }
+          else if (e.key === "Escape") { e.stopPropagation(); closeEd(); drawFoot(); }
+        });
+        footWrap.appendChild(ed);
+        requestAnimationFrame(() => n.focus());
+        return;
+      }
+      if (sources && sources.taken) {
+        const t = App.el(`<button class="mb-tag mb-take-on" title="Eaten from the ${App.esc(sources.taken.name || "pot")} you made — tap to go back to the recipe's own lines">${App.icon(MB_BULK)}from your ${App.esc(sources.taken.name || "pot")} ${XICON}</button>`);
+        t.addEventListener("click", async () => {
+          try {
+            host.onWeekChanged(await App.api(`/api/board/${host.weekFor(key)}/slots/${key}/take`, { method: "PUT", body: { off: true } }));
+            draw();
+            refreshStats();
+          } catch (err) { App.toast(err.message); }
+        });
+        footWrap.appendChild(t);
+      } else if (sources && sources.bulk) {
+        const bk = sources.bulk;
+        const t = App.el(`<button class="mb-tag mb-take where-${bk.where}" title="You have ${App.esc(bk.have_text)} of this made already in the ${GP_PLACES[bk.where][1].toLowerCase()} — take it from there">${App.icon(GP_PLACES[bk.where][0])}from the ${GP_PLACES[bk.where][1].toLowerCase()} · ${App.esc(bk.have_text)}</button>`);
+        t.addEventListener("click", () => { takeOpen = true; drawFoot(); });
+        footWrap.appendChild(t);
+      }
+      const btn = put
+        ? App.el(`<button class="mb-tag mb-bulk-on where-${st.where}" title="Part of the pot put away — not eaten. Tap to change">${App.icon(GP_PLACES[st.where][0])}${App.esc(put.text)} away</button>`)
+        : st
+          ? App.el(`<button class="mb-tag mb-bulk-on where-${st.where}" title="Making it in bulk — tap to change">${App.icon(GP_PLACES[st.where][0])}+${st.n} into the ${st.where}${stored && stored.left !== st.n ? ` · ${stored.left} left` : ""}</button>`)
+          : App.el(`<button class="icon-btn mb-bulk" title="Making extra? How much of the pot goes in the fridge, dry shelf or freezer">${App.icon(MB_BULK)}</button>`);
       btn.addEventListener("click", () => { bulkOpen = true; drawFoot(); });
       footWrap.appendChild(btn);
     };
@@ -671,7 +748,7 @@ App.mealBlock = {
       servInput.value = s ? s.servings_used : (host.members().length || 1);
       el.classList.toggle("filled", !!s);
       drawRows(s ? (s.ingredient_overrides || (matchedRecipe ? matchedRecipe.ingredients : [])) : null);
-      bulkOpen = false;
+      closeEd();
       drawLink();
       drawFoot();
       drawRepeat();
@@ -713,9 +790,10 @@ App.mealBlock = {
       box.innerHTML = parts.map(p => `<span>${App.esc(p.name)} <i>${App.esc(p.text)}</i></span>`).join("");
     };
     let lastPreview = null;
-    const applyPreview = (preview) => {
+    const applyPreview = (preview, estimated) => {
       lastPreview = preview;
-      totals = preview ? preview.total : null;          // the whole pot
+      const frac = eatenFrac();
+      totals = preview ? (frac < 1 ? scaled(preview.total, frac) : preview.total) : null;          // the pot as eaten (what's put away isn't)
       let i = 0;
       Array.from(rowsWrap.children).forEach(row => {
         const statEl = row.querySelector(".mb-stat");
@@ -724,7 +802,10 @@ App.mealBlock = {
           amount: row.querySelector(".mb-amt").value.trim(),
         };
         if (!preview || !priceable(r)) { statEl.textContent = ""; statEl.title = ""; return; }
-        const pr = preview.rows[i++];
+        const pr = preview.rows[i];
+        const q = priceable(r);
+        row._pv = q && pr ? { idx: i, qty: q.qty, unit: q.unit } : null;       // what this row's numbers are for (quickScale)
+        i++;
         paintInside(row, pr);
         statEl.textContent = pr ? _mbStat(pr, host.compact) : "";
         statEl.title = pr ? `${Math.round(pr.calories_kcal)} kcal · ${pr.protein_g.toFixed(1)} g protein · ${pr.fiber_g.toFixed(1)} g fiber` : "";
@@ -732,6 +813,7 @@ App.mealBlock = {
       // ONE person's portion (Storm 2026-10-25: "auto split the meal nutrition for one person unless
       // the count says 1" / "if it says 2 it should split it also"): the pot over the count
       const n = portions() || eaterCount();
+      if (preview && !estimated) _mbPvSave(key, JSON.stringify(knownRows()), preview);
       const each = totals ? scaled(totals, 1 / n) : null;
       const kcal = each ? Math.round(each.calories_kcal) : 0;
       totalEl.textContent = kcal ? `${kcal} kcal · ${each.protein_g.toFixed(0)}g P` : "";
@@ -753,6 +835,29 @@ App.mealBlock = {
       try { preview = await App.api("/api/nutrition/preview", { method: "POST", body: { rows } }); }
       catch (e) { return; }
       applyPreview(preview);
+      host.onStatsChanged();
+    };
+
+    /* An amount edited in the same unit: that row's numbers, the meal's header and the day's bars follow AT ONCE
+     * (the row's stats times new/old), and the real answer a moment later only confirms (Storm 2026-11-03:
+     * "update instantly"). Anything this can't be sure of (new unit, new food) waits for the server. */
+    const quickScale = (row) => {
+      const was = row && row._pv;
+      if (!was || !lastPreview || !was.qty) return;
+      const q = priceable({ name: row.querySelector(".mb-ing").value.trim(), amount: row.querySelector(".mb-amt").value.trim() });
+      if (!q || q.unit !== was.unit || !q.qty) return;
+      const k = q.qty / was.qty;
+      const old = lastPreview.rows[was.idx];
+      if (!old || k === 1) return;
+      const grow = (o) => ({ ...Object.fromEntries(Object.entries(o).map(([n, v]) => [n, typeof v === "number" && n !== "ingredient_id" ? v * k : v])),
+        vitamins: Object.fromEntries(Object.entries(o.vitamins || {}).map(([n, v]) => [n, v * k])) });
+      const now = grow(old);
+      const total = { ...lastPreview.total, vitamins: { ...(lastPreview.total.vitamins || {}) } };
+      for (const n of ["calories_kcal", "protein_g", "fiber_g"]) total[n] = (total[n] || 0) + (now[n] || 0) - (old[n] || 0);
+      for (const n of Object.keys(now.vitamins || {})) total.vitamins[n] = (total.vitamins[n] || 0) + now.vitamins[n] - ((old.vitamins || {})[n] || 0);
+      const rows = lastPreview.rows.slice();
+      rows[was.idx] = now;
+      applyPreview({ ...lastPreview, rows, total }, true);
       host.onStatsChanged();
     };
 
@@ -836,6 +941,7 @@ App.mealBlock = {
       markDirty();
       if (e.target.classList.contains("mb-ing") || e.target.classList.contains("mb-amt")) {
         ensureBlankRow();
+        if (e.target.classList.contains("mb-amt")) quickScale(e.target.closest(".mb-row"));
         schedulePreview();
       }
       if (e.target === nameInput) {
@@ -894,6 +1000,10 @@ App.mealBlock = {
     }
 
     draw();
+    { // the numbers this meal had last time, if its lines are the same: shown in the first frame, confirmed a moment later
+      const c = _mbPv()[key];
+      if (c && c.sig === JSON.stringify(knownRows())) applyPreview(c.preview, true);
+    }
 
     return {
       el, date, meal, key,

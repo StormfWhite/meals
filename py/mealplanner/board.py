@@ -158,7 +158,7 @@ def set_slot(week_start_iso: str, slot_key: str, recipe_id: str, servings_used: 
         "ingredient_overrides": ingredient_overrides,
     }
     # a batch put away / "cook it fresh" (batches.py) belongs to this meal, not to the slot
-    for key in ("store", "fresh"):
+    for key in ("store", "fresh", "from_made"):
         if same and existing.get(key):
             week["slots"][slot_key][key] = existing[key]
     # who eats it belongs to the slot ("Joanna's extra lunch"), whatever goes in it

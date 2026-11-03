@@ -127,6 +127,7 @@ App.plan = {
       return;
     }
     const today = _planToday();
+    const saved0 = this._saveSeq || 0;          // a save that lands while this is fetching makes what it fetched stale
     const day = await App.api(`/api/board/day/${this._date}`);
     // Week view is the seven days going forward from the day on screen, so it can straddle two
     // stored weeks; each block reads/writes the week its own date belongs to (_wkOf).
@@ -150,6 +151,7 @@ App.plan = {
       this._date === today ? Promise.resolve(day) : App.api(`/api/board/day/${today}`),
       S ? S.members : App.api("/api/household/members").catch(() => ({ members: [] })),
     ]);
+    if (soft && (this._saveSeq || 0) !== saved0) return false;      // (it would paint the week as it was BEFORE the save)
     if (phone && !S) this._static = { at: Date.now(), recipes: recipesRes, ingredients: ingredientsRes, ob, ol, od, members: membersRes };
     this._members = (membersRes.members || []).filter(m => m.active !== false);
     // The list is for the week you SHOP for: normally the coming one
@@ -170,7 +172,10 @@ App.plan = {
       const fetched = JSON.stringify(weeks.slice().sort(byStart));
       // a meal just added and not named yet would vanish in a redraw
       const bare = Array.from(body.querySelectorAll('.mb[data-key*="~"]')).some(b => !b.querySelector(".mb-name").value.trim());
-      if (live === fetched || bare) {
+      // a field being typed in keeps the screen exactly as it is: the redraw waits for the next quiet check
+      const ae = document.activeElement;
+      const typing = !!(ae && body.contains(ae) && /^(INPUT|TEXTAREA)$/.test(ae.tagName));
+      if (live === fetched || bare || typing) {
         this._recipes.splice(0, this._recipes.length, ...recipesRes.recipes);          // the page's lists are shared
         this._ingredients.splice(0, this._ingredients.length, ...ingredientsRes.ingredients);   // by reference
         App.groceriesPanel.refresh();                // (the list may have changed, though)
@@ -401,6 +406,7 @@ App.plan = {
         self._options[meal] = res.options;
       },
       onWeekChanged: (week) => {
+        self._saveSeq = (self._saveSeq || 0) + 1;
         self._weeks[week.week_start] = week;
         self._merge();
         App.groceriesPanel.refresh(true);          // quick: only the buy rows + stock, so the list follows a meal change at once
@@ -531,7 +537,10 @@ App.plan = {
       const near = panes.reduce((b, p) => Math.abs(p.offsetLeft - cols.scrollLeft) < Math.abs(b.offsetLeft - cols.scrollLeft) ? p : b);
       if (near.dataset.date !== this._date && Math.abs(near.offsetLeft - cols.scrollLeft) < 4) this._landOn(body, cols, near.dataset.date);
     };
-    cols.addEventListener("scroll", () => { clearTimeout(t); t = setTimeout(settle, 90); }, { passive: true });
+    cols.addEventListener("touchstart", () => { this._touching = true; }, { passive: true });
+    cols.addEventListener("touchend", () => { this._touching = false; }, { passive: true });
+    cols.addEventListener("touchcancel", () => { this._touching = false; }, { passive: true });
+    cols.addEventListener("scroll", () => { this._lastScroll = Date.now(); clearTimeout(t); t = setTimeout(settle, 90); }, { passive: true });
     cols.addEventListener("scrollend", () => { clearTimeout(t); settle(); });
   },
 
@@ -566,7 +575,9 @@ App.plan = {
       have.set(d, holder);
     });
     want.forEach(d => cols.appendChild(have.get(d)));
-    this._centerStrip(cols, false);
+    // only re-centre when the panes moved under the scroll position: a neighbour appearing out of sight must not nudge the day
+    const cur = cols.querySelector(`:scope > .day-col[data-date="${this._date}"]`);
+    if (!cur || Math.abs(cur.offsetLeft - cols.scrollLeft) > 1) this._centerStrip(cols, false);
     const fresh = this._blocks.slice(before);
     if (fresh.length) this._statsFor(fresh);
     else this._paintDayTotals();
@@ -581,6 +592,8 @@ App.plan = {
       need.forEach((w, i) => { this._weeks[w] = got[i]; });
     } catch (e) { return; }
     if (!cols.isConnected) return;
+    // a finger on the strip, or it still gliding: the neighbours join once it is at rest
+    if (this._touching || Date.now() - (this._lastScroll || 0) < 300) { setTimeout(() => this._prefetchWeeks(cols), 400); return; }
     this._merge();
     this._syncPanes(cols);
   },
@@ -650,6 +663,7 @@ App.plan = {
     this.refreshSources();
     if (!reused) App.groceriesPanel.mount(body.querySelector("#list-panel"), this._listWeek,
       (n) => this._setBadge(n), "Next week", _planRange(this._listWeek, _planShift(this._listWeek, 6)), this._marketWeek);
+    this._paintDayTotals(true);          // blocks already carry their last numbers: the bars are in this frame
     this._refreshAllStats();
 
     if (!this._isWeekMode()) {
@@ -767,11 +781,14 @@ App.plan = {
     let res;
     try { res = await App.api("/api/nutrition/preview-batch", { method: "POST", body: { blocks } }); }
     catch (e) { return; }
+    const before = JSON.stringify(this._blocks.map(b => b.totals));
     this._blocks.forEach(b => {
       const p = res.blocks[b.key];
       b.applyPreview(p && p.rows.length ? p : null);
     });
-    this._paintDayTotals(true);          // first numbers of a draw: ask for the day's gaps / sides at once
+    // (already painted from each block's last numbers? only repaint when the answer differs)
+    if (before !== JSON.stringify(this._blocks.map(b => b.totals)) || !this._barsPainted) this._paintDayTotals(true);
+    this._barsPainted = true;
   },
 
   /* Calories, protein and fiber against each person's own target, at the end of the row of progress bars: one thin track per person.
@@ -841,10 +858,23 @@ App.plan = {
   async _refreshGaps(days) {
     if (!Object.keys(days).length) return;
     const seq = this._gapsSeq = (this._gapsSeq || 0) + 1;
+    // the last answer for these very numbers goes up at once; the fresh one only repaints what differs
+    const gsig = JSON.stringify(days);
+    const mem = this._gapsMem = this._gapsMem || {};
+    let ls = {};
+    try { ls = JSON.parse(localStorage.getItem("meals.v1.gaps") || "{}"); } catch (e) {}
+    const hit = mem[gsig] || ls[gsig];
+    if (hit) this._applyGaps(hit);
     let res;
     try { res = await App.api("/api/nutrition/gaps", { method: "POST", body: { days } }); }
     catch (e) { return; }
+    mem[gsig] = res;
+    try { delete ls[gsig]; ls[gsig] = res; Object.keys(ls).slice(0, -6).forEach(k => delete ls[k]); localStorage.setItem("meals.v1.gaps", JSON.stringify(ls)); } catch (e) {}
     if (seq !== this._gapsSeq) return;      // a later edit's answer is on its way
+    this._applyGaps(res);
+  },
+
+  _applyGaps(res) {
     document.querySelectorAll(".day-col-foot").forEach(foot => {
       const d = res.days[foot.dataset.date];
       if (d) this._paintGaps(foot, d);
@@ -994,6 +1024,9 @@ App.plan = {
   _paintGaps(foot, day) {
     const chip = foot.querySelector(".day-low"), box = foot.querySelector(".day-gaps");
     if (!chip) return;
+    const gsig = JSON.stringify(day);
+    if (foot._gapsSig === gsig) return;          // the same answer is already up: nothing moves
+    foot._gapsSig = gsig;
     if (!day || !day.judged || !day.low.length) {
       chip.hidden = true; box.hidden = true; box.innerHTML = "";
       if (day && day.judged) { chip.hidden = false; chip.className = "day-low ok"; chip.innerHTML = `${App.icon('<path d="M20 6 9 17l-5-5"/>')}`; chip.title = "Nothing low today"; }

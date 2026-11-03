@@ -99,7 +99,7 @@ class Shelf:
                 if not until:
                     self.made[(week, key)] = lot
                 continue
-            if slot.get("fresh") or slot.get("leftover_group"):
+            if st.get("g") or slot.get("fresh") or slot.get("leftover_group"):
                 continue
             have = sorted(lots.get(rid, []), key=lambda l: (l["where"] != "fridge", l["made"]))
             if sum(l["n"] for l in have) + 1e-6 < need:

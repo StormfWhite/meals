@@ -390,4 +390,117 @@ def in_week(week_start_iso: str) -> list[dict]:
 
 
 def recent(limit: int = 12) -> list[dict]:
-    return sorted(_load(), key=lambda m: (m["date"], m.get("at", 0)), reverse=True)[:limit]
+    return sorted((m for m in _load() if not m.get("from_slot")), key=lambda m: (m["date"], m.get("at", 0)), reverse=True)[:limit]
+
+
+# ── put away from a meal (Storm 2026-11-03: "say how many g I put away and have that subtracted from
+# what we ate … and for that extra to go in whatever button I push of fridge/freezer/pantry") ──────
+# A planned meal cooks a pot (its lines); `store: {g, pot_g, where}` on the slot says g of the cooked
+# pot went into the fridge / dry shelf / freezer. That g is not eaten (eaten_fraction), and it is a
+# made ingredient named like the meal, with the pot's lines for its nutrition, that later meals can
+# draw from (stock.Ledger._make adds only `put_g`: the lines were already bought and cooked).
+
+def _slot_make_id(key: str) -> str:
+    return "mk_slot_" + re.sub(r"[^a-z0-9]+", "_", key.lower())
+
+
+def pot_g(lines: list[dict], by_id: Optional[dict] = None) -> float:
+    """The cooked pot's weight: the estimate, else what went in."""
+    by_id = by_id or ingredients.by_id()
+    return estimate(lines, by_id)["g"] or lines_grams(lines, by_id)
+
+
+def eaten_fraction(slot: Optional[dict]) -> float:
+    """What share of the pot is eaten (1 = all of it): the part put away is not."""
+    st = (slot or {}).get("store") or {}
+    g, pot = float(st.get("g") or 0), float(st.get("pot_g") or 0)
+    return max(0.0, 1.0 - g / pot) if g > 0 and pot > 0 else 1.0
+
+
+def amount_g(text: str, ing: Optional[dict], est: Optional[dict] = None) -> Optional[float]:
+    """An amount said any way -- "600 g", "1.5 lb", "4 cups", "2 servings" -- as grams. Cups and the
+    like are the product's own (its saved cup, else the pot's: cooked weight over cooked cups)."""
+    from . import stock
+    t = re.sub(r"\s+", " ", (text or "").strip().lower())
+    if not t:
+        return None
+    one = _one_yield(t, 0.0)
+    if one["weighed"]:
+        return one["yield_g"]
+    m = re.match(r"^([\d./ ]*\d)\s*([a-z. ]*)$", t)
+    if not m or _num(m.group(1)) is None:
+        return None
+    n, word = _num(m.group(1)), m.group(2).strip()
+    if not word or word.startswith("serving"):
+        per = (ing or {}).get("serving_g")
+        return n * per if per else (n if not word else None)
+    unit = "fl oz" if word.startswith("fl") else _unit_word(word)
+    if ing:
+        got = stock.text_to_g(ing, f"{n:g} {unit}")
+        if got:
+            return got
+    if unit in nutrition.TSP_PER and est and est.get("cups"):
+        cup_g = est["g"] / est["cups"]
+        return n * nutrition.TSP_PER[unit] / nutrition.TSP_PER["cup"] * cup_g
+    return None
+
+
+def serving_g(ing: dict) -> float:
+    """One serving of a made ingredient, "same as last time": what was last taken (or eaten when it was
+    cooked) per serving, else a cup of it."""
+    if ing.get("serving_g"):
+        return float(ing["serving_g"])
+    return nutrition.qty_to_grams(ing, 1, "cup") or 250.0
+
+
+def set_putaway(week: str, key: str, slot: dict, name: str, lines: list[dict], g: float, where: str,
+                servings: float = 1.0) -> dict:
+    """Record g of this meal's cooked pot as put away in `where`. Returns the `store` for the slot."""
+    if where not in PLACES:
+        raise ValueError("fridge, dry or freezer")
+    by_id = ingredients.by_id()
+    lines = [{"ingredient_id": l["ingredient_id"], "qty": float(l.get("qty") or 0), "unit": l.get("unit") or "each"}
+             for l in lines if l.get("ingredient_id")]
+    pot = pot_g(lines, by_id)
+    if not lines or pot <= 0:
+        raise ValueError("give the meal's lines amounts first -- there's no pot weight to take it from")
+    if g <= 0:
+        raise ValueError("how much?")
+    if g > pot * 1.02:
+        raise ValueError(f"the pot is only about {stock_amount(pot)}")
+    ing = ingredients.add(name.strip(), "other")
+    if not ing.get("made") and (ing.get("fdc_id") or ing.get("manual_nutrients")):
+        raise ValueError(f"\"{name}\" is already a food -- name the meal something else to put it away")
+    if any(l["ingredient_id"] == ing["id"] for l in lines):
+        raise ValueError("it can't go into itself")
+    eaten = max(0.0, pot - g)
+    fields: dict = {"made": {"yield_g": pot, "unit": None}, "serving_g": round(eaten / max(servings, 1.0), 1)}
+    if where in ("fridge", "pantry"):
+        fields["storage"] = where
+    if not ing.get("keep_days"):
+        fields["keep_days"] = PANTRY_KEEP_DAYS if where == "pantry" else FRIDGE_KEEP_DAYS
+    if ing.get("freezes") is None:
+        fields["freezes"] = True
+    ing = ingredients.update(ing["id"], **fields)
+    est = estimate(lines, by_id)
+    if est.get("cups") and "cup" not in (ing.get("unit_conversions") or {}):
+        ingredients.update(ing["id"], unit_conversions={**(ing.get("unit_conversions") or {}), "cup": est["g"] / est["cups"]})
+    mid = _slot_make_id(f"{week}:{key}")
+    entry = {"id": mid, "ingredient_id": ing["id"], "lines": lines, "input_g": round(lines_grams(lines, by_id), 1),
+             "yield_g": round(pot, 1), "yield_text": "", "unit": None, "where": where,
+             "date": key.split(":")[0], "at": time.time(), "from_slot": key, "put_g": round(g, 1)}
+    data = store.load(_stock_file(), {"corrections": []})
+    makes = [m for m in data.setdefault("makes", []) if m["id"] != mid]
+    makes.append(entry)
+    data["makes"] = makes
+    store.save(_stock_file(), data)
+    return {"g": round(g, 1), "pot_g": round(pot, 1), "where": where}
+
+
+def clear_putaway(week: str, key: str) -> None:
+    mid = _slot_make_id(f"{week}:{key}")
+    data = store.load(_stock_file(), {"corrections": []})
+    keep = [m for m in data.get("makes", []) if m["id"] != mid]
+    if len(keep) != len(data.get("makes", [])):
+        data["makes"] = keep
+        store.save(_stock_file(), data)

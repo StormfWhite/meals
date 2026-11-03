@@ -421,7 +421,7 @@ function init() {
       const lp = document.getElementById("list-panel"), open = App.plan && App.plan._listOpen;
       pull = null;
       grab = false;
-      if (phone() && open && lp && lp.contains(e.target) && e.touches[0].clientY - lp.getBoundingClientRect().top < 26) { pull = "close"; grab = true; }   // the pull bar: works at any scroll
+      if (phone() && open && lp && lp.contains(e.target) && e.touches[0].clientY - lp.getBoundingClientRect().top < 34) { pull = "close"; grab = true; lp.classList.add("pulling"); }   // the pull bar: works at any scroll
       else if (phone() && open && lp && lp.contains(e.target) && lp.scrollTop <= 0) pull = "close";
       else if (phone() && e.target.closest && e.target.closest("#topbar")) pull = open ? "shut" : "open";   // the top bar: swipe down opens the list, or closes it when it is open
     }, { passive: true });
@@ -441,6 +441,7 @@ function init() {
       if (!on) return; on = false;
       const dy = (e.changedTouches && e.changedTouches[0] ? e.changedTouches[0].clientY : y0) - y0;
       const lp = document.getElementById("list-panel");
+      if (lp) lp.classList.remove("pulling");
       if (pull === "close" && lp) {
         lp.style.transition = "transform .18s ease";
         if (dy > 110) { lp.style.transform = "translateY(100%)"; setTimeout(() => { App.plan.toggleList(false); lp.style.transition = ""; lp.style.transform = ""; }, 170); }

@@ -708,18 +708,30 @@ def put_slot(week: str, slot_key: str, body: SlotBody):
     if recipes.get(body.recipe_id) is None:
         raise HTTPException(404, "no such recipe")
     overrides = [i.model_dump() for i in body.ingredient_overrides] if body.ingredient_overrides else None
+    before = board.get_week(week)["slots"].get(slot_key) or {}
     out = board.set_slot(week, slot_key, body.recipe_id, body.servings_used, overrides)
     # the next time this meal is picked it comes back with this list
     recipe = recipes.get(body.recipe_id)
     rows = overrides if overrides is not None else recipe["ingredients"]
-    if rows and rows != recipe.get("last_ingredients"):
+    taken = (out["slots"].get(slot_key) or {}).get("from_made")      # a pantry pot's one line is not the recipe
+    if rows and rows != recipe.get("last_ingredients") and not taken:
         recipes.update(body.recipe_id, last_ingredients=rows)
+    # lines edited after part of the pot was put away: the pot (and so the share eaten) follows them
+    st = before.get("store") or {}
+    if st.get("g") and before.get("recipe_id") == body.recipe_id and not taken:
+        try:
+            keep = bulk.set_putaway(week, slot_key, before, recipe["name"], rows, float(st["g"]), st.get("where") or "freezer",
+                                    board.servings(out["slots"][slot_key]))
+            out = board.set_slot_extra(week, slot_key, store=keep)
+        except ValueError:
+            pass
     return out
 
 
 class SlotStoreBody(BaseModel):
-    n: float = 0                       # servings put away beyond the meal itself (0 = not a batch)
-    where: str = "freezer"             # "fridge" / "freezer"
+    n: float = 0                       # (old) servings put away beyond the meal itself (0 = not a batch)
+    text: Optional[str] = None         # how much of the cooked pot is put away: "600 g", "1.5 lb", "4 cups"
+    where: str = "freezer"             # "fridge" / "pantry" (dry) / "freezer"
 
 
 class SlotFreshBody(BaseModel):
@@ -728,14 +740,69 @@ class SlotFreshBody(BaseModel):
 
 @app.put("/api/board/{week}/slots/{slot_key}/store")
 def put_slot_store(week: str, slot_key: str, body: SlotStoreBody):
-    """Making it in bulk: how many extra servings go in the fridge or freezer (batches.py)."""
-    if body.where not in batches.PLACES:
-        raise HTTPException(400, "fridge or freezer")
-    store = {"n": body.n, "where": body.where} if body.n > 0 else None
-    try:
-        return board.set_slot_extra(week, slot_key, store=store)
-    except KeyError:
+    """Making extra: how much of the cooked pot goes in the fridge, the dry shelf or the freezer. It is not
+    eaten (nutrition), and it becomes an ingredient named like the meal that later meals draw from (bulk.py).
+    The old servings form (`n`, batches.py) still works."""
+    slot = board.get_week(week)["slots"].get(slot_key)
+    if slot is None:
         raise HTTPException(404, "plan the meal first")
+    if body.text is None and body.n > 0:
+        if body.where not in batches.PLACES:
+            raise HTTPException(400, "fridge or freezer")
+        try:
+            bulk.clear_putaway(week, slot_key)
+            return board.set_slot_extra(week, slot_key, store={"n": body.n, "where": body.where})
+        except KeyError:
+            raise HTTPException(404, "plan the meal first")
+    bulk.clear_putaway(week, slot_key)
+    if not (body.text or "").strip():                       # taken back out
+        return board.set_slot_extra(week, slot_key, store=None)
+    if body.where not in bulk.PLACES:
+        raise HTTPException(400, "fridge, dry or freezer")
+    recipe = recipes.get(slot["recipe_id"])
+    rows = slot.get("ingredient_overrides") or recipe["ingredients"]
+    est = bulk.estimate(rows)
+    ing = next((i for i in ingredients.by_id().values() if (i.get("name") or "").strip().lower() == recipe["name"].strip().lower()), None)
+    g = bulk.amount_g(body.text, ing, est)
+    if not g:
+        raise HTTPException(400, f"couldn't read \"{body.text}\" -- try \"600 g\", \"1 lb\" or \"4 cups\"")
+    try:
+        keep = bulk.set_putaway(week, slot_key, slot, recipe["name"], rows, g, body.where, board.servings(slot))
+    except ValueError as err:
+        raise HTTPException(400, str(err))
+    return board.set_slot_extra(week, slot_key, store=keep)
+
+
+class SlotTakeBody(BaseModel):
+    text: Optional[str] = None         # "5 cups"; blank = the usual amount for this many servings
+    off: bool = False                  # back to the recipe's own lines
+
+
+@app.put("/api/board/{week}/slots/{slot_key}/take")
+def put_slot_take(week: str, slot_key: str, body: SlotTakeBody):
+    """A meal named like something made in bulk eats it from the pantry/fridge/freezer: the meal's lines
+    become one line of that product. No amount said = the usual serving x the servings (bulk.amount_g)."""
+    slot = board.get_week(week)["slots"].get(slot_key)
+    if slot is None:
+        raise HTTPException(404, "plan the meal first")
+    recipe = recipes.get(slot["recipe_id"])
+    if body.off:
+        back = recipe.get("last_ingredients") or None
+        board.set_slot(week, slot_key, slot["recipe_id"], board.servings(slot), back if back != recipe["ingredients"] else None)
+        return board.set_slot_extra(week, slot_key, from_made=None)
+    prod = stock.made_product(recipe["name"])
+    if prod is None:
+        raise HTTPException(404, "nothing made in bulk is called that")
+    servings = board.servings(slot)
+    g = bulk.amount_g(body.text, prod) if (body.text or "").strip() else None
+    if (body.text or "").strip() and not g:
+        raise HTTPException(400, f"couldn't read \"{body.text}\" -- try \"5 cups\" or \"300 g\"")
+    g = g or servings * bulk.serving_g(prod)
+    if (body.text or "").strip():                           # an amount said is the new usual
+        ingredients.update(prod["id"], serving_g=round(g / servings, 1))
+    line = [{"ingredient_id": prod["id"], "qty": round(g, 1), "unit": "g", "note": ""}]
+    board.set_slot(week, slot_key, slot["recipe_id"], servings, line)
+    return board.set_slot_extra(week, slot_key, from_made=prod["id"])
 
 
 class SlotEatersBody(BaseModel):

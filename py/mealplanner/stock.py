@@ -352,6 +352,12 @@ def move(ingredient_id: str, week_start_iso: str, to: str, from_frozen: bool = F
             correct(ingredient_id, fresh + frozen, week_start_iso, False)
 
 
+def made_product(name: str) -> Optional[dict]:
+    """The bulk-made ingredient called `name` (a meal named like it eats from it), or None."""
+    key = (name or "").strip().lower()
+    return next((i for i in ingredients.by_id().values() if i.get("made") and (i.get("name") or "").strip().lower() == key), None)
+
+
 def _brand(label: str) -> str:
     """ "Simple Truth® Creamy … · 16 oz" -> "simple truth": the words before the first ®/™, else
     the first word -- what "the same product, a bigger size" has to share."""
@@ -603,7 +609,7 @@ class Ledger:
         """A bulk make: its lines out of what's there (oldest first, freezer last), the shortfall
         noted for the list, and the pot into the fridge / dry shelf / freezer."""
         from . import nutrition
-        for item in m["lines"]:
+        for item in ([] if m.get("from_slot") else m["lines"]):    # (a meal's put-away: its lines were cooked by the plan)
             ing = self.ings.get(item["ingredient_id"])
             if not ing:
                 continue
@@ -625,7 +631,7 @@ class Ledger:
             if want > 0.5:
                 short[ing["id"]] = short.get(ing["id"], 0.0) + want
         lots.setdefault(m["ingredient_id"], []).append(
-            {"g": float(m["yield_g"]), "since": m["date"], "frozen": m["where"] == "freezer"})
+            {"g": float(m.get("put_g") or m["yield_g"]), "since": m["date"], "frozen": m["where"] == "freezer"})
 
     # looking ahead from the list week
     def outlook(self, week: str, ing_id: str, buy_g: float) -> dict:
@@ -704,6 +710,7 @@ class Ledger:
         stock can't cover is on the grocery or market list (`bought` once it's ticked off). A meal
         eaten from a batch put away (batches.py) says that instead of listing lines."""
         from . import batches, nutrition, recipes
+        from . import bulk as bulk_mod
         lots = self.state(week)
         shelf = batches.shelf()
         served, made = shelf.served_in(week), shelf.made_in(week)
@@ -724,6 +731,26 @@ class Ledger:
                 lot = made[key]
                 st = slot.get("store") or {}
                 entry["stored"] = {"n": st.get("n"), "where": lot["where"], "left": round(lot["n"], 2)}
+            st2 = slot.get("store") or {}
+            if st2.get("g"):
+                entry["put"] = {"g": st2["g"], "pot_g": st2.get("pot_g"), "where": st2.get("where"),
+                                "text": us_amount(st2["g"]), "frac": round(bulk_mod.eaten_fraction(slot), 4)}
+            if slot.get("from_made"):
+                p = self.ings.get(slot["from_made"])
+                entry["taken"] = {"id": slot["from_made"], "name": (p or {}).get("name")}
+            elif not slot.get("store"):
+                rec = recipes.get(slot.get("recipe_id"))
+                prod = next((i for i in self.ings.values() if i.get("made") and rec
+                             and (i.get("name") or "").strip().lower() == rec["name"].strip().lower()), None)
+                have_lots = sorted(lots.get(prod["id"], []), key=lambda l: (l["frozen"], l["since"])) if prod else []
+                have_g = sum(l["g"] for l in have_lots)
+                if prod and have_g > 0.5:
+                    per = bulk_mod.serving_g(prod)
+                    n = board.servings(slot)
+                    where = "freezer" if have_lots[0]["frozen"] else storage(prod)
+                    entry["bulk"] = {"id": prod["id"], "name": prod["name"], "where": where, "have_g": round(have_g, 1),
+                                     "have_text": us_amount(have_g), "auto_g": round(per * n, 1),
+                                     "auto_text": f"{n:g} serving{'' if n == 1 else 's'} ≈ {us_amount(per * n)}"}
             if key in served:
                 entry["served"] = served[key]
                 continue

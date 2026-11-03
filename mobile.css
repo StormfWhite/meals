@@ -51,9 +51,13 @@ body.offline #topbar::after { content: "offline · saved on this phone"; font-si
     border-left: 0; border-top: 1px solid var(--border); box-shadow: 0 -8px 30px rgba(0,0,0,.18);
     padding-bottom: env(safe-area-inset-bottom);
   }
-  /* the pull bar: drag it down to close the sheet from anywhere in the list, however far it is scrolled */
-  .plan.list-open .list-panel::before { content: ""; display: block; position: sticky; top: 0; z-index: 5; height: 22px; margin-bottom: -2px;
-    background: linear-gradient(rgba(150,150,150,.55), rgba(150,150,150,.55)) center / 44px 5px no-repeat, var(--panel); border-radius: 12px 12px 0 0; }
+  /* the drag handle, like an Android bottom sheet's: a pill centred in a 30px grab zone at the top. Drag it (or the
+     list when it is scrolled to the top) down to close; the pill grows and darkens while it is held. */
+  .plan.list-open .list-panel::before { content: ""; display: block; position: sticky; top: 0; z-index: 5; height: 30px; flex: 0 0 30px; margin-bottom: -4px;
+    background: linear-gradient(rgba(120,120,128,.6), rgba(120,120,128,.6)) center 11px / 36px 4px no-repeat, var(--panel);
+    background: linear-gradient(color-mix(in srgb, var(--text-dim, #777) 60%, transparent), color-mix(in srgb, var(--text-dim, #777) 60%, transparent)) center 11px / 36px 4px no-repeat, var(--panel);
+    border-radius: 16px 16px 0 0; transition: background-size .12s; }
+  .plan.list-open .list-panel.pulling::before { background-size: 48px 5px; }
   .modal-panel { width: calc(100vw - 20px) !important; max-width: none !important; max-height: 85vh; overflow: auto; }
   #bangers-dock { max-width: 100vw; }
   .ing-suggest, .ingsuggest, [class*="suggest-pop"] { max-width: calc(100vw - 16px); }

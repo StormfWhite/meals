@@ -873,6 +873,9 @@ input.gp-row-name:focus { background: var(--panel); border-color: var(--border);
 .mb-link.keep { opacity: 1; }
 .mb-tag.where-fridge svg { color: var(--fridge); }
 .mb-tag.where-freezer svg { color: var(--freezer); }
+.mb-tag.where-pantry svg { color: var(--dry); }
+.mb-take-on svg:last-child { opacity: .6; margin-left: 2px; }
+.mb-foot { flex-wrap: wrap; gap: 4px; }
 button.mb-tag { cursor: pointer; font: inherit; font-size: 10px; }
 
 .mb-foot { display: flex; align-items: center; min-height: 0; }
@@ -880,12 +883,12 @@ button.mb-tag { cursor: pointer; font: inherit; font-size: 10px; }
 .mb-bulk { width: 18px; height: 18px; opacity: 0; }
 .mb-bulk svg { width: 11px; height: 11px; }
 .mb.filled:hover .mb-bulk, .mb.filled:focus-within .mb-bulk { opacity: 0.6; }
-.mb-bulk-ed { display: inline-flex; align-items: center; gap: 2px; padding: 2px 4px; border: 1px solid var(--border);
+.mb-bulk-ed { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; padding: 2px 4px; border: 1px solid var(--border); max-width: 100%;
   border-radius: 9px; background: var(--panel-2); color: var(--text-dim); }
 .mb-bulk-ed > svg { width: 11px; height: 11px; margin-right: 2px; }
 .mb-bulk-ed .icon-btn { width: 20px; height: 20px; font-size: 13px; line-height: 1; }
 .mb-bulk-ed .icon-btn svg { width: 12px; height: 12px; }
-.mb-bulk-n { width: 34px; min-width: 0; padding: 2px 3px; font-size: 11px; text-align: center; }
+.mb-bulk-n { flex: 1 1 76px; width: 76px; min-width: 0; padding: 2px 4px; font-size: 11px; }
 .mb-bulk-n::-webkit-outer-spin-button, .mb-bulk-n::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 .mb-bulk-ed .gp-stock-pick .icon-btn { width: 20px; height: 20px; }
 .mb-bulk-ed .gp-stock-pick svg { width: 12px; height: 12px; }

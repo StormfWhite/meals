@@ -322,7 +322,9 @@ def day_totals(date_iso: str, member: Optional[dict] = None) -> dict:
         # the meal's count is how many portions its pot splits into; each person eating it has one.
         # A batch cook (its lines are the whole batch) and a meal from a batch: split by shares.
         count = None if key in served or (slot.get("store") or {}).get("n") else board.servings(slot)
-        _add_into(totals, per_serving, household.portion(member, slot.get("eaters"), count) if member else 1.0)
+        from . import bulk
+        _add_into(totals, per_serving, (household.portion(member, slot.get("eaters"), count) if member else 1.0)
+                  * bulk.eaten_fraction(slot))        # what was put away isn't eaten
     return totals
 
 
