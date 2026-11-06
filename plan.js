@@ -599,7 +599,8 @@ App.plan = {
     cols.addEventListener("touchstart", (e) => {
       this._touching = true;
       const field = e.target.closest("input, textarea");
-      if (e.touches.length !== 1 || e.target.closest(".swipe-row, .list-panel, .isg")
+      const sr = e.target.closest(".swipe-row");   // a row only keeps the touch in its right quarter (App.removeZone)
+      if (e.touches.length !== 1 || e.target.closest(".list-panel, .isg") || (sr && App.removeZone(sr, e.touches[0].clientX))
           || (field && field === document.activeElement)) { mode = "no"; return; }
       x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; s0 = cols.scrollLeft; t0 = Date.now(); dx = 0; mode = null;
     }, { passive: true });

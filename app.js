@@ -214,6 +214,14 @@ App.listWhereIAm = async function () {
  * (no red bin behind it) for places whose code walks the rows as siblings, like a meal block;
  * `can()` false = this row can't be swiped (the blank line at the end of a meal). The day swipe
  * (plan.js) leaves anything inside `.swipe-row` alone. */
+/* On the phone's day strip a sideways swipe belongs to the DAY; a row is only removed by a swipe that starts in its
+ * right quarter (the amount / numbers end). Elsewhere (the grocery sheet, the dropdown) the whole row swipes. */
+App.removeZone = function (row, x) {
+  if (!row.closest(".plan-cols.strip")) return true;
+  const r = row.getBoundingClientRect();
+  return x >= r.left + r.width * 0.75;
+};
+
 App.swipeAway = function (row, onRemove, opts = {}) {
   const wrapIt = opts.wrap !== false;
   const wrap = wrapIt ? App.el(`<div class="swipe"><span class="swipe-bin">${App.icon('<path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/>')}</span></div>`) : row;
@@ -222,7 +230,7 @@ App.swipeAway = function (row, onRemove, opts = {}) {
   let x0 = 0, y0 = 0, dx = 0, mode = null;
   row.addEventListener("touchstart", (e) => {
     const field = e.target.closest("input:not([type=checkbox])");
-    if (e.touches.length !== 1 || (field && field === document.activeElement) || (opts.can && !opts.can())) { mode = "no"; return; }
+    if (e.touches.length !== 1 || (field && field === document.activeElement) || (opts.can && !opts.can()) || !App.removeZone(row, e.touches[0].clientX)) { mode = "no"; return; }
     x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; dx = 0; mode = null;
   }, { passive: true });
   row.addEventListener("touchmove", (e) => {
