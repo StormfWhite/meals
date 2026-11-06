@@ -54,7 +54,9 @@ App.plan = {
     const prev = body.querySelector("#plan-cols");
     const keep = !!prev && this._drawnFor === `${this._date}|${this._isWeekMode()}`;
     const panel = body.querySelector("#list-panel");
-    const pos = keep ? { c: prev.scrollTop, cl: prev.scrollLeft, b: body.scrollTop, l: panel ? panel.scrollTop : 0 } : null;
+    const paneOf = (c) => c && c.querySelector(`:scope > .day-col[data-date="${this._date}"]`);
+    const pane0 = keep ? paneOf(prev) : null;
+    const pos = keep ? { p: pane0 ? pane0.scrollTop : 0, c: prev.scrollTop, cl: prev.scrollLeft, b: body.scrollTop, l: panel ? panel.scrollTop : 0 } : null;
     if (!keep) {
       clearInterval(this._bandTimer);
       if (!this._fast) body.innerHTML = `<div class="pad"><div class="loading-state"><div class="spin"></div>Loading…</div></div>`;
@@ -63,7 +65,7 @@ App.plan = {
       const drew = await this._load(body, soft && keep);
       if (pos && drew !== false) {
         const c = body.querySelector("#plan-cols"), l = body.querySelector("#list-panel");
-        if (c) { c.scrollTop = pos.c; c.scrollLeft = pos.cl; }
+        if (c) { c.scrollTop = pos.c; c.scrollLeft = pos.cl; const p = paneOf(c); if (p && pos.p) p.scrollTop = pos.p; }
         body.scrollTop = pos.b;
         if (l) l.scrollTop = pos.l;
       }

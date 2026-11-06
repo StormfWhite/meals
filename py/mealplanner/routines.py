@@ -5,9 +5,11 @@ future weeks -- `board.get_week` materialises a routine's meal into any
 week it reaches that hasn't already got something in that slot. That's
 what makes editing one work the way you'd expect:
 
-  change one week's copy   the real slot written that week wins over the
-                           routine for that week only, and every other
-                           week keeps following the rule
+  edit the meal's lines    the routine takes that version from that day on
+  or servings on one day   (`update_from`); earlier days keep what they had
+                           (`past`), later days follow the new version
+  swap it for another meal the real slot written that day wins over the
+                           routine for that day only
   clear one week's copy    a tombstone is written for that slot, so the
                            routine doesn't immediately put it back --
                            "not this Monday" is a real thing to want
@@ -82,6 +84,33 @@ def update(routine_id: str, **fields) -> dict:
                 "ingredient_overrides", "start_date", "active"):
         if key in fields and fields[key] is not None:
             routine[key] = fields[key]
+    _save(data)
+    return routine
+
+
+def config_for(routine: dict, date_iso: str) -> dict:
+    """The recipe / servings / lines this routine had on `date_iso`."""
+    for old in routine.get("past", []):
+        if date_iso <= old["until"]:
+            return old
+    return routine
+
+
+def update_from(routine_id: str, date_iso: str, servings_used: float,
+                ingredient_overrides: Optional[list]) -> dict:
+    """From `date_iso` on the routine uses these lines / servings; earlier days keep the old version."""
+    data = _load()
+    routine = next((r for r in data["routines"] if r["id"] == routine_id), None)
+    if routine is None:
+        raise KeyError(routine_id)
+    if date_iso > (routine.get("start_date") or ""):
+        until = (datetime.date.fromisoformat(date_iso) - datetime.timedelta(days=1)).isoformat()
+        old = {"until": until, "recipe_id": routine["recipe_id"],
+               "servings_used": routine.get("servings_used", 1),
+               "ingredient_overrides": routine.get("ingredient_overrides")}
+        routine["past"] = [p for p in routine.get("past", []) if p["until"] < until] + [old]
+    routine["servings_used"] = servings_used
+    routine["ingredient_overrides"] = ingredient_overrides
     _save(data)
     return routine
 

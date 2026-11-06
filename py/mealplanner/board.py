@@ -112,14 +112,43 @@ def _routine_slots(dates: list[str], stored: dict) -> dict:
         for routine in routines.for_date(date):
             if slot_key(date, routine["meal"]) in stored:
                 continue
+            cfg = routines.config_for(routine, date)
             out[slot_key(date, routine["meal"])] = {
-                "recipe_id": routine["recipe_id"],
-                "servings_used": routine.get("servings_used", 1),
+                "recipe_id": cfg["recipe_id"],
+                "servings_used": cfg.get("servings_used", 1),
                 "leftover_group": None,
-                "ingredient_overrides": routine.get("ingredient_overrides"),
+                "ingredient_overrides": cfg.get("ingredient_overrides"),
                 "from_routine": routine["id"],
             }
     return out
+
+
+def drop_routine_copies(routine_id: str, after_date: str) -> None:
+    """Stored plain copies of a routine's meal on days after `after_date` are deleted, so those
+    days follow the routine again. Tombstones, swaps and slots with extras stay."""
+    r = routines.get(routine_id)
+    if r is None:
+        return
+    data = _load()
+    for week in data["weeks"].values():
+        for k in list(week["slots"]):
+            s = week["slots"][k]
+            if _is_tombstone(s):
+                continue
+            date, meal, idx = parse_slot_key(k)
+            if date <= after_date or meal != r["meal"] or idx != 0 or s.get("recipe_id") != r["recipe_id"]:
+                continue
+            if any(s.get(f) for f in ("store", "fresh", "from_made", "eaters", "leftover_group")):
+                continue
+            if any(x["id"] == routine_id for x in routines.for_date(date)):
+                del week["slots"][k]
+    _save(data)
+
+
+def week_slots_stored(week_start_iso: str) -> dict:
+    """Slots actually written down for a week (no routine fill-in, no tombstones)."""
+    wk = _load()["weeks"].get(week_start_iso, _empty_week())
+    return {k: v for k, v in wk["slots"].items() if not _is_tombstone(v)}
 
 
 def get_week(week_start_iso: str) -> dict:

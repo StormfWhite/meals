@@ -709,6 +709,22 @@ def put_slot(week: str, slot_key: str, body: SlotBody):
         raise HTTPException(404, "no such recipe")
     overrides = [i.model_dump() for i in body.ingredient_overrides] if body.ingredient_overrides else None
     before = board.get_week(week)["slots"].get(slot_key) or {}
+    date, _m, idx = board.parse_slot_key(slot_key)
+    rt = None
+    if idx == 0:       # a repeating meal edited (same meal, new lines / servings): the routine takes it from this day on
+        rt = next((r for r in routines.for_date(date) if r["meal"] == _m and
+                   routines.config_for(r, date)["recipe_id"] == body.recipe_id), None)
+    if rt:
+        ov = [i.model_dump() for i in body.ingredient_overrides] if body.ingredient_overrides else None
+        routines.update_from(rt["id"], date, body.servings_used, ov)
+        board.drop_routine_copies(rt["id"], (datetime.date.fromisoformat(date) - datetime.timedelta(days=1)).isoformat())
+        stored = board.week_slots_stored(week).get(slot_key)
+        if not stored:        # the plain copy went with the drop: the day follows the routine
+            recipe = recipes.get(body.recipe_id)
+            rows = ov if ov is not None else recipe["ingredients"]
+            if rows and rows != recipe.get("last_ingredients"):
+                recipes.update(body.recipe_id, last_ingredients=rows)
+            return board.get_week(week)
     out = board.set_slot(week, slot_key, body.recipe_id, body.servings_used, overrides)
     # the next time this meal is picked it comes back with this list
     recipe = recipes.get(body.recipe_id)
