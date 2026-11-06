@@ -619,8 +619,9 @@ App.plan = {
     this._drawnFor = `${this._date}|false`;
     this._focusBand(false);
     this._prefetchWeeks(cols);
+    // No full re-fetch here: on the phone it was ~3.5 s of Python on the one thread (gaps x2, board, recipes, ingredients,
+    // options, groceries, stock) after EVERY swipe, which froze scrolling. Changes made elsewhere arrive via the stamp poll.
     clearTimeout(this._quietTimer);
-    this._quietTimer = setTimeout(() => this.render(body, true), 1500);
   },
 
   /* Panes for yesterday, today, tomorrow of the day on screen: drop the rest, build what is missing,
