@@ -39,6 +39,11 @@ App.ingSuggest = {
 
   isOpen() { return !!this._el; },
 
+  /* The list behind an open menu changed under it (a new recipe arrived): re-filter in place. */
+  refresh() {
+    if (this._el && this._input && this._opts && this._opts.local && document.activeElement === this._input) this._fetch(this._input, this._opts);
+  },
+
   /* The row Tab/Enter would take, or null when the user hasn't chosen one
    * -- the caller must treat null as "keep what's typed". */
   active() {
@@ -155,30 +160,60 @@ App.ingSuggest = {
       document.body.appendChild(this._el);
       this._el.addEventListener("mousedown", (e) => e.preventDefault());  // don't blur the input out from under the click
       this._el.addEventListener("click", (e) => {
-        const x = e.target.closest(".isg-x");
-        if (x) {
-          const item = this._items[Number(x.parentElement.dataset.i)];
-          const opts = this._opts;
-          if (item && opts && opts.onDelete) {
-            Promise.resolve(opts.onDelete(item)).then(() => {
-              this._items = this._items.filter(i => i !== item);
-              if (this._input) this._draw(this._input);
-            });
-          }
-          return;
-        }
+        if (this._dragged) { this._dragged = false; return; }       // the end of a mouse drag is not a pick
         const row = e.target.closest(".isg-row");
         if (row) this.accept(this._items[Number(row.dataset.i)]);
       });
     }
+    const canSwipe = !!(this._opts && this._opts.onDelete);
     this._el.innerHTML = this._items.map((s, i) => `
       <div class="isg-row ${i === this._index ? "on" : ""} ${s.on_list ? "on-list" : ""}" data-i="${i}">
         <span class="isg-name">${App.esc(s.name)}</span>
         ${s.reason ? `<span class="isg-why">${App.esc(s.reason)}</span>` : ""}
         ${s.typical ? `<span class="isg-amt num">${App.esc(s.typical.label)}</span>` : ""}
-        ${this._opts && this._opts.onDelete ? `<span class="isg-x" title="Remove from suggestions">${App.icon('<path d="M18 6 6 18M6 6l12 12"/>')}</span>` : ""}
       </div>`).join("");
+    if (canSwipe) Array.from(this._el.children).forEach((row) => this._swipable(row));
     this._place(input);
+  },
+
+  /* Swipe a row away to retire that suggestion (no x button): a finger via App.swipeAway, a mouse by
+   * dragging. A tap / click still picks the row. */
+  _swipable(row) {
+    const remove = () => {
+      const item = this._items[Number(row.dataset.i)];
+      const opts = this._opts;
+      if (!item || !opts || !opts.onDelete) return;
+      Promise.resolve(opts.onDelete(item)).then(() => {
+        this._items = this._items.filter(i => i !== item);
+        if (this._index >= this._items.length) this._index = this._items.length - 1;
+        if (this._input) this._draw(this._input);
+      });
+    };
+    App.swipeAway(row, remove, { wrap: false });
+    row.addEventListener("mousedown", (e) => {
+      if (e.button !== 0) return;
+      const x0 = e.clientX; let dx = 0, moving = false;
+      const move = (m) => {
+        dx = m.clientX - x0;
+        if (!moving && Math.abs(dx) < 8) return;
+        moving = true;
+        row.style.transition = "none";
+        row.style.transform = `translateX(${dx}px)`;
+        row.style.opacity = String(Math.max(0.25, 1 - Math.abs(dx) / row.offsetWidth));
+      };
+      const up = () => {
+        document.removeEventListener("mousemove", move);
+        document.removeEventListener("mouseup", up);
+        if (!moving) return;
+        this._dragged = true;
+        setTimeout(() => { this._dragged = false; }, 0);
+        row.style.transition = "";
+        if (Math.abs(dx) > row.offsetWidth / 3) { row.style.transform = `translateX(${dx > 0 ? 110 : -110}%)`; setTimeout(remove, 180); }
+        else { row.style.transform = ""; row.style.opacity = ""; }
+      };
+      document.addEventListener("mousemove", move);
+      document.addEventListener("mouseup", up);
+    });
   },
 
   _place(input) {

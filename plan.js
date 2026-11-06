@@ -93,6 +93,26 @@ App.plan = {
     };
   },
 
+  /* Someone else changed the data while a box has focus (a recipe shared in from the Recipes app):
+   * the lists the meal-name dropdown reads are refreshed IN PLACE -- nothing redrawn, nothing blurred,
+   * so what's being typed is untouched and the new recipe is offered under the finger. */
+  async refreshLists() {
+    if (!this._recipes || !this._options) return;
+    try {
+      const [r, ob, ol, od] = await Promise.all([
+        App.api("/api/recipes"),
+        App.api("/api/board/meal-options?meal=breakfast"),
+        App.api("/api/board/meal-options?meal=lunch"),
+        App.api("/api/board/meal-options?meal=dinner"),
+      ]);
+      if (r.recipes.length !== this._recipes.length || JSON.stringify(r.recipes.map(x => x.id + x.name + !!x.hide_suggest)) !== JSON.stringify(this._recipes.map(x => x.id + x.name + !!x.hide_suggest))) {
+        this._recipes.splice(0, this._recipes.length, ...r.recipes);
+      }
+      this._options = { breakfast: ob.options, lunch: ol.options, dinner: od.options };
+      App.ingSuggest.refresh();
+    } catch (e) { /* offline: the next quiet look gets it */ }
+  },
+
   /* Going to the next / previous day inside the week already loaded needs no fetching: the day is drawn from
    * memory at once, the shopping list panel is kept as it is, and a quiet refresh a moment later picks up anything
    * changed elsewhere. Anything else (another week, week view, first draw) takes the normal path. */
@@ -402,6 +422,8 @@ App.plan = {
       hideOption: async (meal, item) => {
         await App.api(`/api/recipes/${item.recipe_id}`, { method: "PUT", body: { hide_suggest: true } });
         self._options[meal] = (self._options[meal] || []).filter(o => o.recipe_id !== item.recipe_id);
+        const rec = self._recipes.find(r => r.id === item.recipe_id);
+        if (rec) rec.hide_suggest = true;          // the dropdown also offers every saved recipe: not this one any more
       },
       invalidateOptions: async (meal) => {
         const res = await App.api(`/api/board/meal-options?meal=${meal}`);

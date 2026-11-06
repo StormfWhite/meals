@@ -568,6 +568,42 @@ def inbox_list():
     return {"items": [], "ops": inbox_import.run_once()}
 
 
+class InboxImportBody(BaseModel):
+    text: str
+
+
+@app.post("/api/inbox/import")
+def inbox_import_now(body: InboxImportBody):
+    """The Recipes app hands a recipe straight to the one shared server: saved before this answers
+    (its USDA lookups follow in the background), so it is in the meal-name dropdown at once."""
+    name = inbox_import.import_text(body.text, resolve_later=True)
+    if name is None:
+        raise HTTPException(400, "nothing to read")
+    return {"ok": True, "name": name}
+
+
+@app.post("/api/inbox/op")
+def inbox_op_now(op: dict):
+    """A star / delete made in the Recipes app, applied now (same file format as inbox/*.json)."""
+    d = DATA_DIR / "inbox"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / f"{int(time.time() * 1000)}-op.json").write_text(json.dumps(op), encoding="utf-8")
+    return {"ok": True, "applied": inbox_import.apply_ops(d)}
+
+
+@app.middleware("http")
+async def _inbox_cors(request: Request, call_next):
+    """The Recipes app's WebView lives on another origin: let it call ONLY the two hand-off routes."""
+    hand = request.url.path in ("/api/inbox/import", "/api/inbox/op")
+    if hand and request.method == "OPTIONS":
+        return PlainTextResponse("", headers={"Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "POST",
+                                              "Access-Control-Allow-Headers": "content-type"})
+    resp = await call_next(request)
+    if hand:
+        resp.headers["Access-Control-Allow-Origin"] = "*"
+    return resp
+
+
 @app.delete("/api/inbox/{name}")
 def inbox_done(name: str):
     f = DATA_DIR / "inbox" / Path(name).name

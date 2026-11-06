@@ -500,7 +500,7 @@ function init() {
     let wanted = false;
     const redrawIfIdle = () => {
       const a = document.activeElement;
-      if (a && (a.tagName === "INPUT" || a.tagName === "TEXTAREA" || a.tagName === "SELECT" || a.isContentEditable)) { wanted = true; return; }
+      if (a && (a.tagName === "INPUT" || a.tagName === "TEXTAREA" || a.tagName === "SELECT" || a.isContentEditable)) { wanted = true; if (App.plan && App.plan.refreshLists) App.plan.refreshLists(); return; }
       wanted = false;
       App.render(true);        // a soft redraw: does nothing when what's on screen is already right
     };

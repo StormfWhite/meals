@@ -437,15 +437,13 @@ button.mb-tag:hover { color: var(--good); border-color: var(--good); }
 }
 .isg-row {
   display: flex; align-items: baseline; gap: 8px;
-  padding: 4px 8px; border-radius: 6px; cursor: pointer;
-  font-size: 12px; white-space: nowrap;
+  padding: 2px 7px; border-radius: 6px; cursor: pointer;
+  font-size: 12px; line-height: 1.25; white-space: nowrap;
+  transition: transform .18s, opacity .18s; touch-action: pan-y; user-select: none;
 }
 .isg-row.on { background: var(--accent); color: var(--accent-text); }
 .isg-name { flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; }
 .isg-why { flex: 1 1 auto; font-size: 10px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; }
-.isg-x { flex: 0 0 auto; align-self: center; display: inline-flex; opacity: 0.45; border-radius: 4px; padding: 1px; }
-.isg-x svg { width: 11px; height: 11px; }
-.isg-x:hover { opacity: 1; background: rgba(128,128,128,0.25); }
 .isg-amt { font-size: 10px; color: var(--text-dim); }
 .isg-row.on .isg-why, .isg-row.on .isg-amt { color: var(--accent-text); opacity: 0.72; }
 

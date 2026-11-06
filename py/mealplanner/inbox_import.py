@@ -72,7 +72,7 @@ def apply_ops(d: Path) -> int:
     return n
 
 
-def import_text(text: str) -> Optional[str]:
+def import_text(text: str, resolve_later: bool = False) -> Optional[str]:
     """One shared recipe into the list. Returns its name (also when it was already here), None when
     there was nothing to read. Never overwrites or duplicates: the same name, or the same source page
     even after a rename, keeps whatever was edited -- the Recipes app only ever adds."""
@@ -98,11 +98,20 @@ def import_text(text: str) -> Optional[str]:
     recipe = recipes.add(name, 4, rows, ["shared"], parsed.get("notes") or "")
     if link:
         recipes.update(recipe["id"], source_url=link)
-    for ing_id in fresh:                          # the USDA match, now that the recipe is already usable
+    def _resolve():
+        for ing_id in fresh:                      # the USDA match, now that the recipe is already usable
+            try:
+                ingredients.resolve_usda(ing_id)
+            except Exception as e:                # no confident match / offline: it still plans and shops fine
+                log.info("no USDA match for %s: %s", ing_id, e)
+    if resolve_later and fresh:                   # answer at once; the lookups (~a minute) finish in the background
         try:
-            ingredients.resolve_usda(ing_id)
-        except Exception as e:                    # no confident match / offline: it still plans and shops fine
-            log.info("no USDA match for %s: %s", ing_id, e)
+            import threading
+            threading.Thread(target=_resolve, daemon=True, name="inbox-usda").start()
+        except Exception:                         # no threads (the phone's in-browser Python): do them now
+            _resolve()
+    else:
+        _resolve()
     return name
 
 

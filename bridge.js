@@ -304,7 +304,7 @@ async def _call(method, path, body):
   let redrawWanted = false;
   function redraw() {
     const a = document.activeElement;
-    if (a && (a.tagName === "INPUT" || a.tagName === "TEXTAREA" || a.tagName === "SELECT")) { redrawWanted = true; return; }
+    if (a && (a.tagName === "INPUT" || a.tagName === "TEXTAREA" || a.tagName === "SELECT")) { redrawWanted = true; if (window.App && App.plan && App.plan.refreshLists) App.plan.refreshLists(); return; }
     redrawWanted = false;
     if (window.App && App.render) App.render();
   }

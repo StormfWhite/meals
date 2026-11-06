@@ -61,6 +61,7 @@ App.mealBlock = {
     const key = index ? `${date}:${meal}~${index}` : `${date}:${meal}`;
     let matchedRecipe = null;
     let ownRecipe = false;   // this block minted the recipe, so edits belong to the recipe itself
+    let mintedId = null;     // ...and which one, so a name still being typed renames it instead of leaving a trail of "Cha", "Chana"…
     let dirty = false;
     let previewTimer = null;
     let totals = null;
@@ -91,8 +92,8 @@ App.mealBlock = {
     `);
 
     const nameInput = el.querySelector(".mb-name");
-    // Meal-name dropdown: learned order, with a x per row that retires a
-    // suggestion (the recipe and its history stay; it just stops being offered).
+    // Meal-name dropdown: learned order; swiping a row away retires that suggestion
+    // (the recipe and its history stay; it just stops being offered).
     App.ingSuggest.attach(nameInput, {
       // a meal that's already in (its name is a saved meal) doesn't pop the list back up
       settled: (input) => !!recipeByName(input.value),
@@ -101,7 +102,7 @@ App.mealBlock = {
       local: () => {
         const own = host.optionsFor(meal).slice();
         const have = new Set(own.map(o => (o.name || "").toLowerCase()));
-        return own.concat((host.recipes || []).filter(r => r.name && !have.has((r.name || "").toLowerCase()))
+        return own.concat((host.recipes || []).filter(r => r.name && !r.hide_suggest && !have.has((r.name || "").toLowerCase()))
           .map(r => ({ name: r.name, recipe_id: r.id })));
       },
       onDelete: (item) => host.hideOption(meal, item),
@@ -898,11 +899,20 @@ App.mealBlock = {
       }
 
       let recipe = recipeByName(name);
-      if (!recipe) {
+      const minted = !recipe && mintedId ? host.recipes.find(r => r.id === mintedId) : null;
+      if (!recipe && minted && !(minted.ingredients || []).length && !rows.length) {
+        // still the same half-typed meal this block made, nothing in it yet: rename, don't mint another
+        const updated = await App.api(`/api/recipes/${minted.id}`, { method: "PUT", body: { name } });
+        recipe = updated.recipe;
+        const at = host.recipes.findIndex(r => r.id === recipe.id);
+        if (at >= 0) host.recipes[at] = recipe;
+        ownRecipe = true;
+      } else if (!recipe) {
         const created = await App.api("/api/recipes", { method: "POST", body: { name, servings: 1, ingredients: rows } });
         host.recipes.push(created.recipe);
         recipe = created.recipe;
         ownRecipe = true;
+        mintedId = recipe.id;
       } else if (ownRecipe && recipe.id === (matchedRecipe && matchedRecipe.id)) {
         // A meal this block just invented: keep editing the recipe itself,
         // so reusing it next week autofills the ingredients instead of
@@ -951,6 +961,7 @@ App.mealBlock = {
         if (found && (!matchedRecipe || found.id !== matchedRecipe.id)) {
           matchedRecipe = found;
           ownRecipe = false;
+          mintedId = null;
           // picked a past meal — bring along the lines it was last made with, amounts and all
           drawRows(found.last_ingredients || found.ingredients);
         } else if (!found) {
@@ -980,6 +991,7 @@ App.mealBlock = {
       if (index) { el.remove(); host.removeBlock(key); return; }
       matchedRecipe = null;
       ownRecipe = false;
+      mintedId = null;
       servInput.value = host.members().length || 1;
       el.classList.remove("filled");
       linkWrap.innerHTML = "";

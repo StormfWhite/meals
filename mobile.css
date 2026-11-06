@@ -109,8 +109,7 @@ body.offline #topbar::after { content: "offline · saved on this phone"; font-si
   .gp-stock-pick .icon-btn { width: 34px; height: 34px; }
   .gp-stock-pick svg { width: 18px; height: 18px; }
   .gp-stock-left { font-size: 12.5px; }
-  .isg-x { padding: 7px; opacity: .55; }
-  .isg-x svg { width: 15px; height: 15px; }
+  .isg-row { padding: 5px 8px; font-size: 14px; }
   .gp-row .gp-stock-rm, .gp-row .gp-stock-pick .icon-btn { display: inline-flex; width: 32px; height: 32px; }
   .gp-row .gp-stock-rm { opacity: .55; }
   .gp-stock-rm svg { width: 17px; height: 17px; }
