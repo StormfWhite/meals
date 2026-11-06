@@ -1201,11 +1201,11 @@ button.mb-tag { cursor: pointer; font: inherit; font-size: 10px; }
 /* phone day view: previous / this / next day side by side, one swipe-snapped strip (plan.js _strip) */
 .plan-cols.strip { display: flex; flex-direction: row; gap: 0; padding-left: 0; padding-right: 0; position: relative;
   overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory; overscroll-behavior-x: contain; align-items: stretch;
-  padding-bottom: 0 !important; }
+  padding-bottom: 0 !important; justify-content: flex-start; }   /* .one-day centres: a 3-pane strip would start off-screen left */
 .plan-cols.strip > .day-col { flex: 0 0 100%; min-width: 0; box-sizing: border-box; display: flex; flex-direction: column; gap: 7px;
   padding: 0 8px 76px; scroll-snap-align: start; scroll-snap-stop: always;
-  /* the strip scrolls ONLY sideways and each day ONLY up/down: two separate scrollers. NO touch-action here:
-     pan-y on the pane forbids the sideways pan for the whole chain, so the strip could never be swiped */
-  overflow-y: auto; overflow-x: hidden; overscroll-behavior-y: contain; -webkit-overflow-scrolling: touch;
+  /* each day scrolls ONLY up/down natively (pan-y). The browser therefore never pans the strip by itself:
+     plan.js _wireStrip decides the axis in code and drives the sideways move. Don't toggle touch-action again */
+  overflow-y: auto; overflow-x: hidden; overscroll-behavior-y: contain; -webkit-overflow-scrolling: touch; touch-action: pan-y;
   scrollbar-width: none; }
 .plan-cols.strip > .day-col::-webkit-scrollbar { display: none; }

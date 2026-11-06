@@ -561,9 +561,48 @@ App.plan = {
       const near = panes.reduce((b, p) => Math.abs(p.offsetLeft - cols.scrollLeft) < Math.abs(b.offsetLeft - cols.scrollLeft) ? p : b);
       if (near.dataset.date !== this._date && Math.abs(near.offsetLeft - cols.scrollLeft) < 4) this._landOn(body, cols, near.dataset.date);
     };
-    cols.addEventListener("touchstart", () => { this._touching = true; }, { passive: true });
-    cols.addEventListener("touchend", () => { this._touching = false; }, { passive: true });
-    cols.addEventListener("touchcancel", () => { this._touching = false; }, { passive: true });
+    // The axis is decided here, once per gesture: mostly-sideways drives the strip by hand, anything else is
+    // left to the day's own native up/down scroll (touch-action: pan-y), so the two can never fight.
+    let x0 = 0, y0 = 0, s0 = 0, t0 = 0, mode = null, dx = 0;
+    cols.addEventListener("touchstart", (e) => {
+      this._touching = true;
+      const field = e.target.closest("input, textarea");
+      if (e.touches.length !== 1 || e.target.closest(".swipe-row, .list-panel, .isg")
+          || (field && field === document.activeElement)) { mode = "no"; return; }
+      x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; s0 = cols.scrollLeft; t0 = Date.now(); dx = 0; mode = null;
+    }, { passive: true });
+    cols.addEventListener("touchmove", (e) => {
+      if (mode === "no") return;
+      const mx = e.touches[0].clientX - x0, my = e.touches[0].clientY - y0;
+      if (mode === null) {
+        if (Math.abs(mx) < 10 && Math.abs(my) < 10) return;
+        mode = Math.abs(mx) > Math.abs(my) * 1.5 ? "day" : "no";
+        if (mode === "day") { this._stripBusy = true; cols.style.scrollSnapType = "none"; }
+      }
+      if (mode !== "day") return;
+      dx = mx;
+      cols.scrollLeft = s0 - dx;
+    }, { passive: true });
+    const end = () => {
+      this._touching = false;
+      if (mode !== "day") { mode = null; return; }
+      mode = null;
+      const panes = [...cols.querySelectorAll(":scope > .day-col")];
+      const i = panes.findIndex(p => p.dataset.date === this._date);
+      const fast = Math.abs(dx) / Math.max(1, Date.now() - t0) > 0.5;      // px per ms
+      const far = Math.abs(dx) > Math.max(60, cols.offsetWidth * 0.2);
+      const step = (far || fast) ? (dx < 0 ? 1 : -1) : 0;                   // finger left = next day
+      const pane = panes[Math.min(panes.length - 1, Math.max(0, i + step))] || panes[i];
+      if (!pane) { this._stripBusy = false; cols.style.scrollSnapType = ""; return; }
+      cols.scrollTo({ left: pane.offsetLeft, behavior: "smooth" });
+      const done = () => { cols.style.scrollSnapType = ""; this._stripBusy = false; settle(); };
+      let fin = false;
+      const once = () => { if (fin) return; fin = true; cols.removeEventListener("scrollend", once); done(); };
+      cols.addEventListener("scrollend", once);
+      setTimeout(once, 600);
+    };
+    cols.addEventListener("touchend", end, { passive: true });
+    cols.addEventListener("touchcancel", end, { passive: true });
     cols.addEventListener("scroll", () => { this._lastScroll = Date.now(); clearTimeout(t); t = setTimeout(settle, 90); }, { passive: true });
     cols.addEventListener("scrollend", () => { clearTimeout(t); settle(); });
   },
