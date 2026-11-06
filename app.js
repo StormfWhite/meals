@@ -456,7 +456,7 @@ function init() {
   }
 
   // (the phone answers from Python in its own browser: every call there costs seconds on the one thread, so it makes none it doesn't need)
-  const onPhonePy = typeof loadPyodide === "function";
+  const onPhonePy = (typeof loadPyodide === "function" || !!window.__PHONE_PY);
   if (!onPhonePy) App.api("/api/meta").catch(() => {}); // warms the connection, surfaces a dead server early
 
   App.setView(paneView || "plan");

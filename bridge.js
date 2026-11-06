@@ -12,6 +12,7 @@
  * Longpoll brings the other side's changes in live.
  */
 "use strict";
+window.__PHONE_PY = true;   // the page has no Pyodide of its own any more (it is in pyworker.js); app.js/plan.js ask this
 (() => {
   const APP_KEY = "qsmbpc4l1v4uini";
   const FOLDER = "/mealplanner";
@@ -154,7 +155,6 @@
   }
 
   // ---- Python ------------------------------------------------------------------------------------
-  let py = null, call = null;
   const synced = {};   // name → bytes as last agreed with Dropbox
   const eq = (a, b) => { if (!a || !b || a.length !== b.length) return false; for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false; return true; };
   const isData = (n) => /^[\w.-]+\.(json|sqlite)$/.test(n);
@@ -163,22 +163,34 @@
   // keeps its own -- fetched once if missing, never pulled again, never pushed.
   const LOCAL_ONLY = /^fdc_cache\.sqlite$/;
 
+  const worker = new Worker("pyworker.js");
+  let wid = 0;
+  const waiting = new Map();
+  worker.onmessage = (e) => {
+    const w = waiting.get(e.data.id); if (!w) return;
+    waiting.delete(e.data.id);
+    if ("error" in e.data) w.reject(new Error(e.data.error)); else w.resolve(e.data.result);
+  };
+  worker.onerror = (e) => console.error("pyworker", e.message);
+  const W = (op, args = {}) => new Promise((resolve, reject) => {
+    const id = ++wid; waiting.set(id, { resolve, reject });
+    worker.postMessage({ id, op, ...args });
+  });
+
   const T0 = performance.now(), marks = [];
   const mark = (m) => marks.push([m, Math.round(performance.now() - T0)]);
   async function bootPython() {
     say("Loading planner…");
     // the code bundle downloads while Pyodide starts; packages load as part of Pyodide's own startup
-    const bundle = fetch(PY_FILES.replace(/py\/$/, "") + "py.zip", { cache: "no-cache" }).then((r) => r.arrayBuffer());
-    py = await loadPyodide({ packages: ["pydantic", "sqlite3", "requests", "anyio", "sniffio", "typing-extensions", "ssl"] });
-    mark("pyodide");
-    py.unpackArchive(await bundle, "zip", { extractDir: "/src" });   // see build.sh: our code + fastapi/starlette, precompiled
-    py.FS.mkdirTree("/src/app/web");
-    py.FS.mkdirTree(DATA);
-    mark("sources");
+    // Python runs in a Web Worker (pyworker.js) so it can never hold up touch or typing on this page.
+    // The code bundle downloads while Pyodide starts (see build.sh: our code + fastapi/starlette, precompiled).
+    await W("boot", { packages: ["pydantic", "sqlite3", "requests", "anyio", "sniffio", "typing-extensions", "ssl"],
+      zipUrl: new URL(PY_FILES.replace(/py\/$/, "") + "py.zip", location.href).href });
+    mark("pyodide+sources");
   }
 
   async function startApp() {
-    await py.runPythonAsync(`
+    await W("start", { code: `
 import os, sys
 sys.path.insert(0, "/src")
 os.environ["MEALPLANNER_DATA"] = "${DATA}"
@@ -206,13 +218,13 @@ async def _call(method, path, body):
     await _app(scope, receive, send)
     status = next(m["status"] for m in msgs if m["type"] == "http.response.start")
     return status, b"".join(m.get("body", b"") for m in msgs if m["type"] == "http.response.body").decode()
-`);
-    call = py.globals.get("_call");
+` });
   }
 
-  function writeFile(name, bytes) { py.FS.writeFile(DATA + "/" + name, bytes); }
-  function readFile(name) { try { return py.FS.readFile(DATA + "/" + name); } catch { return null; } }
-  const localNames = () => py.FS.readdir(DATA).filter(isData);
+  const call = (method, path, body) => W("call", { method, path, body });
+  const writeFile = (name, bytes) => W("writeFile", { name, bytes });
+  const readFile = (name) => W("readFile", { name });
+  const localNames = () => W("list", { pattern: isData.source });
 
   // ---- sync ----------------------------------------------------------------------------------------
   let pending = [];      // mutating requests made since the last successful upload (replayed on conflict)
@@ -222,7 +234,7 @@ async def _call(method, path, body):
   async function firstLoad() {
     const cached = await idbAll();
     if (S.cursor && Object.keys(cached).length) {   // instant start from the local copy, catch up after
-      for (const [n, b] of Object.entries(cached)) { if (isData(n)) { writeFile(n, b); synced[n] = b; } }
+      for (const [n, b] of Object.entries(cached)) { if (isData(n)) { synced[n] = b; await writeFile(n, b.slice()); } }
       return;
     }
     say("Getting your plan…");
@@ -233,7 +245,7 @@ async def _call(method, path, body):
       if (e[".tag"] !== "file" || !isData(e.name)) continue;
       const r = await content("files/download", { path: e.path_lower });
       const b = new Uint8Array(await r.arrayBuffer());
-      writeFile(e.name, b); synced[e.name] = b; S.revs[e.name] = e.rev; await idbPut(e.name, b);
+      synced[e.name] = b; S.revs[e.name] = e.rev; await idbPut(e.name, b); await writeFile(e.name, b.slice());
     }
     S.cursor = page.cursor; save();
   }
@@ -248,11 +260,11 @@ async def _call(method, path, body):
     for (;;) {
       for (const e of page.entries) {
         if (e[".tag"] !== "file" || !isData(e.name) || S.revs[e.name] === e.rev) continue;
-        if (LOCAL_ONLY.test(e.name) && readFile(e.name)) continue;
+        if (LOCAL_ONLY.test(e.name) && await readFile(e.name)) continue;
         const r = await content("files/download", { path: e.path_lower });
         const b = new Uint8Array(await r.arrayBuffer());
         S.revs[e.name] = e.rev; synced[e.name] = b; await idbPut(e.name, b);
-        writeFile(e.name, b);
+        await writeFile(e.name, b.slice());
         changed = true;
       }
       S.cursor = page.cursor;
@@ -271,8 +283,8 @@ async def _call(method, path, body):
   async function push() {
     for (let attempt = 0; attempt < 4; attempt++) {
       let conflict = false;
-      for (const n of localNames()) {
-        const b = readFile(n);
+      for (const n of await localNames()) {
+        const b = await readFile(n);
         if (!b || eq(b, synced[n]) || LOCAL_ONLY.test(n)) continue;
         const mode = S.revs[n] ? { ".tag": "update", update: S.revs[n] } : "add";
         try {
@@ -368,10 +380,9 @@ async def _call(method, path, body):
   // (202 {need}), the page fetches it WITHOUT blocking -- typing, other requests and the screen carry
   // on -- hands the answer to Python, and asks again until the match is made.
   async function resolveInBackground(path, body) {
-    const fdc = py.pyimport("mealplanner.fdc");
     const url = path + (path.includes("?") ? "&" : "?") + "js_fetch=true";
     for (let round = 0; round < 14; round++) {   // generic match + its fill + a brand lookup (brands.py)
-      const res = await serial(async () => (await call("POST", url, body)).toJs());
+      const res = await serial(async () => await call("POST", url, body));
       if (res[0] !== 202) {
         if (res[0] < 300 && !/\/barcode\//.test(path)) { pending.push({ method: "POST", path, body }); schedulePush(); }   // (a lookup changes no data)
         return new Response(res[1], { status: res[0], headers: { "Content-Type": "application/json" } });
@@ -380,7 +391,7 @@ async def _call(method, path, body):
       let status = 599, text = "";
       try { const r = await realFetch(need); status = r.status; text = await r.text(); } catch (e) {}
       if (status === 599) return new Response('{"detail":"offline"}', { status: 503 });
-      fdc.JS_STORE.set(need, py.toPy([status, text]));
+      await W("jsStore", { key: need, status, text });
     }
     return new Response('{"detail":"too many lookups"}', { status: 504 });
   }
@@ -393,7 +404,7 @@ async def _call(method, path, body):
     if (Date.now() - notesAt < 120000) return;
     try {
       const r = await content("files/download_zip", { path: "/notes" });
-      py.FS.writeFile("/notes.zip", new Uint8Array(await r.arrayBuffer()));
+      await W("writeFile", { name: "/notes.zip", bytes: new Uint8Array(await r.arrayBuffer()) });
       notesAt = Date.now();
     } catch (e) { console.warn("notes zip", e); }
   }
@@ -489,7 +500,7 @@ async def _call(method, path, body):
     if (method === "POST" && /^\/api\/(ingredients\/[^/]+\/resolve|barcode\/\d+)/.test(path)) return resolveInBackground(path, body);
     const res = await serial(async () => {
       const t = performance.now();
-      const r = (await call(method, path, body)).toJs();
+      const r = await call(method, path, body);
       if (marks.length < 60) marks.push([method + " " + path.slice(0, 60), Math.round(performance.now() - t)]);
       if (method !== "GET") pending.push({ method, path, body });
       return r;
@@ -500,6 +511,6 @@ async def _call(method, path, body):
   };
 
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
-  window.__meals_py = () => py;
+  window.__meals_py = () => worker;
   window.__meals = { S, pull, push, marks, get pending() { return pending; }, get ready() { return ready; }, booted };
 })();

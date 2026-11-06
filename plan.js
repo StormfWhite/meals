@@ -159,7 +159,7 @@ App.plan = {
     const wss = weekMode ? Array.from(new Set(this._window.map(d => this._wkOf(d)))) : [day.week_start];
     // On the phone every call is seconds of Python on the one thread, so what rarely changes (the recipe and ingredient
     // lists, the dropdown options, who's eating) is reused for 90 s between redraws (App.setView drops it).
-    const phone = typeof loadPyodide === "function";
+    const phone = (typeof loadPyodide === "function" || !!window.__PHONE_PY);
     const S = phone && this._static && Date.now() - this._static.at < 90000 ? this._static : null;
     const [weeks, recipesRes, ingredientsRes, ob, ol, od, todayDay, membersRes] = await Promise.all([
       Promise.all(wss.map(w => App.api(`/api/board?week=${w}`))),
@@ -575,8 +575,8 @@ App.plan = {
       if (mode === "no") return;
       const mx = e.touches[0].clientX - x0, my = e.touches[0].clientY - y0;
       if (mode === null) {
-        if (Math.abs(mx) < 10 && Math.abs(my) < 10) return;
-        mode = Math.abs(mx) > Math.abs(my) * 1.5 ? "day" : "no";
+        if (Math.abs(mx) < 6 && Math.abs(my) < 6) return;
+        mode = Math.abs(mx) > Math.abs(my) * 1.3 ? "day" : "no";
         if (mode === "day") { this._stripBusy = true; cols.style.scrollSnapType = "none"; }
       }
       if (mode !== "day") return;
@@ -613,12 +613,21 @@ App.plan = {
     this._date = date;
     this._baseWs = this._wkOf(date);
     this._merge();
-    this._syncPanes(cols);
     const label = document.querySelector(".plan-date");
     if (label) label.textContent = _planFull(date);
     this._drawnFor = `${this._date}|false`;
     this._focusBand(false);
-    this._prefetchWeeks(cols);
+    // Building the next neighbour day + its numbers is the heavy part: do it once the finger is up and the page idle,
+    // so the next swipe starts the moment it is made (a newer swipe cancels the pending build, it re-plans itself).
+    const token = this._landToken = (this._landToken || 0) + 1;
+    const later = (fn) => (window.requestIdleCallback ? requestIdleCallback(fn, { timeout: 600 }) : setTimeout(fn, 250));
+    const build = () => {
+      if (token !== this._landToken || !cols.isConnected) return;
+      if (this._touching || this._stripBusy) { setTimeout(() => later(build), 200); return; }
+      this._syncPanes(cols);
+      this._prefetchWeeks(cols);
+    };
+    setTimeout(() => later(build), 120);
     // No full re-fetch here: on the phone it was ~3.5 s of Python on the one thread (gaps x2, board, recipes, ingredients,
     // options, groceries, stock) after EVERY swipe, which froze scrolling. Changes made elsewhere arrive via the stamp poll.
     clearTimeout(this._quietTimer);

@@ -14,7 +14,7 @@ for f in "$SRC"/app/web/*.js "$SRC"/app/web/style.css; do cp "$f" "$OUT/"; done
 # index.html: relative paths (the site lives under /meals/), then the phone bits
 sed -e 's|href="/|href="|g; s|src="/|src="|g' \
     -e 's|<link rel="stylesheet" href="style.css">|<link rel="stylesheet" href="style.css">\n<link rel="stylesheet" href="mobile.css">\n<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">\n<meta name="apple-mobile-web-app-capable" content="yes">\n<meta name="mobile-web-app-capable" content="yes">\n<meta name="apple-mobile-web-app-title" content="Meals">\n<link rel="manifest" href="manifest.webmanifest">\n<link rel="apple-touch-icon" href="icon-180.png">\n<link rel="icon" href="icon-192.png">|' \
-    -e 's|<script src="app.js"></script>|<script src="https://cdn.jsdelivr.net/pyodide/v0.27.7/full/pyodide.js"></script>\n<script src="bridge.js"></script>\n<script src="app.js"></script>|' \
+    -e 's|<script src="app.js"></script>|<script src="bridge.js"></script>\n<script src="app.js"></script>|' \
     "$SRC/app/web/index.html" > "$OUT/index.html"
 # On the tailnet the phone uses the ONE shared server on jorm (nothing to sync); anywhere else this
 # page carries on with its own offline copy. "?local" skips the hop.
