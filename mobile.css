@@ -264,3 +264,29 @@ body.offline #topbar::after { content: "offline · saved on this phone"; font-si
 /* the day strip scrolls sideways by itself (finger drags the real days); rows still swipe away on their own */
 @media (max-width: 760px) { .plan-cols.one-day.strip { touch-action: pan-x; padding: 0 !important; }
   .plan-cols.strip > .day-col { padding: 0 6px 76px !important; touch-action: pan-y; } }
+
+/* phone week = an agenda: one card per day, three one-line meals; tap opens the day (plan.js _buildAgenda) */
+@media (max-width: 760px) {
+  .plan-cols.agenda { display: flex !important; flex-direction: column; gap: 8px; padding: 8px 10px 84px !important; overflow-y: auto; overflow-x: hidden;
+    touch-action: pan-y; justify-content: flex-start; -webkit-overflow-scrolling: touch; }
+  .ag-day { flex: none; margin: 0 0 8px; background: var(--panel); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+  .ag-day.today { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .ag-day.past { opacity: .62; }
+  .ag-head { display: flex; align-items: center; gap: 6px; padding: 6px 12px 4px; cursor: pointer; }
+  .ag-head .dow { font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+  .ag-head .dnum { font-size: 12px; color: var(--text-dim); }
+  .ag-day.today .dow { color: var(--accent); }
+  .ag-head .today-dot { margin-left: auto; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+  .ag-row { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; align-items: center; gap: 9px; width: 100%; min-height: 34px; box-sizing: border-box;
+    padding: 5px 12px; background: none; border: 0; border-top: 1px solid var(--border); border-radius: 0; color: var(--text); text-align: left; font: inherit; font-size: 14.5px; }
+  .ag-row.empty { min-height: 26px; padding-top: 2px; padding-bottom: 2px; }
+  .ag-row:active { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+  .ag-ico svg { width: 16px; height: 16px; display: block; }
+  .ag-row[data-meal="breakfast"] .ag-ico { color: var(--meal-breakfast); }
+  .ag-row[data-meal="lunch"] .ag-ico { color: var(--meal-lunch); }
+  .ag-row[data-meal="dinner"] .ag-ico { color: var(--meal-dinner); }
+  .ag-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 550; }
+  .ag-row.empty .ag-name { color: var(--text-dim); font-weight: 400; opacity: .4; }
+  .ag-row.empty .ag-ico { opacity: .55; }
+  .ag-n { font-size: 12px; color: var(--text-dim); }
+}

@@ -534,6 +534,38 @@ App.plan = {
   /* Phone, day view: the previous, this and the next day sit side by side in one sideways-scrolling strip that
    * snaps to a day (native scrolling: the finger drags the real days, with momentum, like a calendar app).
    * When it settles on another day the strip shifts by one: the far day goes, a new neighbour is built. */
+  /* Phone, week view: not seven squeezed columns but an agenda -- one card per day, its three meals one line each.
+   * Tap a card (or a meal) and that day opens in the day view, where everything is editable. */
+  _agenda() {
+    return this._isWeekMode() && window.matchMedia("(max-width: 760px)").matches;
+  },
+
+  _buildAgenda(cols, dates) {
+    const today = _planToday();
+    const name = (s) => { const r = s && s.recipe_id ? (this._recipes.find(x => x.id === s.recipe_id) || {}) : {}; return r.name || ""; };
+    cols.classList.add("agenda");
+    cols.style.gridTemplateColumns = "none";
+    cols.innerHTML = dates.map(date => {
+      const rows = PLAN_MEALS.map(meal => {
+        const slots = this._indicesFor(date, meal).map(i => this._week.slots[i ? `${date}:${meal}~${i}` : `${date}:${meal}`]).filter(s => name(s));
+        if (!slots.length) return `<button class="ag-row empty" data-date="${date}" data-meal="${meal}" title="Add ${meal}"><span class="ag-ico">${App.icon(MB_ICONS[meal])}</span><span class="ag-name">—</span></button>`;
+        return slots.map((sl, k) => `<button class="ag-row" data-date="${date}" data-meal="${meal}" title="${App.esc(MB_LABELS[meal])}">`
+          + `<span class="ag-ico">${k ? "" : App.icon(MB_ICONS[meal])}</span><span class="ag-name">${App.esc(name(sl))}</span>`
+          + (Number(sl.servings_used) > 0 ? `<span class="ag-n num">×${App.esc(String(+Number(sl.servings_used).toFixed(1)))}</span>` : "") + `</button>`).join("");
+      }).join("");
+      return `<section class="ag-day ${date === today ? "today" : ""} ${date < today ? "past" : ""}" data-date="${date}">
+        <header class="ag-head" data-date="${date}"><span class="dow">${_planDow(date)}</span><span class="dnum">${_planDayNum(date)}</span>${date === today ? '<span class="today-dot"></span>' : ""}</header>
+        ${rows}</section>`;
+    }).join("");
+    cols.addEventListener("click", (e) => {
+      const t = e.target.closest("[data-date]"); if (!t) return;
+      this._forceMode = "day"; this._date = t.dataset.date; this._band = null;
+      this.render(document.getElementById("body"));
+    });
+    const t = cols.querySelector(".ag-day.today");
+    if (t) requestAnimationFrame(() => { cols.scrollTop = Math.max(0, t.offsetTop - 6); });
+  },
+
   _strip() {
     return !this._isWeekMode() && window.matchMedia("(max-width: 760px)").matches
       && ("ontouchstart" in window || navigator.maxTouchPoints > 0);
@@ -722,7 +754,9 @@ App.plan = {
     this._stripOn = strip;
     cols.classList.toggle("strip", strip);
     if (strip) { cols.style.gridTemplateColumns = "none"; this._wireStrip(cols, body); }
-    const shown = strip ? this._stripDates() : dates;
+    const agenda = this._agenda();
+    if (agenda) this._buildAgenda(cols, dates);
+    const shown = agenda ? [] : strip ? this._stripDates() : dates;
     shown.forEach((date, ci) => {
       const flow = weekMode || strip;
       const holder = flow ? App.el(`<div class="day-col" data-date="${date}" ${weekMode ? `style="grid-column:${ci + 1};"` : ""}></div>`) : cols;
