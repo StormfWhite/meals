@@ -18,8 +18,10 @@ mealplanner/household.py
 mealplanner/inbox_import.py
 mealplanner/ingredients.py
 mealplanner/__init__.py
+mealplanner/label.py
 mealplanner/learning.py
 mealplanner/nutrition.py
+mealplanner/pairings.py
 mealplanner/pantry_scan.py
 mealplanner/paths.py
 mealplanner/places.py

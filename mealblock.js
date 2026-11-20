@@ -269,6 +269,14 @@ App.mealBlock = {
       note.addEventListener("input", () => note.classList.toggle("has-note", note.value.trim() !== ""));
       markDestination(row);
       row.querySelector(".mb-ing").addEventListener("change", () => markDestination(row));
+      // the kcal number opens the ingredient's full nutrition + absorption pairings
+      const statBtn = row.querySelector(".mb-stat");
+      statBtn.addEventListener("click", () => {
+        const q = priceable({ name: row.querySelector(".mb-ing").value.trim(), amount: row.querySelector(".mb-amt").value.trim() });
+        if (!q || !statBtn.textContent) return;
+        App.nutPop.open(statBtn, { ...q, eaters: eaters(), servings: portions(), meal_lines: knownRows(),
+          amountText: row.querySelector(".mb-amt").value.trim() });
+      });
       const removeRow = () => {
         const parent = row.parentNode, next = row.nextSibling;
         const name = row.querySelector(".mb-ing").value.trim();

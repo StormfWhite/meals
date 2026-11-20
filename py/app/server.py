@@ -1060,6 +1060,8 @@ def nutrition_week(week: Optional[str] = None, member_id: Optional[str] = None):
 
 
 class GapMeal(BaseModel):
+    label: str = ""                       # Breakfast / Lunch / Dinner, for the day's pairings
+    lines: list[dict] = []                # {ingredient_id, qty, unit}: what pairings.py judges
     totals: dict = {}
     eaters: Optional[list[str]] = None
     servings: Optional[float] = None      # how many portions the pot splits into (household.portion)
@@ -1084,6 +1086,31 @@ def nutrition_gaps(body: GapsBody):
     except Exception:
         here = set()
     return gaps.for_days({d: v.model_dump() for d, v in body.days.items()}, on_hand=here)
+
+
+class LineBody(BaseModel):
+    ingredient_id: str
+    qty: float
+    unit: str = ""
+    eaters: Optional[list[str]] = None
+    servings: Optional[float] = None
+    meal_lines: list[dict] = []
+
+
+@app.post("/api/nutrition/line")
+def nutrition_line(body: LineBody):
+    """The full label for one meal line + the pairings about it (the popout under the kcal number)."""
+    from mealplanner import label, pairings
+    got = label.for_ingredient_id(body.ingredient_id, body.qty, body.unit, body.eaters, body.servings)
+    if got is None:
+        raise HTTPException(404, "no nutrition for that line")
+    try:
+        lines = body.meal_lines or [{"ingredient_id": body.ingredient_id, "qty": body.qty, "unit": body.unit}]
+        got["pairings"] = [p for p in pairings.for_meal(lines, body.servings, len(got["people"]) or 1)
+                           if body.ingredient_id in p["about"]]
+    except Exception:                     # a pairing hint must never hide the label
+        got["pairings"] = []
+    return got
 
 
 class GapBuyBody(BaseModel):

@@ -47,8 +47,9 @@ NUTRIENT_IDS = {
 # (2: Atwater kcal for Foundation foods, survey foods' "1 cup" portions; 3: `missing`;
 # 4: potassium/magnesium/vitamin D/B12/folate/zinc for the day's "low" check, gaps.py;
 # 5: `missing` covers those too -- Foundation yogurt lists no B12, filled from another record;
-# 6: choline, B6, iodine and omega-3 (ALA+EPA+DHA+DPA, summed))
-NORMALIZED_V = 6
+# 6: choline, B6, iodine and omega-3 (ALA+EPA+DHA+DPA, summed);
+# 7: the rest of the Nutrition Facts label -- fats, carbs, sugars, sodium, E, K, B1-B3, minerals)
+NORMALIZED_V = 7
 OLDEST_USABLE_V = 3   # nutrition still right, just fewer vitamins: served when it can't be fetched again
 VITAMIN_IDS = {
     1162: "vitamin_c_mg",
@@ -64,10 +65,19 @@ VITAMIN_IDS = {
     1180: "choline_mg",
     1175: "vitamin_b6_mg",
     1100: "iodine_mcg",
+    # v7: the rest of the label (read-only for the ingredient popout, label.py; absent = unknown)
+    1004: "fat_g", 1258: "sat_fat_g", 1257: "trans_fat_g", 1292: "mono_fat_g", 1293: "poly_fat_g",
+    1253: "cholesterol_mg", 1005: "carbs_g", 2000: "sugars_g", 1063: "sugars_g", 1093: "sodium_mg",
+    1109: "vitamin_e_mg", 1185: "vitamin_k_mcg", 1165: "thiamin_mg", 1166: "riboflavin_mg",
+    1167: "niacin_mg", 1091: "phosphorus_mg", 1098: "copper_mg", 1101: "manganese_mg",
+    1103: "selenium_mcg", 1107: "beta_carotene_mcg",
 }
+LABEL_ONLY = {"fat_g", "sat_fat_g", "trans_fat_g", "mono_fat_g", "poly_fat_g", "cholesterol_mg", "carbs_g",
+              "sugars_g", "sodium_mg", "vitamin_e_mg", "vitamin_k_mcg", "thiamin_mg", "riboflavin_mg",
+              "niacin_mg", "phosphorus_mg", "copper_mg", "manganese_mg", "selenium_mcg", "beta_carotene_mcg"}
 OMEGA3_IDS = (1404, 1278, 1272, 1280)   # ALA, EPA, DHA, DPA -> one omega3_g
 # USDA rarely lists these: absent means "not measured", so they never trigger a fill from another record
-NO_FILL = {"iodine_mcg"}
+NO_FILL = {"iodine_mcg"} | LABEL_ONLY
 FOLATE_DFE = 1190   # survey foods list folate as DFE only
 
 
@@ -316,6 +326,8 @@ def _normalize(food: dict) -> dict:
         if nid in NUTRIENT_IDS:
             out[NUTRIENT_IDS[nid]] = amount
         elif nid in VITAMIN_IDS:
+            if nid == 1063 and "sugars_g" in out["vitamins"]:
+                continue                      # 2000 (total sugars) wins over the older 1063
             out["vitamins"][VITAMIN_IDS[nid]] = amount
         elif nid in OMEGA3_IDS:
             out["vitamins"]["omega3_g"] = out["vitamins"].get("omega3_g", 0.0) + amount

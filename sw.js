@@ -1,5 +1,5 @@
 // Meals: the app shell and Pyodide cached so the planner opens fast and offline.
-const VERSION = "m6";
+const VERSION = "m7";
 self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", (e) => e.waitUntil(caches.keys()
   .then((ks) => Promise.all(ks.filter((k) => k !== VERSION && k !== "pyodide" && k !== "meal-photos").map((k) => caches.delete(k)))).then(() => self.clients.claim())));

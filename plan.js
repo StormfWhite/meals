@@ -1,3 +1,5 @@
+const GP_PAIR = '<circle cx="9" cy="12" r="5"/><circle cx="15" cy="12" r="5"/>';       // absorption pairings: two foods that go together
+const GP_PAIR_NO = '<path d="M12 3 2 20h20Z"/><path d="M12 10v4M12 17h.01"/>';
 /* The plan — the whole app, really. One column per day; each column is a
  * day header, the three meals stacked as lists, and that day's totals at
  * the foot. Meals line up row-for-row across the columns (every day's
@@ -955,7 +957,7 @@ App.plan = {
         : perPerson.map(t => `${t.name} ${Math.round(t.calories_kcal).toLocaleString()}`).join(" · ") + " kcal";
       v.title = perPerson.map(t => `${t.name ? t.name + ": " : "Each: "}${Math.round(t.calories_kcal)} kcal · ${t.protein_g.toFixed(1)} g protein · ${t.fiber_g.toFixed(1)} g fiber`).join("\n");
       this._paintBars(foot, perPerson, people);
-      days[date] = { meals: mine.map(b => ({ totals: b.totals, eaters: b.eaters(), servings: b.portions() })), ingredient_ids: [...new Set(mine.flatMap(b => b.knownRows().map(r => r.ingredient_id)))] };
+      days[date] = { meals: mine.map(b => ({ label: b.meal ? b.meal[0].toUpperCase() + b.meal.slice(1) : "", lines: b.knownRows(), totals: b.totals, eaters: b.eaters(), servings: b.portions() })), ingredient_ids: [...new Set(mine.flatMap(b => b.knownRows().map(r => r.ingredient_id)))] };
     });
     clearTimeout(this._gapsTimer);
     this._gapsTimer = setTimeout(() => this._refreshGaps(days), now ? 0 : 400);
@@ -1135,18 +1137,24 @@ App.plan = {
     const gsig = JSON.stringify(day);
     if (foot._gapsSig === gsig) return;          // the same answer is already up: nothing moves
     foot._gapsSig = gsig;
-    if (!day || !day.judged || !day.low.length) {
+    const hints = ((day && day.pairings) || []).filter(p => p.kind !== "met");
+    const hasLow = !!(day && day.judged && day.low.length);
+    if (!hasLow && !hints.length) {
       chip.hidden = true; box.hidden = true; box.innerHTML = "";
       if (day && day.judged) { chip.hidden = false; chip.className = "day-low ok"; chip.innerHTML = `${App.icon('<path d="M20 6 9 17l-5-5"/>')}`; chip.title = "Nothing low today"; }
       this._placeBars(foot);
       return;
     }
     const whoText = (l) => l.who && l.who.length ? ` (${l.who.join(", ")})` : "";
-    const names = day.low.map(l => l.label + whoText(l));
+    const lowList = hasLow ? day.low : [];
+    const names = lowList.map(l => l.label + whoText(l));
     chip.hidden = false;
     chip.className = "day-low";
-    chip.innerHTML = `${App.icon(GP_WARN)}<span>${this._isWeekMode() ? `${names.length} low` : `Low: ${App.esc(names.slice(0, 4).join(" · "))}${names.length > 4 ? ` +${names.length - 4}` : ""}`}</span>`;
-    chip.title = day.low.map(l => `${l.label}${whoText(l)}: ${l.have} of ${l.target} ${l.unit} (${l.pct}%)`).join("\n");
+    chip.innerHTML = hasLow
+      ? `${App.icon(GP_WARN)}<span>${this._isWeekMode() ? `${names.length} low` : `Low: ${App.esc(names.slice(0, 4).join(" · "))}${names.length > 4 ? ` +${names.length - 4}` : ""}`}</span>`
+      : `${App.icon(GP_PAIR)}<span>${hints.length}</span>`;
+    chip.title = hasLow ? lowList.map(l => `${l.label}${whoText(l)}: ${l.have} of ${l.target} ${l.unit} (${l.pct}%)`).join("\n")
+                        : `${hints.length} absorption hint${hints.length > 1 ? "s" : ""}`;
     const helps = (c) => c.helps.map(h => `<span class="dg-help">+${h.amount}${h.unit === "g" ? "g" : " " + h.unit} ${App.esc(h.label)}</span>`).join("");
     const row = (c, kind) => `
       <div class="dg-row" data-name="${App.esc(c.name)}">
@@ -1157,6 +1165,7 @@ App.plan = {
       </div>`;
     // tap a low nutrient to see more of what fills it; tap it again to go back
     const paintList = (key) => {
+      if (!hasLow) return;
       const set = key && day.focus && day.focus[key] ? day.focus[key] : day;
       const have = set.have, buy = set.buy;
       box.querySelectorAll(".dg-low").forEach(el => el.classList.toggle("sel", el.dataset.key === key));
@@ -1165,10 +1174,19 @@ App.plan = {
         ${buy.length ? `<div class="dg-head">${App.icon(GP_CART)}<span>Could buy</span></div>${buy.map(c => row(c, "buy")).join("")}` : ""}`;
       wireBuy();
     };
+    const KINDS = { blocked: GP_PAIR_NO, missing: GP_PAIR };
+    const pairHtml = () => {
+      const met = ((day && day.pairings) || []).filter(p => p.kind === "met").length;
+      if (!hints.length && !met) return "";
+      return `<div class="dg-head">${App.icon(GP_PAIR)}<span>Pairings</span>${met ? `<span class="dg-met" title="Already working in the meals">✓ ${met}</span>` : ""}</div>
+        ${hints.map((p, i) => `<div class="dg-pair ${p.kind}" data-i="${i}"><button class="dg-pair-line">${App.icon(KINDS[p.kind] || GP_PAIR)}<span>${p.meal ? `<b>${App.esc(p.meal)}</b> · ` : ""}${App.esc(p.line)}${p.helpers && p.helpers.length ? ` <i>· ${App.esc(p.helpers.join(", "))}</i>` : ""}</span></button><div class="dg-pair-detail">${App.esc(p.detail)}</div></div>`).join("")}`;
+    };
     box.innerHTML = `
-      <div class="dg-lows">${day.low.map(l => `
+      ${hasLow ? `<div class="dg-lows">${lowList.map(l => `
         <span class="dg-low" data-key="${App.esc(l.key)}" title="${l.have} of ${l.target} ${l.unit}${App.esc(whoText(l))} — tap for more that fill it"><span>${App.esc(l.label)}${l.who && l.who.length ? ` <span class="dg-who">${App.esc(l.who.join(", "))}</span>` : ""}</span><span class="dg-bar"><i style="width:${Math.min(100, l.pct)}%"></i></span><span class="num">${l.pct}%</span></span>`).join("")}</div>
-      <div class="dg-list"></div>`;
+      <div class="dg-list"></div>` : ""}
+      <div class="dg-pairs">${pairHtml()}</div>`;
+    box.querySelectorAll(".dg-pair-line").forEach(b => b.addEventListener("click", () => b.parentNode.classList.toggle("open")));
     this._placeBars(foot);
     let picked = null;
     box.querySelectorAll(".dg-low").forEach(el => el.addEventListener("click", () => {

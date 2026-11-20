@@ -232,6 +232,22 @@ def for_days(days: dict[str, dict], on_hand: Optional[set] = None,
                for f in whole_foods()
                if f["fdc_id"] not in owned_fdc and f["name"].lower() not in owned_names]
     out = {}
+    n_people = len(ppl)
+
+    def pair_list(day):
+        """Each meal's pairings (pairings.py): what's blocked or missing first, tips left to the popout."""
+        try:
+            from . import pairings
+            res = []
+            for m in day.get("meals") or []:
+                if not m.get("lines"):
+                    continue
+                for p in pairings.for_meal(m["lines"], m.get("servings"), n_people, owned, today):
+                    if p["kind"] != "tip":
+                        res.append({**p, "meal": m.get("label") or ""})
+            return res
+        except Exception:                # never let a hint break the day's low check
+            return []
     side_model, side_dismissed = sides.Model(today), sides._dismissed()
 
     def side_list(date, low, day, foods=None):
@@ -279,6 +295,8 @@ def for_days(days: dict[str, dict], on_hand: Optional[set] = None,
         out[date] = {"judged": True, "low": [{k: v for k, v in l.items() if k not in ("short", "scale", "ratio")} for l in low],
                      "have": have[:per_kind], "buy": buy[:per_kind], "focus": focus,
                      "sides": side_list(date, low, day, foods)}
+    for date, day in days.items():
+        out[date]["pairings"] = pair_list(day)
     return {"people": [{"name": p["name"], "share": p["share"]} for p in ppl], "days": out}
 
 
