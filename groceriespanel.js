@@ -1306,7 +1306,8 @@ App.groceriesPanel = {
           const need = r.querySelector(".gp-row-qty");
           return `- ${need && need.value ? need.value + " " : ""}${name}`;
         }).join("\n") || "(nothing needed)";
-        navigator.clipboard.writeText(text).then(() => App.toast("Copied"));
+        if (window.Native && Native.export) Native.export("groceries", "Groceries", "text/plain", "txt", text);
+        else navigator.clipboard.writeText(text).then(() => App.toast("Copied"));
       });
     });
   },

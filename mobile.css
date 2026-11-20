@@ -1,16 +1,16 @@
 /* Phone layer on top of the laptop app's style.css (nothing here applies above 760px wide). */
 #boot { position: fixed; inset: 0; z-index: 100; display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: 10px; padding: 24px; text-align: center; background: var(--bg, #fff); color: var(--text, #111); transition: opacity .35s; }
+  gap: 10px; padding: 24px; text-align: center; background: var(--bg, #1c1714); color: var(--text, #e6d2b5); transition: opacity .35s; }
 #boot.gone { opacity: 0; pointer-events: none; }
-#boot img { width: 84px; height: 84px; border-radius: 20px; box-shadow: 0 4px 18px rgba(0,0,0,.15); }
+#boot img { width: 84px; height: 84px; border-radius: 20px; box-shadow: 0 4px 18px rgba(43,32,24,.18); }
 #boot .boot-t { font-size: 22px; font-weight: 700; margin-top: 6px; }
 #boot .boot-s { color: var(--text-dim, #888); font-size: 14px; min-height: 1.2em; }
 #boot p { color: var(--text-dim, #888); font-size: 15px; max-width: 320px; }
 #boot input { width: 100%; max-width: 320px; height: 46px; border-radius: 12px; font-size: 16px; text-align: center; margin: 4px 0 10px; }
 a.boot-btn { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; box-sizing: border-box; }
-.boot-btn { height: 46px; padding: 0 24px; border-radius: 23px; border: 0; background: var(--accent, #2f7d32); color: var(--accent-text, #fff);
+.boot-btn { height: 46px; padding: 0 24px; border-radius: 23px; border: 0; background: var(--accent, #2f7d32); color: var(--accent-text, #f3e8d6);
   font-weight: 650; font-size: 16px; }
-.boot-err { color: #d33 !important; }
+.boot-err { color: #c0452f !important; }
 body.offline #topbar::after { content: "offline · saved on this phone"; font-size: 11px; color: var(--text-dim); margin-left: 6px; white-space: nowrap; }
 
 @media (max-width: 760px) {
@@ -54,7 +54,7 @@ body.offline #topbar::after { content: "offline · saved on this phone"; font-si
   /* the drag handle, like an Android bottom sheet's: a pill centred in a 30px grab zone at the top. Drag it (or the
      list when it is scrolled to the top) down to close; the pill grows and darkens while it is held. */
   .plan.list-open .list-panel::before { content: ""; display: block; position: sticky; top: 0; z-index: 5; height: 30px; flex: 0 0 30px; margin-bottom: -4px;
-    background: linear-gradient(rgba(120,120,128,.6), rgba(120,120,128,.6)) center 11px / 36px 4px no-repeat, var(--panel);
+    background: linear-gradient(rgba(122,102,80,.6), rgba(122,102,80,.6)) center 11px / 36px 4px no-repeat, var(--panel);
     background: linear-gradient(color-mix(in srgb, var(--text-dim, #777) 60%, transparent), color-mix(in srgb, var(--text-dim, #777) 60%, transparent)) center 11px / 36px 4px no-repeat, var(--panel);
     border-radius: 16px 16px 0 0; transition: background-size .12s; }
   .plan.list-open .list-panel.pulling::before { background-size: 48px 5px; }

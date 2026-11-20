@@ -3,48 +3,26 @@
    reused verbatim (icon-btn, seg, check, chip, bar, modal, toast, notice,
    btn-*) or new ones specific to a weekly board / nutrition rollup. */
 :root {
-  --bg: #f5f6f8;
-  --panel: #ffffff;
-  --panel-2: #eef0f3;
-  --border: #dde1e6;
-  --text: #1c1f24;
-  --text-dim: #6b7280;
-  --accent: #3d6cf0;
-  --accent-text: #ffffff;
-  --good: #1a9e5c;
-  --bad: #d3452b;
-  --warn: #b8860b;
-  --shadow: 0 1px 2px rgba(0,0,0,0.06), 0 1px 8px rgba(0,0,0,0.04);
+  color-scheme: dark;  /* Storm 2026-11-19: always the warm dark theme, never the cream one */
+  --bg: #1c1714;
+  --panel: #241d18;
+  --panel-2: #2e251f;
+  --border: #3d3128;
+  --text: #e6d2b5;
+  --text-dim: #a8957c;
+  --accent: #e0a458;
+  --accent-text: #1c1714;
+  --good: #8a9a6e;
+  --bad: #d8745f;
+  --warn: #e0ac3c;
+  --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 2px 10px rgba(0,0,0,0.25);
+  --meal-breakfast: #e0a44a;
+  --meal-lunch: #8a9a6e;
+  --meal-dinner: #c8614c;
+  --fridge: #6f93b0;
+  --dry: #d9a05b;
+  --freezer: #7fa3ae;
   --radius: 10px;
-  --meal-breakfast: #c8811a;
-  --meal-lunch: #1a9e8c;
-  --meal-dinner: #5b5bd6;
-  --fridge: #2f7fd1;
-  --dry: #b5762a;
-  --freezer: #1aa3b8;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #16181d;
-    --panel: #1e2127;
-    --panel-2: #262a32;
-    --border: #33383f;
-    --text: #e7e9ec;
-    --text-dim: #9aa1ab;
-    --accent: #5b84ff;
-    --accent-text: #0d1117;
-    --good: #35c481;
-    --bad: #ff6b52;
-    --warn: #e0ac3c;
-    --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 2px 10px rgba(0,0,0,0.25);
-    --meal-breakfast: #e0a44a;
-    --meal-lunch: #3fcbb6;
-    --meal-dinner: #8f8fef;
-    --fridge: #5ea6f0;
-    --dry: #d9a05b;
-    --freezer: #4fd0e0;
-  }
 }
 
 * { box-sizing: border-box; }
@@ -605,7 +583,7 @@ input.gp-row-name:focus { background: var(--panel); border-color: var(--border);
 .swipe > .gp-row { position: relative; transition: transform .2s; touch-action: pan-y; }
 .swipe.swiping > .gp-row { background: var(--panel); }
 .swipe-bin { position: absolute; inset: 0; display: none; align-items: center; justify-content: flex-end; padding: 0 14px;
-  background: #c9453a; color: #fff; }
+  background: #c9453a; color: #f3e8d6; }
 .swipe-bin svg { width: 16px; height: 16px; opacity: .6; }
 .swipe.swiping .swipe-bin { display: flex; }
 .swipe.from-left .swipe-bin { justify-content: flex-start; }
@@ -671,7 +649,7 @@ input.gp-row-name:focus { background: var(--panel); border-color: var(--border);
 }
 #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 #toast.has-undo { pointer-events: auto; display: flex; align-items: center; gap: 12px; }
-.toast-undo { background: none; border: 0; padding: 0 2px; font: inherit; font-weight: 700; color: var(--accent-2, #8ab4ff); cursor: pointer; }
+.toast-undo { background: none; border: 0; padding: 0 2px; font: inherit; font-weight: 700; color: var(--accent-2, #e0a458); cursor: pointer; }
 
 /* ── a slot that holds more than one meal (plan.js) ───────────────────── */
 /* The cell is what keeps every day's breakfast on the same grid row while
@@ -693,13 +671,13 @@ input.gp-row-name:focus { background: var(--panel); border-color: var(--border);
 .is-day .meal-add svg { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 30px; height: 30px; box-sizing: border-box;
   padding: 5px; margin: 0; border: 1px solid var(--border); border-radius: 50%; background: var(--panel); color: var(--accent);
   stroke-width: 2.2; box-shadow: 0 1px 4px rgba(0,0,0,.14); }
-.is-day .meal-add:hover svg { background: var(--accent); color: #fff; border-color: var(--accent); }
+.is-day .meal-add:hover svg { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
 .is-day .meal-cell[data-meal="dinner"] > .meal-add { display: none; }
 /* the blank + at the end of the side ideas: a new dinner block */
 .ss-blank { display: flex; align-items: center; justify-content: center; width: 100%; height: 24px; padding: 0; border-radius: 6px;
   border: 1px dashed var(--border); background: none; color: var(--accent); cursor: pointer; }
 .ss-blank svg { width: 18px; height: 18px; }
-.ss-blank:hover { color: #fff; background: var(--accent); border-color: var(--accent); }
+.ss-blank:hover { color: var(--accent-text); background: var(--accent); border-color: var(--accent); }
 .side-strip:not(:has(.ss-row)) { border-left: 0; background: none; padding: 0; }
 .mb-also {
   width: 13px; height: 13px; display: flex; align-items: center; justify-content: center;
@@ -842,7 +820,7 @@ input.gp-row-name:focus { background: var(--panel); border-color: var(--border);
   border: 1px solid var(--border); border-radius: 5px; color: transparent; }
 .ri-tick svg { width: 11px; height: 11px; }
 .ri-note.sel { background: color-mix(in srgb, var(--accent) 10%, transparent); }
-.ri-note.sel .ri-tick { background: var(--accent); border-color: var(--accent); color: #fff; }
+.ri-note.sel .ri-tick { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
 .ri-bar { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 8px; }
 .ri-bar .num { margin-right: auto; }
 .ri-bar[hidden], #ri-review[hidden] { display: none; }
@@ -904,7 +882,7 @@ button.mb-tag { cursor: pointer; font: inherit; font-size: 10px; }
 .mb-src-thumb img { width: 100%; height: 100%; object-fit: cover; cursor: zoom-in; display: block; }
 .mb-src-thumb.missing::after { content: "…"; position: absolute; inset: 0; display: grid; place-items: center; color: var(--text-dim); }
 .mb-src-x { position: absolute; top: 1px; right: 1px; width: 18px; height: 18px; border-radius: 50%;
-  background: rgba(0,0,0,.55); color: #fff; opacity: 0; }
+  background: rgba(0,0,0,.55); color: #f3e8d6; opacity: 0; }
 .mb-src-x svg { width: 9px; height: 9px; }
 .mb-src-thumb:hover .mb-src-x { opacity: 1; }
 .mb-src-add { width: 58px; height: 58px; border-radius: 7px; border: 1px dashed var(--border); color: var(--text-dim); cursor: pointer; }
@@ -1011,7 +989,7 @@ button.mb-tag { cursor: pointer; font: inherit; font-size: 10px; }
 /* drag a meal by its header onto another to swap */
 .mb-head { cursor: grab; }
 .mb.dragging { opacity: .45; }
-.mb.drop-on, .meal-cell.drop-on { outline: 2px dashed var(--accent, #6aa9ff); outline-offset: 1px; }
+.mb.drop-on, .meal-cell.drop-on { outline: 2px dashed var(--accent, #e0a458); outline-offset: 1px; }
 
 .dg-low { cursor: pointer; }
 .dg-low.sel { outline: 1.5px solid var(--accent); outline-offset: 1px; border-radius: 4px; }
@@ -1024,7 +1002,7 @@ button.mb-tag { cursor: pointer; font: inherit; font-size: 10px; }
 .gp-else-note { color: var(--text-dim); }
 
 .gp-stock-bar { flex: none; }
-.gp-bar-video { width: 100%; max-height: 180px; border-radius: 8px; background: #000; object-fit: cover; }
+.gp-bar-video { width: 100%; max-height: 180px; border-radius: 8px; background: #120e0b; object-fit: cover; }
 .gp-bar-code { width: 100%; margin-top: 4px; }
 .gp-bar-out { font-size: 11px; padding: 3px 0; }
 
@@ -1152,13 +1130,13 @@ button.mb-tag { cursor: pointer; font: inherit; font-size: 10px; }
 .gp-bar-where { display: inline-flex; gap: 0; }
 .gp-bar-where .icon-btn { opacity: .55; }
 .gp-bar-where .icon-btn.on { opacity: 1; }
-.gp-bar-view { position: relative; margin: 4px 0; border-radius: 10px; overflow: hidden; background: #111; aspect-ratio: 16 / 9; max-height: 34vh; width: 100%; }
+.gp-bar-view { position: relative; margin: 4px 0; border-radius: 10px; overflow: hidden; background: #120e0b; aspect-ratio: 16 / 9; max-height: 34vh; width: 100%; }
 .gp-bar-view video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .gp-bar-frame { position: absolute; left: 12%; right: 12%; top: 26%; bottom: 26%; border: 2px solid rgba(255,255,255,.75); border-radius: 10px;
   box-shadow: 0 0 0 9999px rgba(0,0,0,.28); pointer-events: none; transition: border-color .12s; }
 .gp-bar-view.hit .gp-bar-frame { border-color: var(--good, #3ecf8e); animation: gp-hit .35s ease-out; }
 @keyframes gp-hit { 0% { transform: scale(1.04); } 100% { transform: scale(1); } }
-.gp-bar-msg { position: absolute; inset: auto 0 8px 0; text-align: center; font-size: 11.5px; color: #ddd; }
+.gp-bar-msg { position: absolute; inset: auto 0 8px 0; text-align: center; font-size: 11.5px; color: #e6d2b5; }
 .gp-bar-msg[hidden] { display: none; }
 .gp-bar-tape { display: flex; flex-direction: column; gap: 1px; max-height: 26vh; overflow: auto; scrollbar-width: none; }
 .gp-bar-row { display: flex; align-items: center; gap: 7px; padding: 3px 6px; border-radius: 6px; font-size: 12px; min-width: 0; animation: gp-in .18s ease-out; }

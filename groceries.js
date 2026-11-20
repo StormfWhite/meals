@@ -69,7 +69,8 @@ App.groceries = {
     if (key) {
       wrap.querySelector(".copy-btn").addEventListener("click", async () => {
         const text = await (await fetch(`/api/groceries/${this._weekStart}/export?section=${key}`)).text();
-        navigator.clipboard.writeText(text).then(() => App.toast("Copied"));
+        if (window.Native && Native.export) Native.export("groceries", "Groceries", "text/plain", "txt", text);
+        else navigator.clipboard.writeText(text).then(() => App.toast("Copied"));
       });
     }
     return wrap;
