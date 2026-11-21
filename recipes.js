@@ -91,9 +91,11 @@ App.recipes = {
     </div>`);
     row.querySelector(".edit-btn").addEventListener("click", () => this._openEditor(r));
     row.querySelector(".del-btn").addEventListener("click", async () => {
-      if (!confirm(`Delete "${r.name}"?`)) return;
       await App.api(`/api/recipes/${r.id}`, { method: "DELETE" });
-      App.toast("Recipe deleted");
+      App.undoToast(`${r.name} deleted`, async () => {
+        await App.api(`/api/recipes/${r.id}/restore`, { method: "POST" });
+        this.render(document.getElementById("body"));
+      });
       this.render(document.getElementById("body"));
     });
     return row;
@@ -115,7 +117,12 @@ App.recipes = {
       <input class="ing-unit" placeholder="unit" value="${_esc(unit)}" style="width:90px;min-width:0;">
       <button class="icon-btn ing-remove" title="Remove">${App.icon('<path d="M18 6 6 18M6 6l12 12"/>')}</button>
     </div>`);
-    row.querySelector(".ing-remove").addEventListener("click", () => row.remove());
+    row.querySelector(".ing-remove").addEventListener("click", () => {
+      const parent = row.parentNode, next = row.nextSibling;
+      row.remove();
+      const label = row.querySelector(".ing-name").value.trim() || "Ingredient";
+      App.undoToast(`${label} removed`, () => { if (parent && !row.isConnected) parent.insertBefore(row, next && next.parentNode === parent ? next : null); });
+    });
     row.dataset.note = (item && item.note) || "";
     // Enter walks the line like a meal block: name → amount → a new line below (keyboard stays up)
     // the same ranked dropdown as a meal's lines; Enter finishes a started name ("ban" -> banana)

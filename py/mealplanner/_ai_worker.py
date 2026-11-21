@@ -19,7 +19,7 @@ import os
 import sys
 from pathlib import Path
 
-STUDYCODE = Path(os.environ.get("MEALPLANNER_STUDYCODE", str(Path.home() / "Documents" / "StudyCode")))
+STUDYCODE = Path(os.environ.get("MEALPLANNER_STUDYCODE", str(Path.home() / "Documents" / "apps" / "StudyCode")))
 
 _ANSWER = os.fdopen(os.dup(1), "w")
 os.dup2(2, 1)

@@ -25,7 +25,7 @@ from typing import Optional
 
 from . import ingredients
 
-STUDYCODE = Path(os.environ.get("MEALPLANNER_STUDYCODE", str(Path.home() / "Documents" / "StudyCode")))
+STUDYCODE = Path(os.environ.get("MEALPLANNER_STUDYCODE", str(Path.home() / "Documents" / "apps" / "StudyCode")))
 WORKER = Path(__file__).with_name("_ai_worker.py")
 TIMEOUT_S = 240
 PLACES = ("fridge", "pantry", "freezer")

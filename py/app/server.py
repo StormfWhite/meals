@@ -626,9 +626,22 @@ def put_recipe(recipe_id: str, body: RecipeUpdateBody):
 
 @app.delete("/api/recipes/{recipe_id}")
 def remove_recipe(recipe_id: str):
-    if not recipes.delete(recipe_id):
+    gone = [b for b in bangers.list_bangers() if b["recipe_id"] == recipe_id]
+    if not recipes.delete(recipe_id, gone):
         raise HTTPException(404, "no such recipe")
+    for b in gone:
+        bangers.delete(b["id"])
     return {"ok": True}
+
+
+@app.post("/api/recipes/{recipe_id}/restore")
+def restore_recipe(recipe_id: str):
+    """Undo of a delete: same id, its stars back."""
+    got = recipes.restore(recipe_id=recipe_id)
+    if got is None:
+        raise HTTPException(404, "nothing to restore")
+    bangers.restore(got["bangers"])
+    return {"recipe": _recipe_summary(got["recipe"], ingredients.by_id())}
 
 
 @app.get("/api/recipes/{recipe_id}/nutrition")

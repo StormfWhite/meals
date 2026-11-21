@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Rebuild the phone/web Meal Planner from the laptop app's source (~/Documents/mealplanner):
+# Rebuild the phone/web Meal Planner from the laptop app's source (~/Documents/apps/mealplanner):
 # the same Python package + FastAPI routes run in the browser (Pyodide, see bridge.js) and the
 # same front end is served with a phone stylesheet on top. Run after any change to the laptop app,
 # then commit + push to publish (stormfwhite.github.io/meals).
 set -e
-SRC="$HOME/Documents/mealplanner"
+SRC="$HOME/Documents/apps/mealplanner"
 OUT="$(cd "$(dirname "$0")" && pwd)"
 rm -rf "$OUT/py" && mkdir -p "$OUT/py/app/web"
 rsync -a --exclude __pycache__ "$SRC/mealplanner" "$OUT/py/"
@@ -32,7 +32,8 @@ PY
 # three pure-Python wheels unpacked beside them, each with its .pyc (Pyodide 0.27 = CPython 3.12, same
 # bytecode as this machine's 3.12; unchecked-hash so the browser never re-reads the source to validate).
 # It replaces ~25 separate fetches + micropip + compiling fastapi/starlette on every open.
-python3 - "$OUT" <<'PY'
+PY312="$(command -v python3.12 || echo "$HOME/.local/share/uv/python/cpython-3.12-linux-x86_64-gnu/bin/python3.12")"   # pyc must be 3.12 (the system python moved on)
+"$PY312" - "$OUT" <<'PY'
 import compileall, py_compile, shutil, sys, tempfile, zipfile
 from pathlib import Path
 out = Path(sys.argv[1]); tmp = Path(tempfile.mkdtemp())

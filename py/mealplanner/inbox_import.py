@@ -50,6 +50,13 @@ def apply_ops(d: Path) -> int:
         except Exception:
             f.unlink(missing_ok=True)
             continue
+        if op.get("op") == "restore":            # Undo of a delete made in the Recipes app
+            got = recipes.restore(url=op.get("url", ""), name=op.get("name", ""))
+            if got:
+                bangers.restore(got["bangers"])
+            f.unlink(missing_ok=True)
+            n += 1
+            continue
         rec = find_recipe(op.get("url", ""), op.get("name", ""))
         if rec is None:
             if time.time() - f.stat().st_mtime > 86400 or op.get("op") == "delete":
@@ -57,9 +64,10 @@ def apply_ops(d: Path) -> int:
             continue
         kind = op.get("op")
         if kind == "delete":
-            for b in [b for b in bangers.list_bangers() if b["recipe_id"] == rec["id"]]:
+            gone = [b for b in bangers.list_bangers() if b["recipe_id"] == rec["id"]]
+            for b in gone:
                 bangers.delete(b["id"])
-            recipes.delete(rec["id"])
+            recipes.delete(rec["id"], gone)
         elif kind == "stars":                    # the full set of meals this recipe is a banger for
             want = {m for m in op.get("meals", []) if m in board.MEALS}
             have = {b["meal"]: b for b in bangers.list_bangers() if b["recipe_id"] == rec["id"]}

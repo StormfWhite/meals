@@ -8,6 +8,7 @@ Nutrition is deliberately not a field here -- see nutrition.py's docstring.
 """
 from __future__ import annotations
 
+import re
 import time
 import uuid
 from typing import Optional
@@ -67,9 +68,49 @@ def update(recipe_id: str, **fields) -> dict:
     return recipe
 
 
-def delete(recipe_id: str) -> bool:
+TRASH_DAYS = 30
+
+
+def delete(recipe_id: str, bangers: Optional[list[dict]] = None) -> bool:
+    """Moves the recipe to the trash (30 days) rather than erasing it, with the bangers (stars) it had,
+    so `restore` can put back exactly what was there -- same id, so plan slots still point at it."""
     data = _load()
-    before = len(data["recipes"])
+    rec = next((r for r in data["recipes"] if r["id"] == recipe_id), None)
+    if rec is None:
+        return False
+    now = time.time()
     data["recipes"] = [r for r in data["recipes"] if r["id"] != recipe_id]
+    trash = [t for t in data.get("trash", []) if now - t.get("deleted_at", now) < TRASH_DAYS * 86400]
+    trash.append({"recipe": rec, "bangers": list(bangers or []), "deleted_at": now})
+    data["trash"] = trash
     _save(data)
-    return len(data["recipes"]) < before
+    return True
+
+
+def find_trashed(recipe_id: str = "", url: str = "", name: str = "") -> Optional[dict]:
+    """Newest trash entry matching the id, else the page address, else the name."""
+    def norm(u):
+        return re.sub(r"[?#].*$", "", (u or "").strip().lower()).rstrip("/")
+    for t in reversed(_load().get("trash", [])):
+        r = t["recipe"]
+        if recipe_id and r["id"] == recipe_id:
+            return t
+        if url and norm(r.get("source_url", "")) == norm(url):
+            return t
+        if name and r["name"].strip().lower() == name.strip().lower():
+            return t
+    return None
+
+
+def restore(recipe_id: str = "", url: str = "", name: str = "") -> Optional[dict]:
+    """Takes a recipe back out of the trash (same id) and returns {"recipe", "bangers"}, or None."""
+    t = find_trashed(recipe_id, url, name)
+    if t is None:
+        return None
+    data = _load()
+    rid = t["recipe"]["id"]
+    data["trash"] = [x for x in data.get("trash", []) if x is not t and x["recipe"]["id"] != rid]
+    if not any(r["id"] == rid for r in data["recipes"]):
+        data["recipes"].append(t["recipe"])
+    _save(data)
+    return {"recipe": t["recipe"], "bangers": t["bangers"]}

@@ -1,7 +1,7 @@
 """Local config: the USDA FoodData Central API key and app-wide settings.
 
 Stored at ~/.config/meal-planner/config.json -- never sent anywhere but
-USDA's own API. Deliberately separate from ~/Documents/StudyCode/Keys.txt,
+USDA's own API. Deliberately separate from ~/Documents/apps/StudyCode/Keys.txt,
 which holds unlabeled Gemini keys that model_manager.py round-robins
 through as if they were interchangeable; appending a different provider's
 key there would make it try to use an FDC key as a Gemini key. Follows

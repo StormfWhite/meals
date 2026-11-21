@@ -37,3 +37,13 @@ def delete(banger_id: str) -> bool:
     data["bangers"] = [b for b in data["bangers"] if b["id"] != banger_id]
     store.save(BANGERS_FILE, data)
     return len(data["bangers"]) < before
+
+
+def restore(items: list[dict]) -> None:
+    """Puts back bangers taken away with a deleted recipe (same ids), skipping any already there."""
+    data = _load()
+    have = {(b["meal"], b["recipe_id"]) for b in data["bangers"]}
+    for b in items:
+        if (b["meal"], b["recipe_id"]) not in have:
+            data["bangers"].append(b)
+    store.save(BANGERS_FILE, data)

@@ -81,9 +81,15 @@ App.toast = function (msg) {
   App._toastTimer = setTimeout(() => el.classList.remove("show"), 2200);
 };
 
-/* A toast with an Undo button, for anything just removed (swipe, x). `undo` puts it back; the button stays for 7 s. */
+/* A toast with an Undo button, for anything just removed (swipe, x, delete). `undo` puts it back; the button
+ * stays for 7 s. Every entry also goes on App.undoStack, so Ctrl+Z (laptop) and a shake (phone) step back
+ * through the last few removals after the toast is gone. */
+App.undoStack = [];
 App.undoToast = function (msg, undo) {
   const el = document.getElementById("toast");
+  const entry = { msg, undo, done: false };
+  App.undoStack.push(entry);
+  if (App.undoStack.length > 20) App.undoStack.shift();
   el.innerHTML = `<span></span><button class="toast-undo" type="button">Undo</button>`;
   el.firstChild.textContent = msg;
   el.classList.add("show", "has-undo");
@@ -91,10 +97,43 @@ App.undoToast = function (msg, undo) {
   const hide = () => { el.classList.remove("show", "has-undo"); };
   el.querySelector(".toast-undo").addEventListener("click", async () => {
     hide();
-    try { await undo(); } catch (e) { App.toast("Couldn't undo"); }
+    await App._runUndo(entry);
   }, { once: true });
   App._toastTimer = setTimeout(hide, 7000);
 };
+App._runUndo = async function (entry) {
+  if (entry.done) return;
+  entry.done = true;
+  App.undoStack = App.undoStack.filter(x => x !== entry);
+  try { await entry.undo(); } catch (e) { App.toast("Couldn't undo"); }
+};
+/* Steps back the newest removal still on the stack (Ctrl+Z / shake). */
+App.undoLast = async function () {
+  const entry = App.undoStack[App.undoStack.length - 1];
+  if (!entry) { App.toast("Nothing to undo"); return false; }
+  await App._runUndo(entry);
+  App.toast("Undone: " + entry.msg);
+  return true;
+};
+/* Shake to undo: two hard jolts within 0.6 s (touch devices only). iOS asks for motion permission on a tap. */
+(function () {
+  if (!("ontouchstart" in window) || typeof DeviceMotionEvent === "undefined") return;
+  let last = 0, hits = 0, cool = 0;
+  const onMotion = (e) => {
+    const a = e.accelerationIncludingGravity || e.acceleration; if (!a) return;
+    const g = Math.hypot(a.x || 0, a.y || 0, a.z || 0), now = Date.now();
+    if (Math.abs(g - 9.8) < 15 || now < cool) return;     // a jolt = 15 m/s² off resting gravity
+    hits = now - last < 600 ? hits + 1 : 1; last = now;
+    if (hits >= 2) { hits = 0; cool = now + 1500; App.undoLast(); }
+  };
+  const attach = () => window.addEventListener("devicemotion", onMotion);
+  if (typeof DeviceMotionEvent.requestPermission === "function") {
+    document.addEventListener("click", function once() {
+      document.removeEventListener("click", once);
+      DeviceMotionEvent.requestPermission().then(r => { if (r === "granted") attach(); }).catch(() => {});
+    });
+  } else attach();
+})();
 
 App.openModal = function (html) {
   document.getElementById("modal-panel").innerHTML = html;
@@ -398,6 +437,12 @@ function init() {
   });
 
   document.addEventListener("keydown", (e) => {
+    // Ctrl+Z steps back the last removal -- but inside a text field it stays that field's own undo.
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && (e.key === "z" || e.key === "Z") && !typingInField(e)) {
+      e.preventDefault();
+      App.undoLast();
+      return;
+    }
     // Escape closes a modal; it deliberately does NOT hide the grocery
     // list any more -- the list is docked, and Escape belongs to whatever
     // line is being typed (mealblock.js ends the line with it).
